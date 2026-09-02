@@ -25,7 +25,16 @@ jobs:
       - name: Create Android Platform Template
         run: |
           flutter create . --platforms=android --project-name=stream1_app
-          sed -i '/<application/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
+          python3 -c '
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path, "r") as f:
+              content = f.read()
+          perm = "<uses-permission android:name=\"android.permission.INTERNET\"/>\n"
+          if "android.permission.INTERNET" not in content:
+              content = content.replace("<manifest", perm + "<manifest")
+          with open(path, "w") as f:
+              f.write(content)
+          '
 
       - name: Install dependencies
         run: flutter pub get
