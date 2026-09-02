@@ -22,19 +22,10 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Setup Android Project
+      - name: Prepare Project
         run: |
           flutter create . --platforms=android --project-name=stream1_app
-          python3 -c '
-          import xml.etree.ElementTree as ET
-          path = "android/app/src/main/AndroidManifest.xml"
-          with open(path, "r") as f:
-              content = f.read()
-          if "android.permission.INTERNET" not in content:
-              content = content.replace("<application", "<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application")
-          with open(path, "w") as f:
-              f.write(content)
-          '
+          git checkout android/app/src/main/AndroidManifest.xml
 
       - name: Install dependencies
         run: flutter pub get
