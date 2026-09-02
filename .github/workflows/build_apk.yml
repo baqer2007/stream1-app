@@ -22,7 +22,7 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Prepare Project
+      - name: Prepare Android Project
         run: |
           flutter create . --platforms=android --project-name=stream1_app
           git checkout android/app/src/main/AndroidManifest.xml
