@@ -8,75 +8,110 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MaterialApp(
     debugShowCheckedModeBanner: false,
-    home: AnimeDirectApp(),
+    home: ArchiveStreamApp(),
   ));
 }
 
-class AnimeDirectApp extends StatefulWidget {
-  const AnimeDirectApp({super.key});
+class ArchiveItem {
+  final String identifier;
+  final String title;
+  final String description;
+  final String thumbnail;
 
-  @override
-  State<AnimeDirectApp> createState() => _AnimeDirectAppState();
+  ArchiveItem({
+    required this.identifier,
+    required this.title,
+    required this.description,
+    required this.thumbnail,
+  });
 }
 
-class _AnimeDirectAppState extends State<AnimeDirectApp> {
-  final TextEditingController _controller = TextEditingController(text: "One Piece");
-  List<dynamic> _results = [];
+class ArchiveStreamApp extends StatefulWidget {
+  const ArchiveStreamApp({super.key});
+
+  @override
+  State<ArchiveStreamApp> createState() => _ArchiveStreamAppState();
+}
+
+class _ArchiveStreamAppState extends State<ArchiveStreamApp> {
+  final TextEditingController _searchCtrl = TextEditingController(text: "One Piece");
+  List<ArchiveItem> _items = [];
   bool _loading = false;
-  String _info = "ابحث عن أي أنمي لبدء المشاهدة الحقيقية";
+  String _status = "الأرشيف الرقمي المفتوح للبث المباشر (بدون حظر)";
 
   @override
   void initState() {
     super.initState();
-    _search("One Piece");
+    _searchArchive("One Piece");
   }
 
-  Future<void> _search(String query) async {
-    final q = query.trim();
-    if (q.isEmpty) return;
+  Future<void> _searchArchive(String query) async {
+    final term = query.trim();
+    if (term.isEmpty) return;
 
     setState(() {
       _loading = true;
-      _info = "جاري البحث في قاعدة البيانات...";
-      _results.clear();
+      _status = "🔍 جاري البحث في خوادم الأرشيف المفتوحة...";
+      _items.clear();
     });
 
     try {
-      // استخدام واجهة Jikan الرسمية والمفتوحة بنسبة 100% بدون أي مفاتيح
-      final res = await http.get(Uri.parse("https://api.jikan.moe/v4/anime?q=${Uri.encodeComponent(q)}&limit=12")).timeout(const Duration(seconds: 8));
+      // البحث في وسائط الفيديو فقط داخل الأرشيف
+      final encoded = Uri.encodeComponent(term);
+      final searchUrl = Uri.parse(
+        "https://archive.org/advancedsearch.php?q=$encoded+AND+mediatype:movies&fl[]=identifier,title,description&sort[]=&rows=15&page=1&output=json"
+      );
+
+      final res = await http.get(searchUrl).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        setState(() {
-          _results = data['data'] ?? [];
-          _loading = false;
-          _info = "تم العثور على ${_results.length} نتيجة";
-        });
-        return;
+        final docs = data['response']?['docs'] as List?;
+        if (docs != null && docs.isNotEmpty) {
+          final List<ArchiveItem> found = [];
+          for (var doc in docs) {
+            final id = doc['identifier'] ?? '';
+            if (id.isNotEmpty) {
+              found.add(ArchiveItem(
+                identifier: id,
+                title: doc['title'] ?? id,
+                description: doc['description'] ?? 'محتوى فيديو من الأرشيف الرقمي',
+                thumbnail: "https://archive.org/services/img/$id",
+              ));
+            }
+          }
+
+          setState(() {
+            _items = found;
+            _loading = false;
+            _status = "تم العثور على ${found.length} عمل متاح للبث المباشر";
+          });
+          return;
+        }
       }
     } catch (e) {
-      // محرك بحث بديل
+      // في حال وجود مشكلة بالشبكة
     }
 
     setState(() {
       _loading = false;
-      _info = "فشل جلب النتائج، تأكد من الاتصال بالإنترنت";
+      _status = "لم نجد نتائج مطابقة، جرب كتابة الاسم بوضوح (مثال: One Piece)";
     });
   }
 
-  void _openDetails(dynamic anime) {
+  void _openDetails(ArchiveItem item) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => AnimeWatchScreen(anime: anime)),
+      MaterialPageRoute(builder: (_) => FileSelectorScreen(item: item)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F111A),
+      backgroundColor: const Color(0xFF0C0E14),
       appBar: AppBar(
-        title: const Text("المشاهدة المستقلة المباشرة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: const Color(0xFF161926),
+        title: const Text("البث الأرشيفي المباشر", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        backgroundColor: const Color(0xFF141824),
         centerTitle: true,
       ),
       body: Column(
@@ -87,23 +122,23 @@ class _AnimeDirectAppState extends State<AnimeDirectApp> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _controller,
+                    controller: _searchCtrl,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: "اسم الأنمي (One Piece, Naruto, Bleach)...",
-                      hintStyle: const TextStyle(color: Colors.white38),
+                      hintText: "ابحث عن أي أنمي أو فيلم (One Piece, Conan, Naruto)...",
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
                       filled: true,
-                      fillColor: const Color(0xFF1F2438),
+                      fillColor: const Color(0xFF1A1F2E),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     ),
-                    onSubmitted: _search,
+                    onSubmitted: _searchArchive,
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.search, color: Color(0xFF45F3FF)),
-                  onPressed: () => _search(_controller.text),
+                  onPressed: () => _searchArchive(_searchCtrl.text),
                 )
               ],
             ),
@@ -111,209 +146,190 @@ class _AnimeDirectAppState extends State<AnimeDirectApp> {
           if (_loading) const LinearProgressIndicator(color: Color(0xFF45F3FF)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Align(alignment: Alignment.centerRight, child: Text(_info, style: const TextStyle(color: Colors.white54, fontSize: 12))),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(_status, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
           ),
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(10),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.68,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-              ),
-              itemCount: _results.length,
-              itemBuilder: (context, index) {
-                final item = _results[index];
-                final poster = item['images']?['jpg']?['large_image_url'] ?? item['images']?['jpg']?['image_url'] ?? '';
-                final title = item['title'] ?? 'Anime';
-                final episodes = item['episodes']?.toString() ?? 'مستمر';
-
-                return GestureDetector(
-                  onTap: () => _openDetails(item),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF181C2B),
-                      borderRadius: BorderRadius.circular(8),
+            child: _items.isEmpty
+                ? Center(
+                    child: Text(
+                      _loading ? "جاري الفحص..." : "ابحث عن عنوان للبدء",
+                      style: const TextStyle(color: Colors.white24),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                            child: Image.network(
-                              poster,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(Icons.movie, size: 40, color: Colors.white24),
-                            ),
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.all(10),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.70,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                    ),
+                    itemCount: _items.length,
+                    itemBuilder: (context, index) {
+                      final item = _items[index];
+                      return GestureDetector(
+                        onTap: () => _openDetails(item),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151926),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(8),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
-                              const SizedBox(height: 4),
-                              Text("الحلقات: $episodes", style: const TextStyle(color: Color(0xFF45F3FF), fontSize: 11)),
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                  child: Image.network(
+                                    item.thumbnail,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Center(
+                                      child: Icon(Icons.video_library, size: 45, color: Colors.white24),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(
+                                  item.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             ],
                           ),
-                        )
-                      ],
-                    ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          )
+          ),
         ],
       ),
     );
   }
 }
 
-class AnimeWatchScreen extends StatefulWidget {
-  final dynamic anime;
-  const AnimeWatchScreen({super.key, required this.anime});
+class FileSelectorScreen extends StatefulWidget {
+  final ArchiveItem item;
+  const FileSelectorScreen({super.key, required this.item});
 
   @override
-  State<AnimeWatchScreen> createState() => _AnimeWatchScreenState();
+  State<FileSelectorScreen> createState() => _FileSelectorScreenState();
 }
 
-class _AnimeWatchScreenState extends State<AnimeWatchScreen> {
-  final List<String> _episodeList = [];
-  bool _fetching = false;
+class _FileSelectorScreenState extends State<FileSelectorScreen> {
+  List<Map<String, String>> _videoFiles = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    final total = widget.anime['episodes'] ?? 24;
-    final count = total is int ? (total > 50 ? 50 : total) : 24;
-    for (int i = 1; i <= count; i++) {
-      _episodeList.add("الحلقة $i");
-    }
+    _fetchDirectVideoFiles();
   }
 
-  // محرك استخراج مسار الفيديو المباشر الحقيقي للعمل
-  Future<void> _startStreaming(int epNum) async {
-    setState(() => _fetching = true);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF45F3FF))),
-    );
-
-    final rawTitle = (widget.anime['title'] ?? 'one piece').toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '-');
-    String directStreamUrl = "";
-
-    // 1. استخراج مباشر عبر واجهة البث المباشرة الحقيقية
+  // استخراج ملفات الفيديو الحقيقية (MP4) من metadata العنصر
+  Future<void> _fetchDirectVideoFiles() async {
     try {
-      final res = await http.get(Uri.parse("https://api.amvstr.me/api/v2/stream/$rawTitle-episode-$epNum")).timeout(const Duration(seconds: 4));
+      final url = Uri.parse("https://archive.org/metadata/${widget.item.identifier}");
+      final res = await http.get(url).timeout(const Duration(seconds: 10));
+
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        if (data['stream'] != null && data['stream']['multi'] != null) {
-          directStreamUrl = data['stream']['multi']['main']['url'] ?? '';
+        final files = data['files'] as List?;
+        if (files != null) {
+          final List<Map<String, String>> found = [];
+          for (var f in files) {
+            final name = f['name']?.toString() ?? '';
+            final format = (f['format']?.toString() ?? '').toLowerCase();
+
+            // تصفية ملفات الفيديو الحقيقية القابلة للتشغيل المباشر
+            if (name.endsWith('.mp4') || format.contains('h.264') || format.contains('mp4')) {
+              final directUrl = "https://archive.org/download/${widget.item.identifier}/$name";
+              final size = f['size'] != null ? "${(int.parse(f['size'].toString()) / (1024 * 1024)).toStringAsFixed(1)} MB" : "Direct Stream";
+              found.add({
+                "name": name,
+                "url": directUrl,
+                "size": size,
+              });
+            }
+          }
+
+          if (found.isNotEmpty) {
+            setState(() {
+              _videoFiles = found;
+              _loading = false;
+            });
+            return;
+          }
         }
       }
     } catch (_) {}
 
-    // 2. إذا لم يكن متوفراً، التوجيه لشبكة تدفق الأرشيف المباشرة للأنمي
-    if (directStreamUrl.isEmpty) {
-      directStreamUrl = "https://storage.googleapis.com/media-session/elephants-dream/the-wires.mp4"; // مسار بديل مفتوح يضمن العمل
-    }
+    setState(() {
+      _loading = false;
+    });
+  }
 
-    if (mounted) {
-      Navigator.pop(context); // إغلاق مؤشر التحميل
-      setState(() => _fetching = false);
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PlayerView(
-            url: directStreamUrl,
-            title: "${widget.anime['title']} - الحلقة $epNum",
-          ),
-        ),
-      );
-    }
+  void _playVideo(String url, String title) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NativePlayerScreen(url: url, title: title),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.anime['title'] ?? '';
-    final poster = widget.anime['images']?['jpg']?['large_image_url'] ?? '';
-    final synopsis = widget.anime['synopsis'] ?? 'لا يوجد وصف متوفر';
-
     return Scaffold(
-      backgroundColor: const Color(0xFF0F111A),
-      appBar: AppBar(title: Text(title, maxLines: 1), backgroundColor: const Color(0xFF161926)),
-      body: ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(poster, width: 100, height: 145, fit: BoxFit.cover),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                    const SizedBox(height: 6),
-                    Text("النوع: ${widget.anime['type'] ?? 'TV'}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: const Color(0xFF45F3FF).withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
-                      child: const Text("مشغل HLS مباشر بدون إعلانات", style: TextStyle(color: Color(0xFF45F3FF), fontSize: 11)),
-                    )
-                  ],
-                ),
-              )
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(synopsis, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          const Divider(color: Colors.white12, height: 28),
-          const Text("قائمة الحلقات (اضغط للتشغيل المباشر):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
-          const SizedBox(height: 10),
-          ...List.generate(_episodeList.length, (index) {
-            final epNum = index + 1;
-            return Card(
-              color: const Color(0xFF181C2B),
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: const Icon(Icons.play_circle_filled, color: Color(0xFF45F3FF)),
-                title: Text("الحلقة $epNum", style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-                onTap: _fetching ? null : () => _startStreaming(epNum),
-              ),
-            );
-          }),
-        ],
-      ),
+      backgroundColor: const Color(0xFF0C0E14),
+      appBar: AppBar(title: Text(widget.item.title, maxLines: 1), backgroundColor: const Color(0xFF141824)),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF45F3FF)))
+          : (_videoFiles.isEmpty
+              ? const Center(child: Text("لم نجد ملفات MP4 مباشرة لهذا العنصر، اختر عنصراً آخر.", style: TextStyle(color: Colors.white54)))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _videoFiles.length,
+                  itemBuilder: (context, index) {
+                    final f = _videoFiles[index];
+                    return Card(
+                      color: const Color(0xFF161A26),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.play_circle_filled, color: Color(0xFF45F3FF), size: 34),
+                        title: Text(f["name"]!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        subtitle: Text("الحجم: ${f["size"]}", style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                        trailing: ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF45F3FF), foregroundColor: Colors.black),
+                          onPressed: () => _playVideo(f["url"]!, f["name"]!),
+                          child: const Text("تشغيل"),
+                        ),
+                      ),
+                    );
+                  },
+                )),
     );
   }
 }
 
-class PlayerView extends StatefulWidget {
+class NativePlayerScreen extends StatefulWidget {
   final String url;
   final String title;
-  const PlayerView({super.key, required this.url, required this.title});
+  const NativePlayerScreen({super.key, required this.url, required this.title});
 
   @override
-  State<PlayerView> createState() => _PlayerViewState();
+  State<NativePlayerScreen> createState() => _NativePlayerScreenState();
 }
 
-class _PlayerViewState extends State<PlayerView> {
-  VideoPlayerController? _controller;
-  ChewieController? _chewie;
+class _NativePlayerScreenState extends State<NativePlayerScreen> {
+  VideoPlayerController? _videoCtrl;
+  ChewieController? _chewieCtrl;
   String? _error;
 
   @override
@@ -324,19 +340,18 @@ class _PlayerViewState extends State<PlayerView> {
 
   Future<void> _init() async {
     try {
-      _controller = VideoPlayerController.networkUrl(
+      _videoCtrl = VideoPlayerController.networkUrl(
         Uri.parse(widget.url),
-        httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        },
       );
-      await _controller!.initialize();
-      _chewie = ChewieController(
-        videoPlayerController: _controller!,
+      await _videoCtrl!.initialize();
+
+      _chewieCtrl = ChewieController(
+        videoPlayerController: _videoCtrl!,
         autoPlay: true,
         looping: false,
-        aspectRatio: _controller!.value.aspectRatio > 0 ? _controller!.value.aspectRatio : 16 / 9,
+        aspectRatio: _videoCtrl!.value.aspectRatio > 0 ? _videoCtrl!.value.aspectRatio : 16 / 9,
         allowFullScreen: true,
+        allowMuting: true,
       );
     } catch (e) {
       _error = e.toString();
@@ -346,8 +361,8 @@ class _PlayerViewState extends State<PlayerView> {
 
   @override
   void dispose() {
-    _chewie?.dispose();
-    _controller?.dispose();
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
     super.dispose();
   }
 
@@ -355,12 +370,12 @@ class _PlayerViewState extends State<PlayerView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 14)), backgroundColor: Colors.transparent),
+      appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 13)), backgroundColor: Colors.transparent),
       body: Center(
         child: _error != null
-            ? Text("خطأ في البث: $_error", style: const TextStyle(color: Colors.redAccent))
-            : (_chewie != null && _controller!.value.isInitialized
-                ? Chewie(controller: _chewie!)
+            ? Text("خطأ في تشغيل الفيديو: $_error", style: const TextStyle(color: Colors.redAccent))
+            : (_chewieCtrl != null && _videoCtrl!.value.isInitialized
+                ? Chewie(controller: _chewieCtrl!)
                 : const CircularProgressIndicator(color: Color(0xFF45F3FF))),
       ),
     );
