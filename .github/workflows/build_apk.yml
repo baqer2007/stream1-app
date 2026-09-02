@@ -22,8 +22,19 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create Android Platform Template
-        run: flutter create . --platforms=android --project-name=stream1_app
+      - name: Setup Android Project
+        run: |
+          flutter create . --platforms=android --project-name=stream1_app
+          python3 -c '
+          import xml.etree.ElementTree as ET
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path, "r") as f:
+              content = f.read()
+          if "android.permission.INTERNET" not in content:
+              content = content.replace("<application", "<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application")
+          with open(path, "w") as f:
+              f.write(content)
+          '
 
       - name: Install dependencies
         run: flutter pub get
