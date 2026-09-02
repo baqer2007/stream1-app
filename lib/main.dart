@@ -35,7 +35,7 @@ class _StreamHomeState extends State<StreamHome> {
     try {
       final searchUri = Uri.parse("https://akwam.to/search?q=${Uri.encodeComponent(title)}");
       final response = await http.get(searchUri, headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
       });
 
       if (response.statusCode == 200) {
@@ -46,9 +46,9 @@ class _StreamHomeState extends State<StreamHome> {
           final pageRes = await http.get(Uri.parse(firstLink), headers: {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
           });
-          
+
           final pageHtml = pageRes.body;
-          final regex = RegExp(r'(https?:\/\/[^\s"'\<\>]+\.(?:mp4|m3u8)[^\s"'\<\>]*)');
+          final regex = RegExp(r'https?://[^\s"<>]+\.(mp4|m3u8)[^\s"<>]*');
           final match = regex.firstMatch(pageHtml);
 
           if (match != null) {
