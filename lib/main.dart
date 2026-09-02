@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,7 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _performSearch("One Piece");
   }
 
-  // محرك بحث هجين مجاني بالكامل بدون الحاجة لأي API Key
   Future<void> _performSearch(String query) async {
     final term = query.trim();
     if (term.isEmpty) return;
@@ -80,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     List<MediaItem> results = [];
 
-    // 1. البحث في قاعدة بيانات الأنمي العالمية (Jikan MAL)
+    // 1. فحص قاعدة بيانات الأنمي العالمية
     try {
       final animeUri = Uri.parse("https://api.jikan.moe/v4/anime?q=${Uri.encodeComponent(term)}&limit=10");
       final animeRes = await http.get(animeUri).timeout(const Duration(seconds: 7));
@@ -101,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (_) {}
 
-    // 2. البحث في قاعدة بيانات الأفلام والمسلسلات العامة (TVMaze)
+    // 2. فحص قاعدة بيانات الأفلام والمسلسلات العامة
     try {
       final tvUri = Uri.parse("https://api.tvmaze.com/search/shows?q=${Uri.encodeComponent(term)}");
       final tvRes = await http.get(tvUri).timeout(const Duration(seconds: 7));
@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final premiered = show['premiered']?.toString() ?? '';
             final year = premiered.isNotEmpty && premiered.length >= 4 ? premiered.substring(0, 4) : 'TV';
             results.add(MediaItem(
-              id: show['id']?.toString() ?? '',
+              id: show['externals']?['imdb'] ?? show['id']?.toString() ?? '',
               title: show['name'] ?? 'Show',
               poster: show['image']?['medium'] ?? show['image']?['original'] ?? 'https://via.placeholder.com/300x450/1a1d24/ffffff?text=No+Poster',
               year: year,
@@ -129,8 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLoading = false;
       _items = results;
       _message = results.isNotEmpty
-          ? "تم العثور على ${results.length} نتيجة مطابقة لـ \"$term\""
-          : "لم يتم العثور على نتائج مطابقة لـ \"$term\"";
+          ? "تم العثور على ${results.length} نتيجة لـ \"$term\""
+          : "لم يتم العثور على نتائج لـ \"$term\"";
     });
   }
 
@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 textInputAction: TextInputAction.search,
                 onSubmitted: _performSearch,
                 decoration: InputDecoration(
-                  hintText: "ابحث عن أي فيلم أو أنمي (One Piece, Batman, Naruto)...",
+                  hintText: "ابحث بالاسم (One Piece, Batman, Naruto)...",
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
                   border: InputBorder.none,
                   prefixIcon: const Icon(Icons.search, color: Color(0xFF45F3FF)),
@@ -188,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _items.isEmpty
                 ? Center(
                     child: Text(
-                      _isLoading ? "جاري فحص الخوادم..." : "اكتب اسم العمل واضغط بحث",
+                      _isLoading ? "جاري الفحص..." : "اكتب اسم العمل واضغط بحث",
                       style: const TextStyle(color: Colors.white24),
                     ),
                   )
@@ -209,9 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF181B24),
                             borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 4, offset: const Offset(0, 2))
-                            ],
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(10),
@@ -288,42 +285,56 @@ class _StreamExtractorScreenState extends State<StreamExtractorScreen> {
   @override
   void initState() {
     super.initState();
-    _setupServers();
+    _setupRealServers();
   }
 
-  void _setupServers() {
+  void _setupRealServers() {
     final title = Uri.encodeComponent(widget.item.title);
+    final id = widget.item.id;
+
     setState(() {
-      _servers.addAll([
-        {
-          "name": "سيرفر البث المباشر (HLS Fast Stream)",
-          "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-          "quality": "1080p Auto",
-        },
-        {
-          "name": "سيرفر البث الاحتياطي (MP4 Direct)",
-          "url": "https://vjs.zencdn.net/v/oceans.mp4",
-          "quality": "720p Stable",
-        },
-        {
-          "name": "سيرفر فك تشفير المحتوى المباشر",
-          "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-          "quality": "Full HD Multi-Server",
-        },
-      ]);
+      // 1. سيرفر البث المباشر الفعلي المخصص للأفلام والمسلسلات والأنمي
+      _servers.add({
+        "name": "سيرفر البث الحقيقي (MultiEmbed HD)",
+        "url": "https://multiembed.mov/?video_id=$title",
+        "quality": "1080p / Multi Servers",
+        "isWeb": "true",
+      });
+
+      // 2. سيرفر البث البديل (SuperEmbed)
+      _servers.add({
+        "name": "سيرفر المشاهدة السريع (VidLink)",
+        "url": "https://vidlink.pro/movie/$title",
+        "quality": "FHD Multi-Player",
+        "isWeb": "true",
+      });
+
+      // 3. سيرفر البث المباشر (2Embed)
+      _servers.add({
+        "name": "سيرفر البث السحابي (2Embed Stream)",
+        "url": "https://www.2embed.cc/embed/$title",
+        "quality": "Direct Embed Player",
+        "isWeb": "true",
+      });
     });
   }
 
-  void _play(String url, String serverName) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PlayerView(
-          url: url,
-          title: "${widget.item.title} ($serverName)",
+  void _play(String url, String serverName, bool isWeb) {
+    if (isWeb) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WebStreamPlayerScreen(url: url, title: "${widget.item.title} - $serverName"),
         ),
-      ),
-    );
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NativePlayerScreen(url: url, title: "${widget.item.title} - $serverName"),
+        ),
+      );
+    }
   }
 
   @override
@@ -352,7 +363,7 @@ class _StreamExtractorScreenState extends State<StreamExtractorScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(color: const Color(0xFF45F3FF).withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-                      child: const Text("سيرفرات جاهزة للبث", style: TextStyle(color: Color(0xFF45F3FF), fontSize: 12)),
+                      child: const Text("سيرفرات البث الفعلي جاهزة", style: TextStyle(color: Color(0xFF45F3FF), fontSize: 12)),
                     ),
                   ],
                 ),
@@ -368,7 +379,7 @@ class _StreamExtractorScreenState extends State<StreamExtractorScreen> {
               style: const TextStyle(color: Colors.white60, fontSize: 12),
             ),
           const SizedBox(height: 24),
-          const Text("اختر سيرفر المشاهدة:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const Text("اختر سيرفر المشاهدة الحقيقي:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           ..._servers.map((s) => Card(
                 color: const Color(0xFF1B202D),
@@ -383,8 +394,8 @@ class _StreamExtractorScreenState extends State<StreamExtractorScreen> {
                       backgroundColor: const Color(0xFF45F3FF),
                       foregroundColor: Colors.black,
                     ),
-                    onPressed: () => _play(s["url"]!, s["name"]!),
-                    child: const Text("تشغيل"),
+                    onPressed: () => _play(s["url"]!, s["name"]!, s["isWeb"] == "true"),
+                    child: const Text("تشغيل العمل 🎬"),
                   ),
                 ),
               )),
@@ -394,16 +405,70 @@ class _StreamExtractorScreenState extends State<StreamExtractorScreen> {
   }
 }
 
-class PlayerView extends StatefulWidget {
+// المشغل السحابي الحقيقي لسيرفرات الأفلام والأنمي
+class WebStreamPlayerScreen extends StatefulWidget {
   final String url;
   final String title;
-  const PlayerView({super.key, required this.url, required this.title});
+  const WebStreamPlayerScreen({super.key, required this.url, required this.title});
 
   @override
-  State<PlayerView> createState() => _PlayerViewState();
+  State<WebStreamPlayerScreen> createState() => _WebStreamPlayerScreenState();
 }
 
-class _PlayerViewState extends State<PlayerView> {
+class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
+  late final WebViewController _controller;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent("Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            setState(() {
+              _loading = false;
+            });
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: Text(widget.title, style: const TextStyle(fontSize: 14)),
+        backgroundColor: Colors.black,
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _controller),
+          if (_loading)
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xFF45F3FF)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// المشغل المباشر لملفات MP4 / M3U8
+class NativePlayerScreen extends StatefulWidget {
+  final String url;
+  final String title;
+  const NativePlayerScreen({super.key, required this.url, required this.title});
+
+  @override
+  State<NativePlayerScreen> createState() => _NativePlayerScreenState();
+}
+
+class _NativePlayerScreenState extends State<NativePlayerScreen> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _error;
@@ -420,8 +485,7 @@ class _PlayerViewState extends State<PlayerView> {
       _videoPlayerController = VideoPlayerController.networkUrl(
         uri,
         httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-          'Referer': '${uri.scheme}://${uri.host}/',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36',
         },
       );
 
@@ -436,12 +500,6 @@ class _PlayerViewState extends State<PlayerView> {
             : 16 / 9,
         allowFullScreen: true,
         allowMuting: true,
-        errorBuilder: (context, msg) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text("تنبيه السيرفر: $msg", textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent)),
-          ),
-        ),
       );
     } catch (e) {
       _error = e.toString();
@@ -461,16 +519,10 @@ class _PlayerViewState extends State<PlayerView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(fontSize: 14)),
-        backgroundColor: Colors.transparent,
-      ),
+      appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 14)), backgroundColor: Colors.transparent),
       body: Center(
         child: _error != null
-            ? Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text("تعذر التشغيل:\n$_error", textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent)),
-              )
+            ? Text("تعذر التشغيل: $_error", style: const TextStyle(color: Colors.redAccent))
             : (_chewieController != null && _videoPlayerController!.value.isInitialized
                 ? Chewie(controller: _chewieController!)
                 : const CircularProgressIndicator(color: Color(0xFF45F3FF))),

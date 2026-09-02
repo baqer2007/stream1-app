@@ -1,5 +1,5 @@
 name: stream1_app
-description: A new Flutter streaming app.
+description: A complete cinema and anime streaming app.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,10 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  html: ^0.15.4
   video_player: ^2.8.2
   chewie: ^1.7.5
-  cupertino_icons: ^1.0.6
+  webview_flutter: ^4.7.0
 
 dev_dependencies:
   flutter_test:
