@@ -1,0 +1,7 @@
+{
+  "name": "Flutter Environment",
+  "image": "mcr.microsoft.com/devcontainers/universal:latest",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/flutter:2": {}
+  }
+}
