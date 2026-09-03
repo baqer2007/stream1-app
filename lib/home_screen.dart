@@ -16,69 +16,96 @@ class _HomeScreenState extends State<HomeScreen> {
   String _statusMessage = '';
   final TextEditingController _searchController = TextEditingController();
 
+  final Map<String, String> _headers = {
+    'User-Agent': 'Cinemana/3.0.0 (Android)',
+    'Accept': 'application/json',
+    'Referer': 'https://cinemana.shabakaty.com/',
+  };
+
   @override
   void initState() {
     super.initState();
     _fetchMovies();
   }
 
-  // دالة موحدة لجلب أحدث الأفلام أو تنفيذ البحث
   Future<void> _fetchMovies([String query = '']) async {
     setState(() {
       _isLoading = true;
       _statusMessage = '';
     });
 
-    // رابط أحدث الأعمال أو رابط البحث الرسمي في تطبيق سينمانا
-    final String url = query.trim().isEmpty
-        ? 'https://cinemana.shabakaty.com/api/android/allVideo/page/0/level/0'
-        : 'https://cinemana.shabakaty.com/api/android/videoSearch/title/${Uri.encodeComponent(query.trim())}';
+    final trimmedQuery = query.trim();
+    List<String> targetUrls = [];
 
-    try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'User-Agent': 'Cinemana/3.0.0 (Android)',
-          'Accept': 'application/json',
-          'Referer': 'https://cinemana.shabakaty.com/',
-        },
-      );
+    if (trimmedQuery.isNotEmpty) {
+      // روابط البحث المعتمدة
+      targetUrls = [
+        'https://cinemana.shabakaty.com/api/android/videoSearch/title/${Uri.encodeComponent(trimmedQuery)}',
+        'https://cinemana.shabakaty.com/api/android/videoSearch/query/${Uri.encodeComponent(trimmedQuery)}',
+      ];
+    } else {
+      // روابط جلب الأفلام (رابط الصفحة الأولى، أو الصفحة الرئيسية)
+      targetUrls = [
+        'https://cinemana.shabakaty.com/api/android/allVideo/page/1',
+        'https://cinemana.shabakaty.com/api/android/homePage',
+        'https://cinemana.shabakaty.com/api/android/allVideo/page/0',
+      ];
+    }
 
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
+    bool success = false;
 
-        List<dynamic> resultList = [];
-        if (decoded is List) {
-          resultList = decoded;
-        } else if (decoded is Map) {
-          if (decoded['items'] is List) {
-            resultList = decoded['items'];
-          } else if (decoded['videos'] is List) {
-            resultList = decoded['videos'];
-          } else if (decoded['data'] is List) {
-            resultList = decoded['data'];
+    for (String url in targetUrls) {
+      try {
+        final response = await http.get(Uri.parse(url), headers: _headers);
+
+        if (response.statusCode == 200) {
+          final decoded = json.decode(response.body);
+          List<dynamic> parsedList = [];
+
+          if (decoded is List) {
+            parsedList = decoded;
+          } else if (decoded is Map) {
+            // معالجة هياكل الرد المختلفة سواء كانت items أو أقسام الصفحة الرئيسية
+            if (decoded['items'] is List) {
+              parsedList = decoded['items'];
+            } else if (decoded['videos'] is List) {
+              parsedList = decoded['videos'];
+            } else if (decoded['data'] is List) {
+              parsedList = decoded['data'];
+            } else if (decoded['sections'] is List) {
+              // إذا كان رد الصفحة الرئيسية مقسم لأقسام، نقوم بجمع كل الفيديوهات معاً
+              for (var sec in decoded['sections']) {
+                if (sec['items'] is List) {
+                  parsedList.addAll(sec['items']);
+                }
+              }
+            }
+          }
+
+          if (parsedList.isNotEmpty) {
+            setState(() {
+              _items = parsedList;
+              success = true;
+            });
+            break; // التوقف بمجرد نجاح المسار والحصول على المحتوى
           }
         }
-
-        setState(() {
-          _items = resultList;
-          if (_items.isEmpty) {
-            _statusMessage = 'لم يتم العثور على نتائج.';
-          }
-        });
-      } else {
-        setState(() {
-          _statusMessage = 'فشل الاتصال بالخادم (${response.statusCode})';
-        });
+      } catch (e) {
+        debugPrint('Fetch attempt failed on $url: $e');
       }
-    } catch (e) {
+    }
+
+    if (!success && mounted) {
       setState(() {
-        _statusMessage = 'خطأ في جلب البيانات: تأكد من اتصالك بشبكة تدعم سينمانا.';
+        _items = [];
+        _statusMessage = trimmedQuery.isEmpty
+            ? 'تعذر تحميل مكتبة الأفلام، تأكد من الاتصال بشبكة إيرثلنك/شبكتي.'
+            : 'لم يتم العثور على نتائج للبحث.';
       });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -102,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (value) => _fetchMovies(value),
               decoration: InputDecoration(
-                hintText: 'ابحث عن فيلم أو مسلسل واضغط بحث...',
+                hintText: 'ابحث عن اسم الفيلم واضغط Enter...',
                 hintStyle: const TextStyle(color: Colors.white54),
                 prefixIcon: IconButton(
                   icon: const Icon(Icons.search, color: Colors.redAccent),
@@ -127,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // شبكة الأفلام
+          // شبكة البوسترات
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
@@ -136,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(20.0),
                           child: Text(
-                            _statusMessage.isEmpty ? 'لا توجد بيانات متاحة' : _statusMessage,
+                            _statusMessage,
                             textAlign: TextAlign.center,
                             style: const TextStyle(color: Colors.white70, fontSize: 14),
                           ),
