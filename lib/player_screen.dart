@@ -26,7 +26,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
-  String? _debugUrl;
+  String _rawResponseDump = '';
 
   final Map<String, String> _networkHeaders = {
     'User-Agent': 'Cinemana/3.0.0 (Android)',
@@ -38,101 +38,88 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _resolveAndStartStream();
+    _fetchStreamData();
   }
 
-  Future<void> _resolveAndStartStream() async {
-    String? finalStreamUrl;
-    String realVideoNb = widget.videoId;
+  // استخراج الروابط بالبحث الذكي داخل أي خريطة أو قائمة
+  String? _searchForStream(dynamic data) {
+    if (data == null) return null;
 
-    // 1. فحص ما إذا كان المعرف هو Post ID واستخراج الـ videoNb الحقيقي
-    try {
-      final postUrl = Uri.parse(
-          'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}');
-      final postRes = await http.get(postUrl, headers: _networkHeaders);
-
-      if (postRes.statusCode == 200) {
-        final decoded = json.decode(postRes.body);
-        List videos = [];
-        if (decoded is List) {
-          videos = decoded;
-        } else if (decoded is Map && decoded['items'] is List) {
-          videos = decoded['items'];
-        }
-
-        if (videos.isNotEmpty) {
-          final firstItem = videos[0];
-          if (firstItem is Map) {
-            _movieTitle ??= firstItem['ar_title'] ?? firstItem['en_title'];
-            _movieDescription ??= firstItem['ar_content'] ?? firstItem['en_content'];
-            if (firstItem['nb'] != null) {
-              realVideoNb = firstItem['nb'].toString();
-            }
-          }
+    if (data is Map) {
+      // فحص الحقول المعتادة
+      final keys = [
+        'videoUrl',
+        'containerUrl',
+        'fileUrl',
+        'directUrl',
+        'url',
+        'stream_url',
+        'streamUrl'
+      ];
+      for (var k in keys) {
+        if (data[k] != null) {
+          final val = data[k].toString().trim();
+          if (val.startsWith('http')) return val;
         }
       }
-    } catch (e) {
-      debugPrint('Error getting post videos: $e');
-    }
 
-    // 2. طلب سيرفرات الفيديو بالمعرف الداخلي videoNb
-    final serverUrls = [
-      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/$realVideoNb',
+      // البحث في العناصر الداخلية
+      for (var val in data.values) {
+        if (val is Map || val is List) {
+          final res = _searchForStream(val);
+          if (res != null) return res;
+        }
+      }
+    } else if (data is List) {
+      for (var item in data) {
+        final res = _searchForStream(item);
+        if (res != null) return res;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _fetchStreamData() async {
+    String? finalStreamUrl;
+    String inspectedApi = '';
+
+    // نقاط نهاية سينمانا لجلب الملفات وروابط المشاهدة
+    final endpoints = [
+      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
       'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/videoFiles/id/$realVideoNb',
     ];
 
-    for (final sUrl in serverUrls) {
+    for (final api in endpoints) {
+      inspectedApi = api;
       try {
-        final res = await http.get(Uri.parse(sUrl), headers: _networkHeaders);
-        if (res.statusCode == 200) {
-          final dynamic data = json.decode(res.body);
-          List items = [];
-          if (data is List) {
-            items = data;
-          } else if (data is Map) {
-            if (data['files'] is List) items = data['files'];
-            else if (data['videos'] is List) items = data['videos'];
-            else items = [data];
-          }
+        final res = await http.get(Uri.parse(api), headers: _networkHeaders);
+        _rawResponseDump = '[$api]\nكود الاستجابة: ${res.statusCode}\nالمحتوى:\n${res.body.length > 500 ? res.body.substring(0, 500) + '...' : res.body}';
 
-          for (var item in items) {
-            if (item is Map) {
-              _movieTitle ??= item['ar_title'] ?? item['en_title'];
-              _movieDescription ??= item['ar_content'] ?? item['en_content'];
+        if (res.statusCode == 200 && res.body.isNotEmpty) {
+          final decoded = json.decode(res.body);
+          finalStreamUrl = _searchForStream(decoded);
 
-              // استخراج الرابط المباشر من السيرفر
-              final url = item['videoUrl'] ??
-                  item['containerUrl'] ??
-                  item['fileUrl'] ??
-                  item['streamUrl'];
-
-              if (url != null && url.toString().startsWith('http')) {
-                finalStreamUrl = url.toString();
-                break;
-              }
-            }
+          if (finalStreamUrl != null && finalStreamUrl.isNotEmpty) {
+            break;
           }
         }
       } catch (e) {
-        debugPrint('Failed to query $sUrl: $e');
+        _rawResponseDump = 'خطأ اتصال بالمسار $api: $e';
       }
-
-      if (finalStreamUrl != null) break;
     }
 
     if (finalStreamUrl == null || finalStreamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              'لم يعثر السيرفر على رابط صالح لـ ID: $realVideoNb.\nتأكد من توفر الفيلم على شبكتي.';
+          _errorMessage = _rawResponseDump;
         });
       }
       return;
     }
 
-    // 3. ضبط المعامل لـ inline
+    // تعديل معامل التنزيل إلى بث مباشر
     if (finalStreamUrl.contains('response-content-disposition=attachment')) {
       finalStreamUrl = finalStreamUrl.replaceAll(
         'response-content-disposition=attachment',
@@ -143,16 +130,11 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       finalStreamUrl = '$finalStreamUrl${sep}response-content-disposition=inline';
     }
 
-    _debugUrl = finalStreamUrl;
-
-    // 4. تشغيل الفيديو
+    // تشغيل الفيديو عبر المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(finalStreamUrl),
-        httpHeaders: {
-          'User-Agent': 'Cinemana/3.0.0 (Android)',
-          'Referer': 'https://cinemana.shabakaty.com/',
-        },
+        httpHeaders: _networkHeaders,
       );
 
       await _videoPlayerController!.initialize();
@@ -178,7 +160,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\nالرابط: $_debugUrl';
+      _errorMessage = 'خطأ أثناء تهيئة المشغل:\n$e';
     }
 
     if (mounted) {
@@ -205,14 +187,20 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
           : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: SelectableText(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                      textAlign: TextAlign.center,
-                    ),
+              ? SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'بيانات الخادم المستلمة:',
+                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 10),
+                      SelectableText(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
+                      ),
+                    ],
                   ),
                 )
               : SingleChildScrollView(
