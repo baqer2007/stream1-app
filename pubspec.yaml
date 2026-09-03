@@ -1,5 +1,5 @@
 name: stream1_app
-description: A complete cinema and anime streaming app.
+description: "Cinemana streaming player application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,10 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  video_player: ^2.8.0
+  chewie: ^1.7.0
   http: ^1.2.0
-  video_player: ^2.8.2
-  chewie: ^1.7.5
-  webview_flutter: ^4.7.0
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
