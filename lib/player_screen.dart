@@ -26,7 +26,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
-  String _debugLog = '';
 
   final Map<String, String> _networkHeaders = {
     'User-Agent': 'Cinemana/3.0.0 (Android)',
@@ -38,112 +37,79 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _startFetch();
+    _fetchSignedStream();
   }
 
-  // دالة متقدمة لاستخراج الروابط أو بناء الرابط في حال وجد اسم الملف والسيرفر
-  String? _extractStream(dynamic obj) {
-    if (obj == null) return null;
+  // البحث عن الروابط الموقعة الجاهزة
+  String? _findSignedUrl(dynamic json) {
+    if (json == null) return null;
 
-    if (obj is Map) {
-      // 1. فحص الروابط الصريحة
-      for (var key in ['videoUrl', 'containerUrl', 'fileUrl', 'directUrl', 'streamUrl', 'url']) {
-        if (obj[key] != null && obj[key].toString().trim().startsWith('http')) {
-          return obj[key].toString().trim();
+    if (json is Map) {
+      // فحص الحقول التي تحتوي على رابط كامل موقّع
+      for (var key in ['videoUrl', 'containerUrl', 'fileUrl', 'url']) {
+        if (json[key] != null) {
+          final str = json[key].toString().trim();
+          if (str.startsWith('http') && (str.contains('AWSAccessKeyId') || str.contains('Signature') || str.endsWith('.mp4'))) {
+            return str;
+          }
         }
       }
 
-      // 2. فحص إن كان يعيد كائن سيرفر به اسم ملف
-      if (obj['fileFile'] != null || obj['file'] != null || obj['fileName'] != null) {
-        String fName = (obj['fileFile'] ?? obj['file'] ?? obj['fileName']).toString();
-        // إذا كان يحتوي على اسم الملف فقط
-        if (!fName.startsWith('http') && fName.isNotEmpty) {
-          return 'https://cndw1.shabakaty.com/vascin24-mp4/$fName?response-content-disposition=inline';
-        }
-      }
-
-      for (var v in obj.values) {
+      for (var v in json.values) {
         if (v is Map || v is List) {
-          final res = _extractStream(v);
+          final res = _findSignedUrl(v);
           if (res != null) return res;
         }
       }
-    } else if (obj is List) {
-      for (var item in obj) {
-        final res = _extractStream(item);
+    } else if (json is List) {
+      // تفضيل روابط mp4 إن وجدت الجودات
+      for (var item in json) {
+        final res = _findSignedUrl(item);
         if (res != null) return res;
       }
     }
     return null;
   }
 
-  Future<void> _startFetch() async {
+  Future<void> _fetchSignedStream() async {
     String? streamUrl;
-    StringBuffer logs = StringBuffer();
+    StringBuffer logBuffer = StringBuffer();
 
-    // 1. أولاً نجرب مسار الحلقات للـ post لمعرفة معرّف الفيديو الحقيقي لكل فيلم
-    String targetId = widget.videoId;
-    final String postCheckUrl =
-        'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}';
+    // المسارات الدقيقة مع معامل level/0 الذي يطلبه سيرفر شبكتي لإرجاع التوقيع
+    final List<String> endpoints = [
+      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}/level/0',
+      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}/level/0',
+      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
+    ];
 
-    try {
-      final postRes = await http.get(Uri.parse(postCheckUrl), headers: _networkHeaders);
-      logs.writeln('طلب allVideo: ${postRes.statusCode}');
+    for (final ep in endpoints) {
+      try {
+        final res = await http.get(Uri.parse(ep), headers: _networkHeaders);
+        logBuffer.writeln('[$ep] => ${res.statusCode}');
 
-      if (postRes.statusCode == 200) {
-        final body = json.decode(postRes.body);
-        List videos = [];
-        if (body is List) videos = body;
-        else if (body is Map && body['items'] is List) videos = body['items'];
+        if (res.statusCode == 200 && res.body.isNotEmpty) {
+          final dynamic data = json.decode(res.body);
 
-        if (videos.isNotEmpty && videos[0] is Map) {
-          final v = videos[0];
-          logs.writeln('تم العثور على حلقة/فيديو داخلي: nb=${v['nb']}');
-          if (v['nb'] != null) {
-            targetId = v['nb'].toString();
+          // حفظ العنوان والوصف
+          if (data is List && data.isNotEmpty && data[0] is Map) {
+            _movieTitle ??= data[0]['ar_title'] ?? data[0]['en_title'];
+            _movieDescription ??= data[0]['ar_content'] ?? data[0]['en_content'];
+          } else if (data is Map) {
+            _movieTitle ??= data['ar_title'] ?? data['en_title'];
+            _movieDescription ??= data['ar_content'] ?? data['en_content'];
           }
-          // فحص مباشر للملفات داخل الرد
-          streamUrl = _extractStream(v);
-        }
-      }
-    } catch (e) {
-      logs.writeln('فشل فحص allVideo: $e');
-    }
 
-    // 2. إذا لم نجد الرابط، نستدعي مسارات السيرفرات المتعددة
-    if (streamUrl == null) {
-      final endpoints = [
-        'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/$targetId',
-        'https://cinemana.shabakaty.com/api/android/videoFiles/id/$targetId',
-        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/$targetId',
-      ];
-
-      for (var ep in endpoints) {
-        try {
-          final res = await http.get(Uri.parse(ep), headers: _networkHeaders);
-          logs.writeln('[$ep] -> ${res.statusCode}');
-
-          if (res.statusCode == 200 && res.body.isNotEmpty) {
-            final data = json.decode(res.body);
-
-            // طباعة المفاتيح الموجودة بالرد للمساعدة في التشخيص
-            if (data is List && data.isNotEmpty && data[0] is Map) {
-              logs.writeln('مفاتيح الرد: ${data[0].keys.toList()}');
-              _movieTitle ??= data[0]['ar_title'] ?? data[0]['en_title'];
-              _movieDescription ??= data[0]['ar_content'] ?? data[0]['en_content'];
-            } else if (data is Map) {
-              logs.writeln('مفاتيح الرد: ${data.keys.toList()}');
-            }
-
-            streamUrl = _extractStream(data);
-            if (streamUrl != null) {
-              logs.writeln('تم استخراج الرابط بنجاح!');
-              break;
-            }
+          final candidate = _findSignedUrl(data);
+          if (candidate != null && candidate.isNotEmpty) {
+            streamUrl = candidate;
+            logBuffer.writeln('تم العثور على رابط موقع بنجاح');
+            break;
           }
-        } catch (e) {
-          logs.writeln('خطأ في $ep: $e');
         }
+      } catch (e) {
+        logBuffer.writeln('خطأ في $ep: $e');
       }
     }
 
@@ -151,13 +117,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = logs.toString();
+          _errorMessage = 'لم نتمكن من استخراج رابط التوقيع الحي:\n\n$logBuffer';
         });
       }
       return;
     }
 
-    // تعديل الترويسة للـ inline
+    // تبديل الترويسة إلى inline للبث الحي
     if (streamUrl.contains('response-content-disposition=attachment')) {
       streamUrl = streamUrl.replaceAll(
         'response-content-disposition=attachment',
@@ -168,7 +134,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       streamUrl = '$streamUrl${sep}response-content-disposition=inline';
     }
 
-    // بدء المشغل
+    // تشغيل الفيديو
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
@@ -189,7 +155,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'تعذر البث: $error',
+                'تعذر تشغيل البث: $error',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -198,7 +164,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تهيئة المشغل:\n$e\nالرابط:\n$streamUrl\n\nالسجلات:\n$logs';
+      _errorMessage = 'فشل أثناء تهيئة المشغل:\n$e\n\nالرابط المستلم:\n$streamUrl';
     }
 
     if (mounted) {
@@ -231,7 +197,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'بيانات الاتصال وتفاصيل الاستجابة:',
+                        'تفاصيل الاستجابة والتوقيع:',
                         style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: 12),
