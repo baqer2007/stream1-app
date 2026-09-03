@@ -11,42 +11,75 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List _items = [];
+  List<dynamic> _items = [];
   bool _isLoading = true;
+  String _statusMessage = '';
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadItems();
+    _fetchMovies();
   }
 
-  // جلب أحدث الأفلام أو البحث
-  Future<void> _loadItems([String query = '']) async {
-    setState(() => _isLoading = true);
-    
-    // API سينمانا لجلب أحدث الأفلام أو نتائج البحث
-    final String endpoint = query.isEmpty
+  // دالة موحدة لجلب أحدث الأفلام أو تنفيذ البحث
+  Future<void> _fetchMovies([String query = '']) async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = '';
+    });
+
+    // رابط أحدث الأعمال أو رابط البحث الرسمي في تطبيق سينمانا
+    final String url = query.trim().isEmpty
         ? 'https://cinemana.shabakaty.com/api/android/allVideo/page/0/level/0'
-        : 'https://cinemana.shabakaty.com/api/android/videoSearch/page/0/title/${Uri.encodeComponent(query)}';
+        : 'https://cinemana.shabakaty.com/api/android/videoSearch/title/${Uri.encodeComponent(query.trim())}';
 
     try {
-      final res = await http.get(Uri.parse(endpoint), headers: {
-        'User-Agent': 'Cinemana/3.0.0 (Android)',
-        'Accept': 'application/json',
-      });
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Cinemana/3.0.0 (Android)',
+          'Accept': 'application/json',
+          'Referer': 'https://cinemana.shabakaty.com/',
+        },
+      );
 
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+
+        List<dynamic> resultList = [];
+        if (decoded is List) {
+          resultList = decoded;
+        } else if (decoded is Map) {
+          if (decoded['items'] is List) {
+            resultList = decoded['items'];
+          } else if (decoded['videos'] is List) {
+            resultList = decoded['videos'];
+          } else if (decoded['data'] is List) {
+            resultList = decoded['data'];
+          }
+        }
+
         setState(() {
-          _items = data is List ? data : (data['items'] ?? []);
+          _items = resultList;
+          if (_items.isEmpty) {
+            _statusMessage = 'لم يتم العثور على نتائج.';
+          }
+        });
+      } else {
+        setState(() {
+          _statusMessage = 'فشل الاتصال بالخادم (${response.statusCode})';
         });
       }
     } catch (e) {
-      debugPrint('Fetch items error: $e');
+      setState(() {
+        _statusMessage = 'خطأ في جلب البيانات: تأكد من اتصالك بشبكة تدعم سينمانا.';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-
-    setState(() => _isLoading = false);
   }
 
   @override
@@ -67,21 +100,25 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchController,
               style: const TextStyle(color: Colors.white),
               textInputAction: TextInputAction.search,
-              onSubmitted: (val) => _loadItems(val),
+              onSubmitted: (value) => _fetchMovies(value),
               decoration: InputDecoration(
-                hintText: 'ابحث عن فيلم أو مسلسل...',
+                hintText: 'ابحث عن فيلم أو مسلسل واضغط بحث...',
                 hintStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.search, color: Colors.redAccent),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear, color: Colors.white54),
-                  onPressed: () {
-                    _searchController.clear();
-                    _loadItems();
-                  },
+                prefixIcon: IconButton(
+                  icon: const Icon(Icons.search, color: Colors.redAccent),
+                  onPressed: () => _fetchMovies(_searchController.text),
                 ),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white54),
+                        onPressed: () {
+                          _searchController.clear();
+                          _fetchMovies();
+                        },
+                      )
+                    : null,
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -90,90 +127,107 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // شبكة عرض الأفلام
+          // شبكة الأفلام
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
                 : _items.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'لم يتم العثور على محتوى',
-                          style: TextStyle(color: Colors.white70),
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Text(
+                            _statusMessage.isEmpty ? 'لا توجد بيانات متاحة' : _statusMessage,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white70, fontSize: 14),
+                          ),
                         ),
                       )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          childAspectRatio: 0.65,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                        ),
-                        itemCount: _items.length,
-                        itemBuilder: (context, index) {
-                          final item = _items[index];
-                          final title = item['ar_title'] ?? item['en_title'] ?? '';
-                          final posterUrl = item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? '';
-                          final videoId = item['nb']?.toString() ?? '';
+                    : RefreshIndicator(
+                        onRefresh: () => _fetchMovies(_searchController.text),
+                        child: GridView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            childAspectRatio: 0.65,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                          ),
+                          itemCount: _items.length,
+                          itemBuilder: (context, index) {
+                            final item = _items[index];
+                            final title = item['ar_title'] ?? item['en_title'] ?? 'بدون عنوان';
+                            final poster = item['imgMediumThumbObjUrl'] ??
+                                item['imgThumbObjUrl'] ??
+                                item['imgObjUrl'] ??
+                                '';
+                            final videoId = (item['nb'] ?? item['id'] ?? '').toString();
 
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => CinemanaPlayerScreen(
-                                    videoId: videoId,
-                                    initialTitle: title,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  posterUrl.isNotEmpty
-                                      ? Image.network(
-                                          posterUrl,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Container(
-                                            color: Colors.grey[800],
-                                            child: const Icon(Icons.movie, color: Colors.white54),
-                                          ),
-                                        )
-                                      : Container(color: Colors.grey[800]),
-                                  Positioned(
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: const BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [Colors.transparent, Colors.black87],
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
+                            return GestureDetector(
+                              onTap: () {
+                                if (videoId.isNotEmpty) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CinemanaPlayerScreen(
+                                        videoId: videoId,
+                                        initialTitle: title,
                                       ),
                                     ),
+                                  );
+                                }
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  color: const Color(0xFF1E293B),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (poster.isNotEmpty)
+                                        Image.network(
+                                          poster,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const Center(
+                                            child: Icon(Icons.movie, color: Colors.white24, size: 40),
+                                          ),
+                                        )
+                                      else
+                                        const Center(
+                                          child: Icon(Icons.movie, color: Colors.white24, size: 40),
+                                        ),
+                                      Positioned(
+                                        bottom: 0,
+                                        left: 0,
+                                        right: 0,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: const BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [Colors.transparent, Colors.black],
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
           ),
         ],
