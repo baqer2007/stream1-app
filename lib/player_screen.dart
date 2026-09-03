@@ -37,93 +37,138 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _resolveAndPlay();
+    _resolveStream();
   }
 
-  Future<void> _resolveAndPlay() async {
-    String? streamUrl;
+  // دالة متعمقة لاستخراج رابط الفيديو من أي كائن JSON
+  String? _findVideoUrl(dynamic jsonObj) {
+    if (jsonObj == null) return null;
 
-    // مسارات سينمانا الرسمية للحصول على روابط البث الموقعة ديناميكياً
-    final List<String> endpoints = [
-      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
-    ];
-
-    for (final endpoint in endpoints) {
-      try {
-        final response = await http.get(Uri.parse(endpoint), headers: _headers);
-
-        if (response.statusCode == 200) {
-          final dynamic data = json.decode(response.body);
-
-          List candidates = [];
-          if (data is List) {
-            candidates = data;
-          } else if (data is Map) {
-            if (data['files'] is List) candidates = data['files'];
-            else if (data['videos'] is List) candidates = data['videos'];
-            else if (data['data'] is List) candidates = data['data'];
-            else if (data['items'] is List) candidates = data['items'];
-            else candidates = [data];
-          }
-
-          for (var item in candidates) {
-            if (item is Map) {
-              // سحب الوصف والعنوان
-              _movieTitle ??= item['ar_title'] ?? item['en_title'];
-              _movieDescription ??= item['ar_content'] ?? item['en_content'];
-
-              // استخراج الرابط الموقّع الفعلي
-              String? url = item['videoUrl'] ??
-                  item['fileUrl'] ??
-                  item['containerUrl'] ??
-                  item['streamUrl'] ??
-                  item['url'];
-
-              if (url != null && url.startsWith('http')) {
-                streamUrl = url;
-                break;
-              }
-            }
-          }
+    if (jsonObj is Map) {
+      // تفقد الحقول المباشرة الشائعة
+      final keys = [
+        'videoUrl',
+        'containerUrl',
+        'fileUrl',
+        'streamUrl',
+        'directUrl',
+        'url',
+        'file'
+      ];
+      for (var k in keys) {
+        if (jsonObj[k] != null &&
+            jsonObj[k].toString().trim().startsWith('http')) {
+          return jsonObj[k].toString().trim();
         }
-      } catch (e) {
-        debugPrint('Error querying $endpoint: $e');
       }
 
-      if (streamUrl != null && streamUrl.isNotEmpty) break;
+      // إذا وُجدت مصفوفة سيرفرات أو ملفات بالداخل
+      for (var val in jsonObj.values) {
+        if (val is List || val is Map) {
+          final res = _findVideoUrl(val);
+          if (res != null) return res;
+        }
+      }
+    } else if (jsonObj is List) {
+      for (var element in jsonObj) {
+        final res = _findVideoUrl(element);
+        if (res != null) return res;
+      }
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    return null;
+  }
+
+  Future<void> _resolveStream() async {
+    String? resolvedUrl;
+    String effectiveVideoId = widget.videoId;
+
+    // 1. محاولة معرفة ما إذا كان المعرف بحاجة لجلب الحلقات أولاً (postNb)
+    final postEndpoint = Uri.parse(
+        'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}');
+    try {
+      final postRes = await http.get(postEndpoint, headers: _headers);
+      if (postRes.statusCode == 200) {
+        final decoded = json.decode(postRes.body);
+        List videosList = [];
+        if (decoded is List) {
+          videosList = decoded;
+        } else if (decoded is Map && decoded['items'] is List) {
+          videosList = decoded['items'];
+        }
+
+        if (videosList.isNotEmpty) {
+          final first = videosList[0];
+          if (first is Map && (first['nb'] != null || first['id'] != null)) {
+            effectiveVideoId = (first['nb'] ?? first['id']).toString();
+          }
+          // محاولة التقاط الرابط مباشرة إذا كان موجوداً داخل رد الحلقات
+          resolvedUrl = _findVideoUrl(first);
+        }
+      }
+    } catch (e) {
+      debugPrint('Post check failed: $e');
+    }
+
+    // 2. إذا لم يظهر الرابط بعد، نفحص خوادم الفيديو المتعددة
+    if (resolvedUrl == null) {
+      final videoApis = [
+        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/$effectiveVideoId',
+        'https://cinemana.shabakaty.com/api/android/videoFiles/id/$effectiveVideoId',
+        'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/$effectiveVideoId',
+        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
+      ];
+
+      for (var api in videoApis) {
+        try {
+          final res = await http.get(Uri.parse(api), headers: _headers);
+          if (res.statusCode == 200) {
+            final data = json.decode(res.body);
+
+            // التقاط الوصف والعنوان في حال توفرهما
+            if (data is List && data.isNotEmpty && data[0] is Map) {
+              _movieTitle ??= data[0]['ar_title'] ?? data[0]['en_title'];
+              _movieDescription ??= data[0]['ar_content'] ?? data[0]['en_content'];
+            }
+
+            resolvedUrl = _findVideoUrl(data);
+            if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error query $api: $e');
+        }
+      }
+    }
+
+    if (resolvedUrl == null || resolvedUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر استخراج رابط البث الرسمي لهذا الفيلم من السيرفر.';
+          _errorMessage =
+              'تعذر الحصول على رابط البث. تأكد من أن العمل متوفر على سيرفرات شبكتي.';
         });
       }
       return;
     }
 
-    // تحويل الترويسة من تنزيل إلى عرض مباشر
-    if (streamUrl.contains('response-content-disposition=attachment')) {
-      streamUrl = streamUrl.replaceAll(
+    // 3. تعديل الرابط ليكون inline للبث المباشر
+    if (resolvedUrl.contains('response-content-disposition=attachment')) {
+      resolvedUrl = resolvedUrl.replaceAll(
         'response-content-disposition=attachment',
         'response-content-disposition=inline',
       );
-    } else if (!streamUrl.contains('response-content-disposition=')) {
-      final sep = streamUrl.contains('?') ? '&' : '?';
-      streamUrl = '$streamUrl${sep}response-content-disposition=inline';
+    } else if (!resolvedUrl.contains('response-content-disposition=')) {
+      final sep = resolvedUrl.contains('?') ? '&' : '?';
+      resolvedUrl = '$resolvedUrl${sep}response-content-disposition=inline';
     }
 
-    // بدء تشغيل الفيديو بالترويسات
+    // 4. تهيئة المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(streamUrl),
-        httpHeaders: {
-          'User-Agent': 'Cinemana/3.0.0 (Android)',
-          'Referer': 'https://cinemana.shabakaty.com/',
-        },
+        Uri.parse(resolvedUrl),
+        httpHeaders: _headers,
       );
 
       await _videoPlayerController!.initialize();
@@ -140,7 +185,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: EdgeInsets.all(16.0),
               child: Text(
-                'فشل تحميل مشغل الفيديو.\nتأكد من الاتصال بشبكة إيرثلنك/شبكتي.',
+                'تعذر استلام البث، تأكد من الاتصال بشبكة إيرثلنك.',
                 style: TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -149,7 +194,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تهيئة المشغل: $e';
+      _errorMessage = 'خطأ أثناء تشغيل الفيديو: $e';
     }
 
     if (mounted) {
