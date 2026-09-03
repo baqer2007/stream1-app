@@ -36,85 +36,95 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _prepareStream();
+    _fetchAndStream();
   }
 
-  Future<void> _prepareStream() async {
-    String? finalVideoUrl;
+  Future<void> _fetchAndStream() async {
+    String? resolvedUrl;
 
-    // 1. فحص روابط السيرفرات والجودات المتاحة لهذا الفيلم
-    final endpoints = [
+    // مسارات استخراج خوادم وروابط الفيديو الرسمية في شبكتي
+    final List<String> possibleApis = [
+      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
       'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
       'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}',
     ];
 
-    for (final endpoint in endpoints) {
+    for (final apiUrl in possibleApis) {
       try {
-        final res = await http.get(Uri.parse(endpoint), headers: {
-          'User-Agent': 'Cinemana/3.0.0 (Android)',
-          'Accept': 'application/json',
-        });
+        final res = await http.get(Uri.parse(apiUrl), headers: _networkHeaders);
 
         if (res.statusCode == 200) {
           final dynamic data = json.decode(res.body);
-          List list = [];
+
+          List entries = [];
           if (data is List) {
-            list = data;
-          } else if (data is Map && data['files'] is List) {
-            list = data['files'];
+            entries = data;
+          } else if (data is Map) {
+            if (data['files'] is List) entries = data['files'];
+            else if (data['videos'] is List) entries = data['videos'];
+            else if (data['items'] is List) entries = data['items'];
+            else if (data['data'] is List) entries = data['data'];
+            else entries = [data]; // إذا كان كائناً منفرداً
           }
 
-          for (var entry in list) {
-            // استخراج عنوان ووصف الفيلم إن وُجدا
-            if (_movieTitle == null || _movieTitle!.isEmpty) {
-              _movieTitle = entry['ar_title'] ?? entry['en_title'];
-            }
-            _movieDescription ??= entry['ar_content'] ?? entry['en_content'];
+          for (var item in entries) {
+            if (item is Map) {
+              _movieTitle ??= item['ar_title'] ?? item['en_title'];
+              _movieDescription ??= item['ar_content'] ?? item['en_content'];
 
-            // البحث عن رابط الفيديو الفعّال
-            String candidate = entry['videoUrl'] ??
-                entry['containerUrl'] ??
-                entry['fileUrl'] ??
-                '';
+              // استخراج رابط البث
+              String? url = item['videoUrl'] ??
+                  item['containerUrl'] ??
+                  item['fileUrl'] ??
+                  item['video_url'] ??
+                  item['file'];
 
-            if (candidate.isNotEmpty) {
-              finalVideoUrl = candidate;
-              break;
+              // إذا وُجد اسم الملف الخام بدون السيرفر
+              if ((url == null || !url.startsWith('http')) && item['fileFile'] != null) {
+                final file = item['fileFile'];
+                url = 'https://cndw1.shabakaty.com/vascin24-mp4/$file?response-content-disposition=inline&AWSAccessKeyId=PSFBSAZRKNBJOAMKHHBIBOBEONKBBOPKEDDBFBOJCH&Expires=1788966299&Signature=VlWCzhalKqlz15nu3xZN316GOKI%3D';
+              }
+
+              if (url != null && url.startsWith('http')) {
+                resolvedUrl = url;
+                break;
+              }
             }
           }
         }
       } catch (e) {
-        debugPrint('Endpoint error: $e');
+        debugPrint('Failed reading $apiUrl: $e');
       }
 
-      if (finalVideoUrl != null && finalVideoUrl.isNotEmpty) break;
+      if (resolvedUrl != null && resolvedUrl.isNotEmpty) break;
     }
 
-    if (finalVideoUrl == null || finalVideoUrl.isEmpty) {
+    if (resolvedUrl == null || resolvedUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'لم يتم العثور على رابط بث متاح لهذا العمل.';
+          _errorMessage = 'لم يتم العثور على خادم تشغيل نشط لهذا العمل حالياً.';
         });
       }
       return;
     }
 
-    // 2. تعديل الرابط ليعمل كـ inline بدلاً من attachment
-    if (finalVideoUrl.contains('response-content-disposition=attachment')) {
-      finalVideoUrl = finalVideoUrl.replaceAll(
+    // تعديل الترويسة للتشغيل المباشر داخل المشغل
+    if (resolvedUrl.contains('response-content-disposition=attachment')) {
+      resolvedUrl = resolvedUrl.replaceAll(
         'response-content-disposition=attachment',
         'response-content-disposition=inline',
       );
-    } else if (!finalVideoUrl.contains('response-content-disposition=')) {
-      final separator = finalVideoUrl.contains('?') ? '&' : '?';
-      finalVideoUrl = '$finalVideoUrl${separator}response-content-disposition=inline';
+    } else if (!resolvedUrl.contains('response-content-disposition=')) {
+      final sep = resolvedUrl.contains('?') ? '&' : '?';
+      resolvedUrl = '$resolvedUrl${sep}response-content-disposition=inline';
     }
 
-    // 3. تشغيل الفيديو
+    // تهيئة وتشغيل المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(finalVideoUrl),
+        Uri.parse(resolvedUrl),
         httpHeaders: _networkHeaders,
       );
 
@@ -129,16 +139,19 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         fullScreenByDefault: false,
         errorBuilder: (context, error) {
           return const Center(
-            child: Text(
-              'تعذر تشغيل هذا المقطع، تأكد من اتصالك بشبكة إيرثلنك.',
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'تعذر تحميل الفيديو، تأكد من اتصالك بشبكة تدعم شبكتي.',
+                style: TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
             ),
           );
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تهيئة المشغل: تأكد من تفعيل بث الفيديو على الشبكة.';
+      _errorMessage = 'خطأ أثناء تشغيل الوسائط: $e';
     }
 
     if (mounted) {
