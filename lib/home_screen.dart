@@ -35,77 +35,56 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     final trimmedQuery = query.trim();
-    List<String> targetUrls = [];
 
-    if (trimmedQuery.isNotEmpty) {
-      // روابط البحث المعتمدة
-      targetUrls = [
-        'https://cinemana.shabakaty.com/api/android/videoSearch/title/${Uri.encodeComponent(trimmedQuery)}',
-        'https://cinemana.shabakaty.com/api/android/videoSearch/query/${Uri.encodeComponent(trimmedQuery)}',
-      ];
-    } else {
-      // روابط جلب الأفلام (رابط الصفحة الأولى، أو الصفحة الرئيسية)
-      targetUrls = [
-        'https://cinemana.shabakaty.com/api/android/allVideo/page/1',
-        'https://cinemana.shabakaty.com/api/android/homePage',
-        'https://cinemana.shabakaty.com/api/android/allVideo/page/0',
-      ];
-    }
+    // نقطة النهاية المعتمدة لسينمانا
+    final Uri requestUri = Uri.parse(
+      'https://cinemana.shabakaty.com/api/android/AdvancedSearch'
+    ).replace(queryParameters: {
+      'page': '0',
+      'type': 'all',
+      'videoTitle': trimmedQuery,
+    });
 
-    bool success = false;
+    try {
+      final response = await http.get(requestUri, headers: _headers);
 
-    for (String url in targetUrls) {
-      try {
-        final response = await http.get(Uri.parse(url), headers: _headers);
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        List<dynamic> parsedList = [];
 
-        if (response.statusCode == 200) {
-          final decoded = json.decode(response.body);
-          List<dynamic> parsedList = [];
-
-          if (decoded is List) {
-            parsedList = decoded;
-          } else if (decoded is Map) {
-            // معالجة هياكل الرد المختلفة سواء كانت items أو أقسام الصفحة الرئيسية
-            if (decoded['items'] is List) {
-              parsedList = decoded['items'];
-            } else if (decoded['videos'] is List) {
-              parsedList = decoded['videos'];
-            } else if (decoded['data'] is List) {
-              parsedList = decoded['data'];
-            } else if (decoded['sections'] is List) {
-              // إذا كان رد الصفحة الرئيسية مقسم لأقسام، نقوم بجمع كل الفيديوهات معاً
-              for (var sec in decoded['sections']) {
-                if (sec['items'] is List) {
-                  parsedList.addAll(sec['items']);
-                }
-              }
-            }
-          }
-
-          if (parsedList.isNotEmpty) {
-            setState(() {
-              _items = parsedList;
-              success = true;
-            });
-            break; // التوقف بمجرد نجاح المسار والحصول على المحتوى
+        if (decoded is List) {
+          parsedList = decoded;
+        } else if (decoded is Map) {
+          if (decoded['items'] is List) {
+            parsedList = decoded['items'];
+          } else if (decoded['videos'] is List) {
+            parsedList = decoded['videos'];
+          } else if (decoded['results'] is List) {
+            parsedList = decoded['results'];
           }
         }
-      } catch (e) {
-        debugPrint('Fetch attempt failed on $url: $e');
+
+        setState(() {
+          _items = parsedList;
+          if (_items.isEmpty) {
+            _statusMessage = trimmedQuery.isEmpty
+                ? 'لم يتم العثور على محتوى حالياً.'
+                : 'لم يتم العثور على نتائج تطابق "$trimmedQuery".';
+          }
+        });
+      } else {
+        setState(() {
+          _statusMessage = 'استجابة الخادم: ${response.statusCode}';
+        });
       }
-    }
-
-    if (!success && mounted) {
+    } catch (e) {
       setState(() {
-        _items = [];
-        _statusMessage = trimmedQuery.isEmpty
-            ? 'تعذر تحميل مكتبة الأفلام، تأكد من الاتصال بشبكة إيرثلنك/شبكتي.'
-            : 'لم يتم العثور على نتائج للبحث.';
+        _statusMessage = 'خطأ في الاتصال: $e';
       });
-    }
-
-    if (mounted) {
-      setState(() => _isLoading = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -120,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // شريط البحث
+          // حقل البحث
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -129,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (value) => _fetchMovies(value),
               decoration: InputDecoration(
-                hintText: 'ابحث عن اسم الفيلم واضغط Enter...',
+                hintText: 'ابحث باسم الفيلم أو اضغط بحث...',
                 hintStyle: const TextStyle(color: Colors.white54),
                 prefixIcon: IconButton(
                   icon: const Icon(Icons.search, color: Colors.redAccent),
@@ -154,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // شبكة البوسترات
+          // شبكة عرض الأفلام
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
