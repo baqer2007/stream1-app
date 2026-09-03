@@ -27,66 +27,97 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
+  final Map<String, String> _networkHeaders = {
+    'User-Agent': 'Cinemana/3.0.0 (Android)',
+    'Referer': 'https://cinemana.shabakaty.com/',
+  };
+
   @override
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _initializeContent();
+    _prepareStream();
   }
 
-  Future<void> _initializeContent() async {
-    // 1. جلب خوادم وسائط الفيلم من الـ API
-    final apiUrl = Uri.parse(
-        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}');
+  Future<void> _prepareStream() async {
+    String? finalVideoUrl;
 
-    String? targetStreamUrl;
+    // 1. فحص روابط السيرفرات والجودات المتاحة لهذا الفيلم
+    final endpoints = [
+      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
+    ];
 
-    try {
-      final res = await http.get(apiUrl, headers: {
-        'User-Agent': 'Cinemana/3.0.0 (Android)',
-        'Accept': 'application/json',
-      });
+    for (final endpoint in endpoints) {
+      try {
+        final res = await http.get(Uri.parse(endpoint), headers: {
+          'User-Agent': 'Cinemana/3.0.0 (Android)',
+          'Accept': 'application/json',
+        });
 
-      if (res.statusCode == 200) {
-        final List data = json.decode(res.body);
-        if (data.isNotEmpty) {
-          final item = data[0];
-          _movieTitle = item['ar_title'] ?? item['en_title'] ?? _movieTitle;
-          _movieDescription = item['ar_content'] ?? item['en_content'];
+        if (res.statusCode == 200) {
+          final dynamic data = json.decode(res.body);
+          List list = [];
+          if (data is List) {
+            list = data;
+          } else if (data is Map && data['files'] is List) {
+            list = data['files'];
+          }
 
-          // محاولة استخراج الرابط المباشر أو اسم الملف
-          if (item['videoUrl'] != null && item['videoUrl'].toString().isNotEmpty) {
-            targetStreamUrl = item['videoUrl'];
-          } else if (item['fileFile'] != null) {
-            // استخدام رابط S3 المباشر للفيلم مع توقيع البث
-            final fileName = item['fileFile'];
-            targetStreamUrl =
-                'https://cndw1.shabakaty.com/vascin24-mp4/$fileName?response-content-disposition=inline&AWSAccessKeyId=PSFBSAZRKNBJOAMKHHBIBOBEONKBBOPKEDDBFBOJCH&Expires=1788966299&Signature=VlWCzhalKqlz15nu3xZN316GOKI%3D';
+          for (var entry in list) {
+            // استخراج عنوان ووصف الفيلم إن وُجدا
+            if (_movieTitle == null || _movieTitle!.isEmpty) {
+              _movieTitle = entry['ar_title'] ?? entry['en_title'];
+            }
+            _movieDescription ??= entry['ar_content'] ?? entry['en_content'];
+
+            // البحث عن رابط الفيديو الفعّال
+            String candidate = entry['videoUrl'] ??
+                entry['containerUrl'] ??
+                entry['fileUrl'] ??
+                '';
+
+            if (candidate.isNotEmpty) {
+              finalVideoUrl = candidate;
+              break;
+            }
           }
         }
+      } catch (e) {
+        debugPrint('Endpoint error: $e');
       }
-    } catch (e) {
-      debugPrint('API Error: $e');
+
+      if (finalVideoUrl != null && finalVideoUrl.isNotEmpty) break;
     }
 
-    if (targetStreamUrl == null) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'تعذر العثور على مصدر بث لهذا العمل.';
-      });
+    if (finalVideoUrl == null || finalVideoUrl.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'لم يتم العثور على رابط بث متاح لهذا العمل.';
+        });
+      }
       return;
     }
 
-    // 2. تهيئة مشغل الفيديو
-    _videoPlayerController = VideoPlayerController.networkUrl(
-      Uri.parse(targetStreamUrl),
-      httpHeaders: {
-        'User-Agent': 'Cinemana/3.0.0 (Android)',
-        'Referer': 'https://cinemana.shabakaty.com/',
-      },
-    );
+    // 2. تعديل الرابط ليعمل كـ inline بدلاً من attachment
+    if (finalVideoUrl.contains('response-content-disposition=attachment')) {
+      finalVideoUrl = finalVideoUrl.replaceAll(
+        'response-content-disposition=attachment',
+        'response-content-disposition=inline',
+      );
+    } else if (!finalVideoUrl.contains('response-content-disposition=')) {
+      final separator = finalVideoUrl.contains('?') ? '&' : '?';
+      finalVideoUrl = '$finalVideoUrl${separator}response-content-disposition=inline';
+    }
 
+    // 3. تشغيل الفيديو
     try {
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(finalVideoUrl),
+        httpHeaders: _networkHeaders,
+      );
+
       await _videoPlayerController!.initialize();
 
       _chewieController = ChewieController(
@@ -99,15 +130,15 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         errorBuilder: (context, error) {
           return const Center(
             child: Text(
-              'تعذر تشغيل الفيديو، تأكد من الاتصال بشبكة تدعم الخدمة.',
-              style: TextStyle(color: Colors.white),
+              'تعذر تشغيل هذا المقطع، تأكد من اتصالك بشبكة إيرثلنك.',
+              style: TextStyle(color: Colors.white70),
               textAlign: TextAlign.center,
             ),
           );
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تهيئة المشغل.';
+      _errorMessage = 'خطأ أثناء تهيئة المشغل: تأكد من تفعيل بث الفيديو على الشبكة.';
     }
 
     if (mounted) {
@@ -127,7 +158,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0B0F19),
       appBar: AppBar(
-        title: Text(_movieTitle ?? 'المشغل'),
+        title: Text(_movieTitle ?? 'مشغل سينمانا'),
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
       ),
@@ -136,10 +167,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           : _errorMessage != null
               ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(_errorMessage!,
-                        style: const TextStyle(color: Colors.white70),
-                        textAlign: TextAlign.center),
+                    padding: const EdgeInsets.all(20.0),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 )
               : SingleChildScrollView(
@@ -150,7 +183,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                         width: double.infinity,
                         color: Colors.black,
                         child: AspectRatio(
-                          aspectRatio: _videoPlayerController!.value.aspectRatio,
+                          aspectRatio: _videoPlayerController!.value.isInitialized
+                              ? _videoPlayerController!.value.aspectRatio
+                              : 16 / 9,
                           child: Chewie(controller: _chewieController!),
                         ),
                       ),
@@ -160,7 +195,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _movieTitle ?? '',
+                              _movieTitle ?? 'بدون عنوان',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -169,7 +204,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              _movieDescription ?? 'لا يوجد وصف متوفر.',
+                              _movieDescription ?? 'لا يوجد وصف متاح.',
                               style: const TextStyle(
                                 fontSize: 13,
                                 color: Colors.white70,
