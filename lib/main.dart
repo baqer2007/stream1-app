@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'player_screen.dart';
+import 'home_screen.dart';
 
 void main() {
   runApp(const CinemanaApp());
@@ -11,14 +11,14 @@ class CinemanaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cinemana Stream',
+      title: 'Cinemana Hub',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
         primaryColor: Colors.redAccent,
-        scaffoldBackgroundColor: const Color(0xFF0B0F19),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
       ),
-      home: const CinemanaPlayerScreen(videoId: '99956'),
+      home: const HomeScreen(),
     );
   }
 }
