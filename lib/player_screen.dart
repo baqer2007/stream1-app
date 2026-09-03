@@ -70,7 +70,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     String? streamUrl;
     StringBuffer logs = StringBuffer();
 
-    // 1. المسار الرسمي المؤكد من فحص الشبكة في المتصفح
+    // 1. المسار الرسمي لجلب التفاصيل
     final videoInfoUrl = 'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/${widget.videoId}';
 
     try {
@@ -118,7 +118,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       }
     }
 
-    if (streamUrl == null) {
+    if (streamUrl == null || streamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -129,22 +129,23 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     }
 
     // تعديل الترويسة لتعمل بوضع inline للبث المباشر بدلاً من attachment
-    if (streamUrl.contains('response-content-disposition=attachment')) {
-      streamUrl = streamUrl.replaceAll('response-content-disposition=attachment', 'response-content-disposition=inline');
+    String finalUrl = streamUrl;
+    if (finalUrl.contains('response-content-disposition=attachment')) {
+      finalUrl = finalUrl.replaceAll('response-content-disposition=attachment', 'response-content-disposition=inline');
     }
 
     // حل الـ Redirect (302) المباشر إلى cndw1 إن وُجد
     try {
-      final headRes = await http.head(Uri.parse(streamUrl), headers: _networkHeaders);
+      final headRes = await http.head(Uri.parse(finalUrl), headers: _networkHeaders);
       if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
-        streamUrl = headRes.headers['location']!;
+        finalUrl = headRes.headers['location']!;
       }
     } catch (_) {}
 
     // 3. تهيئة وتشغيل المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(streamUrl),
+        Uri.parse(finalUrl),
         httpHeaders: _networkHeaders,
       );
 
@@ -171,7 +172,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$streamUrl';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$finalUrl';
     }
 
     if (mounted) {
