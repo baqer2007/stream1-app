@@ -5,7 +5,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MaterialApp(
     debugShowCheckedModeBanner: false,
-    home: CleanStreamApp(),
+    home: UniversalCinemaApp(),
   ));
 }
 
@@ -14,82 +14,84 @@ class MediaEntry {
   final String title;
   final String poster;
   final String year;
-  final bool isAnime;
+  final bool isSeries;
 
   MediaEntry({
     required this.id,
     required this.title,
     required this.poster,
     required this.year,
-    this.isAnime = false,
+    this.isSeries = false,
   });
 }
 
-// قائمة أعمال مثبتة مع بوسترات مستقرة
 final List<MediaEntry> catalog = [
   MediaEntry(
     id: "tt0388629",
     title: "One Piece",
     poster: "https://cdn.myanimelist.net/images/anime/6/73245l.jpg",
     year: "1999",
-    isAnime: true,
+    isSeries: true,
   ),
   MediaEntry(
     id: "tt0988824",
     title: "Naruto Shippuden",
     poster: "https://cdn.myanimelist.net/images/anime/1565/111305l.jpg",
     year: "2007",
-    isAnime: true,
-  ),
-  MediaEntry(
-    id: "tt1877514",
-    title: "The Batman",
-    poster: "https://image.tmdb.org/t/p/w500/74xTEgt7R36Fpooo50r9T25onhq.jpg",
-    year: "2022",
+    isSeries: true,
   ),
   MediaEntry(
     id: "tt2560140",
     title: "Attack on Titan",
     poster: "https://cdn.myanimelist.net/images/anime/10/47347l.jpg",
     year: "2013",
-    isAnime: true,
+    isSeries: true,
   ),
   MediaEntry(
     id: "tt0204993",
     title: "Inuyasha",
     poster: "https://cdn.myanimelist.net/images/anime/13/11262l.jpg",
     year: "2000",
-    isAnime: true,
+    isSeries: true,
   ),
   MediaEntry(
     id: "tt0434706",
     title: "Bleach",
     poster: "https://cdn.myanimelist.net/images/anime/3/40451l.jpg",
     year: "2004",
-    isAnime: true,
+    isSeries: true,
+  ),
+  MediaEntry(
+    id: "tt1877514",
+    title: "The Batman",
+    poster: "https://image.tmdb.org/t/p/w500/74xTEgt7R36Fpooo50r9T25onhq.jpg",
+    year: "2022",
+    isSeries: false,
   ),
   MediaEntry(
     id: "tt0816692",
     title: "Interstellar",
     poster: "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
     year: "2014",
+    isSeries: false,
   ),
   MediaEntry(
     id: "tt1375666",
     title: "Inception",
     poster: "https://image.tmdb.org/t/p/w500/edv5CZvWj09vOvt2JWv49740U8h.jpg",
     year: "2010",
+    isSeries: false,
   ),
 ];
 
-class CleanStreamApp extends StatefulWidget {
-  const CleanStreamApp({super.key});
+class UniversalCinemaApp extends StatefulWidget {
+  const UniversalCinemaApp({super.key});
 
   @override
-  State<CleanStreamApp> createState() => _CleanStreamAppState();
+  State<UniversalCinemaApp> createState() => _UniversalCinemaAppState();
 }
 
-class _CleanStreamAppState extends State<CleanStreamApp> {
+class _UniversalCinemaAppState extends State<UniversalCinemaApp> {
   final TextEditingController _ctrl = TextEditingController();
   List<MediaEntry> _filtered = [];
 
@@ -99,7 +101,7 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
     _filtered = List.from(catalog);
   }
 
-  void _search(String text) {
+  void _filter(String text) {
     final q = text.trim().toLowerCase();
     setState(() {
       if (q.isEmpty) {
@@ -110,10 +112,10 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
     });
   }
 
-  void _openStream(MediaEntry entry) {
+  void _openPlayer(MediaEntry item) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => EmbeddedCleanPlayer(entry: entry)),
+      MaterialPageRoute(builder: (_) => MultiServerPlayer(item: item)),
     );
   }
 
@@ -134,7 +136,7 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
               controller: _ctrl,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: "ابحث في الكتالوج (One Piece, Batman, Inuyasha)...",
+                hintText: "ابحث في الأعمال (One Piece, Batman, Interstellar)...",
                 hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
                 filled: true,
                 fillColor: const Color(0xFF191D2C),
@@ -142,7 +144,7 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
-              onChanged: _search,
+              onChanged: _filter,
             ),
           ),
           Expanded(
@@ -158,7 +160,7 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
               itemBuilder: (context, i) {
                 final item = _filtered[i];
                 return GestureDetector(
-                  onTap: () => _openStream(item),
+                  onTap: () => _openPlayer(item),
                   child: Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFF151824),
@@ -188,7 +190,11 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(item.year, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                                  const Text("تشغيل مباشر ▶", style: TextStyle(color: Color(0xFF45F3FF), fontSize: 11, fontWeight: FontWeight.bold)),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(color: const Color(0xFF45F3FF).withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
+                                    child: Text(item.isSeries ? "مسلسل" : "فيلم", style: const TextStyle(color: Color(0xFF45F3FF), fontSize: 10, fontWeight: FontWeight.bold)),
+                                  )
                                 ],
                               ),
                             ],
@@ -207,58 +213,71 @@ class _CleanStreamAppState extends State<CleanStreamApp> {
   }
 }
 
-// مشغل العرض السينمائي الكامل النظيف: ينظف الصفحة تماماً من أي إعلانات ويبقي الفيديو فقط
-class EmbeddedCleanPlayer extends StatefulWidget {
-  final MediaEntry entry;
-  const EmbeddedCleanPlayer({super.key, required this.entry});
+class MultiServerPlayer extends StatefulWidget {
+  final MediaEntry item;
+  const MultiServerPlayer({super.key, required this.item});
 
   @override
-  State<EmbeddedCleanPlayer> createState() => _EmbeddedCleanPlayerState();
+  State<MultiServerPlayer> createState() => _MultiServerPlayerState();
 }
 
-class _EmbeddedCleanPlayerState extends State<EmbeddedCleanPlayer> {
+class _MultiServerPlayerState extends State<MultiServerPlayer> {
   late final WebViewController _controller;
-  bool _loading = true;
+  int _currentServer = 0;
+  bool _isLoading = true;
+
+  List<String> _buildServerUrls() {
+    final id = widget.item.id;
+    final isS = widget.item.isSeries;
+
+    return [
+      // سيرفر 1: MultiEmbed مع التمييز الدقيق للأنمي/المسلسلات
+      isS
+          ? "https://multiembed.mov/?video_id=$id&s=1&e=1"
+          : "https://multiembed.mov/?video_id=$id",
+      // سيرفر 2: Smashystream السريع
+      isS
+          ? "https://embed.smashystream.com/playere.php?imdb=$id&season=1&episode=1"
+          : "https://embed.smashystream.com/playere.php?imdb=$id",
+      // سيرفر 3: 2Embed Cloud
+      isS
+          ? "https://www.2embed.cc/embedtv/$id&s=1&e=1"
+          : "https://www.2embed.cc/embed/$id",
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
-
-    final String targetUrl = "https://multiembed.mov/?video_id=${widget.entry.id}";
-
+    final urls = _buildServerUrls();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent("Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
-            if (mounted) {
-              setState(() => _loading = false);
-              // حقن كود CSS & JS لحذف الإعلانات وجعل حاوية الفيديو تمتد للشاشة بالكامل
-              _controller.runJavaScript("""
-                try {
-                  const style = document.createElement('style');
-                  style.innerHTML = `
-                    body, html { margin:0!important; padding:0!important; width:100%!important; height:100%!important; background:#000!important; overflow:hidden!important; }
-                    iframe, video { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; z-index:999999!important; border:none!important; }
-                    .ad, [class*='banner'], [id*='pop'], [class*='ads'] { display:none!important; }
-                  `;
-                  document.head.appendChild(style);
-                } catch(e) {}
-              """);
-            }
+            if (mounted) setState(() => _isLoading = false);
           },
           onNavigationRequest: (request) {
             final url = request.url.toLowerCase();
-            // حظر النوافذ المنبثقة الإعلانية وتفادي فتح أي تطبيق آخر
-            if (url.contains('ad') || url.contains('click') || url.contains('pop') || url.contains('youtube') || url.contains('banner')) {
+            // حظر النوافذ الإعلانية المنبثقة
+            if (url.contains('ad') || url.contains('pop') || url.contains('click') || url.contains('banner')) {
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;
           },
         ),
       )
-      ..loadRequest(Uri.parse(targetUrl));
+      ..loadRequest(Uri.parse(urls[_currentServer]));
+  }
+
+  void _switchServer(int index) {
+    setState(() {
+      _currentServer = index;
+      _isLoading = true;
+    });
+    final urls = _buildServerUrls();
+    _controller.loadRequest(Uri.parse(urls[index]));
   }
 
   @override
@@ -266,21 +285,36 @@ class _EmbeddedCleanPlayerState extends State<EmbeddedCleanPlayer> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(widget.entry.title, style: const TextStyle(fontSize: 14)),
-        backgroundColor: Colors.black,
+        title: Text(widget.item.title, style: const TextStyle(fontSize: 14)),
+        backgroundColor: const Color(0xFF141724),
+        actions: [
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.dns, color: Color(0xFF45F3FF)),
+            tooltip: "تبديل السيرفر",
+            onSelected: _switchServer,
+            itemBuilder: (context) => [
+              PopupMenuItem(value: 0, child: Text("سيرفر 1 (الأساسي)${_currentServer == 0 ? ' ✓' : ''}")),
+              PopupMenuItem(value: 1, child: Text("سيرفر 2 (السريع)${_currentServer == 1 ? ' ✓' : ''}")),
+              PopupMenuItem(value: 2, child: Text("سيرفر 3 (الاحتياطي)${_currentServer == 2 ? ' ✓' : ''}")),
+            ],
+          ),
+        ],
       ),
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),
-          if (_loading)
-            const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF45F3FF)),
-                  SizedBox(height: 16),
-                  Text("جاري تهيئة مشغل البث عالي الدقة...", style: TextStyle(color: Colors.white70, fontSize: 13)),
-                ],
+          if (_isLoading)
+            Container(
+              color: Colors.black87,
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF45F3FF)),
+                    SizedBox(height: 14),
+                    Text("جاري تشغيل الفيديو...", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  ],
+                ),
               ),
             ),
         ],
