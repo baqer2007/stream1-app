@@ -37,104 +37,116 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _fetchServer();
+    _resolveAndPlay();
   }
 
-  // استخراج أي رابط فيديو صالح من أي حقل
-  String? _parseVideoUrl(dynamic jsonItem) {
-    if (jsonItem is! Map) return null;
+  // البحث عن أي رابط بث صالح ومباشر
+  String? _extractStreamUrl(dynamic data) {
+    if (data == null) return null;
 
-    final possibleKeys = [
-      'videoUrl',
-      'containerUrl',
-      'fileUrl',
-      'url',
-      'directUrl',
-      'streamUrl',
-      'link'
-    ];
+    if (data is Map) {
+      // 1. فحص روابط الفيديو المباشرة
+      for (var k in ['videoUrl', 'containerUrl', 'fileUrl', 'streamUrl', 'url', 'directUrl']) {
+        if (data[k] != null && data[k].toString().trim().startsWith('http')) {
+          return data[k].toString().trim();
+        }
+      }
 
-    for (var k in possibleKeys) {
-      if (jsonItem[k] != null) {
-        String val = jsonItem[k].toString().trim();
-        if (val.startsWith('http')) return val;
+      // 2. إذا وُجد اسم الملف التابع لنفس العمل المطلوب
+      if (data['fileFile'] != null && data['fileFile'].toString().isNotEmpty) {
+        final fName = data['fileFile'].toString();
+        // نبدل mkv إلى mp4 إذا أمكن لأن mp4 مدعوم مباشرة في المشغل
+        final cleanName = fName.replaceAll('.mkv', '.mp4');
+        return 'https://cndw1.shabakaty.com/vascin24-mp4/$cleanName?response-content-disposition=inline&AWSAccessKeyId=PSFBSAZRKNBJOAMKHHBIBOBEONKBBOPKEDDBFBOJCH&Expires=1788966299&Signature=VlWCzhalKqlz15nu3xZN316GOKI%3D';
+      }
+
+      for (var v in data.values) {
+        if (v is Map || v is List) {
+          final res = _extractStreamUrl(v);
+          if (res != null) return res;
+        }
+      }
+    } else if (data is List) {
+      for (var item in data) {
+        final res = _extractStreamUrl(item);
+        if (res != null) return res;
       }
     }
     return null;
   }
 
-  Future<void> _fetchServer() async {
-    // المسار الناجح برمز 200
-    final targetUrl =
-        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}/level/0';
+  Future<void> _resolveAndPlay() async {
+    String? streamUrl;
+    StringBuffer logs = StringBuffer();
 
-    String? videoStreamUrl;
-    String rawDataDump = '';
+    // قائمة مسارات الاستعلام مع Query Parameters بدلاً من الـ Path القديم الذي كان يعيد دائماً (3130532)
+    final urlsToTry = [
+      'https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/videoFiles?id=${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/transcoddedFiles?videoNb=${widget.videoId}&level=0',
+      'https://cinemana.shabakaty.com/api/android/video/servers?videoNb=${widget.videoId}&level=0',
+    ];
 
-    try {
-      final res = await http.get(Uri.parse(targetUrl), headers: _networkHeaders);
+    for (final url in urlsToTry) {
+      try {
+        final res = await http.get(Uri.parse(url), headers: _networkHeaders);
+        logs.writeln('[$url] -> ${res.statusCode}');
 
-      if (res.statusCode == 200) {
-        final decoded = json.decode(res.body);
+        if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
+          final decoded = json.decode(res.body);
 
-        if (decoded is List && decoded.isNotEmpty) {
-          final first = decoded[0];
-          rawDataDump = const JsonEncoder.withIndent('  ').convert(first);
-
-          _movieTitle ??= first['ar_title'] ?? first['en_title'];
-          _movieDescription ??= first['ar_content'] ?? first['en_content'];
-
-          // 1. فحص العنصر الرئيسي
-          videoStreamUrl = _parseVideoUrl(first);
-
-          // 2. إذا لم يظهر، فحص مصفوفات السيرفرات الفرعية إن وُجدت
-          if (videoStreamUrl == null) {
-            for (var val in first.values) {
-              if (val is List) {
-                for (var sub in val) {
-                  videoStreamUrl = _parseVideoUrl(sub);
-                  if (videoStreamUrl != null) break;
-                }
-              }
-              if (videoStreamUrl != null) break;
+          // التحقق أن الاستجابة لا تخص الفيلم الافتراضي الثابت
+          bool isDefaultFilm = false;
+          if (decoded is List && decoded.isNotEmpty && decoded[0] is Map) {
+            if (decoded[0]['nb'] == '3130532' && widget.videoId != '3130532') {
+              isDefaultFilm = true;
             }
           }
-        } else if (decoded is Map) {
-          rawDataDump = const JsonEncoder.withIndent('  ').convert(decoded);
-          videoStreamUrl = _parseVideoUrl(decoded);
+
+          if (!isDefaultFilm) {
+            logs.writeln('تم استلام رد يخص العمل المطلوب!');
+            if (decoded is List && decoded.isNotEmpty && decoded[0] is Map) {
+              _movieTitle ??= decoded[0]['ar_title'] ?? decoded[0]['en_title'];
+              _movieDescription ??= decoded[0]['ar_content'] ?? decoded[0]['en_content'];
+            } else if (decoded is Map) {
+              _movieTitle ??= decoded['ar_title'] ?? decoded['en_title'];
+              _movieDescription ??= decoded['ar_content'] ?? decoded['en_content'];
+            }
+
+            streamUrl = _extractStreamUrl(decoded);
+            if (streamUrl != null) break;
+          }
         }
-      } else {
-        rawDataDump = 'فشل الرد برمز: ${res.statusCode}';
+      } catch (e) {
+        logs.writeln('خطأ في طلب $url: $e');
       }
-    } catch (e) {
-      rawDataDump = 'خطأ أثناء الاتصال: $e';
     }
 
-    if (videoStreamUrl == null || videoStreamUrl.isEmpty) {
+    if (streamUrl == null) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = rawDataDump;
+          _errorMessage = 'سجلات الاتصال بالخادم:\n$logs';
         });
       }
       return;
     }
 
     // تعديل الترويسة للـ inline
-    if (videoStreamUrl.contains('response-content-disposition=attachment')) {
-      videoStreamUrl = videoStreamUrl.replaceAll(
+    if (streamUrl.contains('response-content-disposition=attachment')) {
+      streamUrl = streamUrl.replaceAll(
         'response-content-disposition=attachment',
         'response-content-disposition=inline',
       );
-    } else if (!videoStreamUrl.contains('response-content-disposition=')) {
-      final sep = videoStreamUrl.contains('?') ? '&' : '?';
-      videoStreamUrl = '$videoStreamUrl${sep}response-content-disposition=inline';
+    } else if (!streamUrl.contains('response-content-disposition=')) {
+      final sep = streamUrl.contains('?') ? '&' : '?';
+      streamUrl = '$streamUrl${sep}response-content-disposition=inline';
     }
 
-    // تشغيل الفيديو
+    // تشغيل الفيديو عبر المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(videoStreamUrl),
+        Uri.parse(streamUrl),
         httpHeaders: _networkHeaders,
       );
 
@@ -161,7 +173,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تهيئة المشغل:\n$e\n\nالرابط المستخرج:\n$videoStreamUrl';
+      _errorMessage = 'خطأ أثناء تهيئة المشغل:\n$e\n\nالرابط:\n$streamUrl\n\nالسجلات:\n$logs';
     }
 
     if (mounted) {
@@ -194,12 +206,11 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'محتوى الـ JSON المستلم من السيرفر (200 OK):',
-                        style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                        'بيانات الاتصال ومحاولات السيرفر:',
+                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 15),
                       ),
                       const SizedBox(height: 10),
                       Container(
-                        width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1E293B),
