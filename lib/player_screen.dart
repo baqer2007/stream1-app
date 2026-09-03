@@ -37,107 +37,104 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _fetchSignedStream();
+    _fetchServer();
   }
 
-  // البحث عن الروابط الموقعة الجاهزة
-  String? _findSignedUrl(dynamic json) {
-    if (json == null) return null;
+  // استخراج أي رابط فيديو صالح من أي حقل
+  String? _parseVideoUrl(dynamic jsonItem) {
+    if (jsonItem is! Map) return null;
 
-    if (json is Map) {
-      // فحص الحقول التي تحتوي على رابط كامل موقّع
-      for (var key in ['videoUrl', 'containerUrl', 'fileUrl', 'url']) {
-        if (json[key] != null) {
-          final str = json[key].toString().trim();
-          if (str.startsWith('http') && (str.contains('AWSAccessKeyId') || str.contains('Signature') || str.endsWith('.mp4'))) {
-            return str;
-          }
-        }
-      }
+    final possibleKeys = [
+      'videoUrl',
+      'containerUrl',
+      'fileUrl',
+      'url',
+      'directUrl',
+      'streamUrl',
+      'link'
+    ];
 
-      for (var v in json.values) {
-        if (v is Map || v is List) {
-          final res = _findSignedUrl(v);
-          if (res != null) return res;
-        }
-      }
-    } else if (json is List) {
-      // تفضيل روابط mp4 إن وجدت الجودات
-      for (var item in json) {
-        final res = _findSignedUrl(item);
-        if (res != null) return res;
+    for (var k in possibleKeys) {
+      if (jsonItem[k] != null) {
+        String val = jsonItem[k].toString().trim();
+        if (val.startsWith('http')) return val;
       }
     }
     return null;
   }
 
-  Future<void> _fetchSignedStream() async {
-    String? streamUrl;
-    StringBuffer logBuffer = StringBuffer();
+  Future<void> _fetchServer() async {
+    // المسار الناجح برمز 200
+    final targetUrl =
+        'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}/level/0';
 
-    // المسارات الدقيقة مع معامل level/0 الذي يطلبه سيرفر شبكتي لإرجاع التوقيع
-    final List<String> endpoints = [
-      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}/level/0',
-      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}/level/0',
-      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
-    ];
+    String? videoStreamUrl;
+    String rawDataDump = '';
 
-    for (final ep in endpoints) {
-      try {
-        final res = await http.get(Uri.parse(ep), headers: _networkHeaders);
-        logBuffer.writeln('[$ep] => ${res.statusCode}');
+    try {
+      final res = await http.get(Uri.parse(targetUrl), headers: _networkHeaders);
 
-        if (res.statusCode == 200 && res.body.isNotEmpty) {
-          final dynamic data = json.decode(res.body);
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
 
-          // حفظ العنوان والوصف
-          if (data is List && data.isNotEmpty && data[0] is Map) {
-            _movieTitle ??= data[0]['ar_title'] ?? data[0]['en_title'];
-            _movieDescription ??= data[0]['ar_content'] ?? data[0]['en_content'];
-          } else if (data is Map) {
-            _movieTitle ??= data['ar_title'] ?? data['en_title'];
-            _movieDescription ??= data['ar_content'] ?? data['en_content'];
+        if (decoded is List && decoded.isNotEmpty) {
+          final first = decoded[0];
+          rawDataDump = const JsonEncoder.withIndent('  ').convert(first);
+
+          _movieTitle ??= first['ar_title'] ?? first['en_title'];
+          _movieDescription ??= first['ar_content'] ?? first['en_content'];
+
+          // 1. فحص العنصر الرئيسي
+          videoStreamUrl = _parseVideoUrl(first);
+
+          // 2. إذا لم يظهر، فحص مصفوفات السيرفرات الفرعية إن وُجدت
+          if (videoStreamUrl == null) {
+            for (var val in first.values) {
+              if (val is List) {
+                for (var sub in val) {
+                  videoStreamUrl = _parseVideoUrl(sub);
+                  if (videoStreamUrl != null) break;
+                }
+              }
+              if (videoStreamUrl != null) break;
+            }
           }
-
-          final candidate = _findSignedUrl(data);
-          if (candidate != null && candidate.isNotEmpty) {
-            streamUrl = candidate;
-            logBuffer.writeln('تم العثور على رابط موقع بنجاح');
-            break;
-          }
+        } else if (decoded is Map) {
+          rawDataDump = const JsonEncoder.withIndent('  ').convert(decoded);
+          videoStreamUrl = _parseVideoUrl(decoded);
         }
-      } catch (e) {
-        logBuffer.writeln('خطأ في $ep: $e');
+      } else {
+        rawDataDump = 'فشل الرد برمز: ${res.statusCode}';
       }
+    } catch (e) {
+      rawDataDump = 'خطأ أثناء الاتصال: $e';
     }
 
-    if (streamUrl == null) {
+    if (videoStreamUrl == null || videoStreamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'لم نتمكن من استخراج رابط التوقيع الحي:\n\n$logBuffer';
+          _errorMessage = rawDataDump;
         });
       }
       return;
     }
 
-    // تبديل الترويسة إلى inline للبث الحي
-    if (streamUrl.contains('response-content-disposition=attachment')) {
-      streamUrl = streamUrl.replaceAll(
+    // تعديل الترويسة للـ inline
+    if (videoStreamUrl.contains('response-content-disposition=attachment')) {
+      videoStreamUrl = videoStreamUrl.replaceAll(
         'response-content-disposition=attachment',
         'response-content-disposition=inline',
       );
-    } else if (!streamUrl.contains('response-content-disposition=')) {
-      final sep = streamUrl.contains('?') ? '&' : '?';
-      streamUrl = '$streamUrl${sep}response-content-disposition=inline';
+    } else if (!videoStreamUrl.contains('response-content-disposition=')) {
+      final sep = videoStreamUrl.contains('?') ? '&' : '?';
+      videoStreamUrl = '$videoStreamUrl${sep}response-content-disposition=inline';
     }
 
     // تشغيل الفيديو
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(streamUrl),
+        Uri.parse(videoStreamUrl),
         httpHeaders: _networkHeaders,
       );
 
@@ -155,7 +152,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'تعذر تشغيل البث: $error',
+                'تعذر البث: $error',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -164,7 +161,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'فشل أثناء تهيئة المشغل:\n$e\n\nالرابط المستلم:\n$streamUrl';
+      _errorMessage = 'خطأ أثناء تهيئة المشغل:\n$e\n\nالرابط المستخرج:\n$videoStreamUrl';
     }
 
     if (mounted) {
@@ -197,11 +194,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'تفاصيل الاستجابة والتوقيع:',
-                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
+                        'محتوى الـ JSON المستلم من السيرفر (200 OK):',
+                        style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1E293B),
@@ -209,7 +207,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                         ),
                         child: SelectableText(
                           _errorMessage!,
-                          style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                          style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
                         ),
                       ),
                     ],
