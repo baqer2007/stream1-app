@@ -26,6 +26,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
+  String? _debugUrl;
 
   final Map<String, String> _networkHeaders = {
     'User-Agent': 'Cinemana/3.0.0 (Android)',
@@ -37,116 +38,121 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _loadStream();
+    _resolveAndStartStream();
   }
 
-  // فحص واستخراج الرابط من مختلف التراكيب
-  String? _extractStreamUrl(dynamic data) {
-    if (data == null) return null;
+  Future<void> _resolveAndStartStream() async {
+    String? finalStreamUrl;
+    String realVideoNb = widget.videoId;
 
-    if (data is Map) {
-      // 1. فحص الحقول المباشرة
-      for (final key in [
-        'videoUrl',
-        'containerUrl',
-        'fileUrl',
-        'streamUrl',
-        'url',
-        'directUrl',
-      ]) {
-        if (data[key] != null && data[key].toString().startsWith('http')) {
-          return data[key].toString();
+    // 1. فحص ما إذا كان المعرف هو Post ID واستخراج الـ videoNb الحقيقي
+    try {
+      final postUrl = Uri.parse(
+          'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}');
+      final postRes = await http.get(postUrl, headers: _networkHeaders);
+
+      if (postRes.statusCode == 200) {
+        final decoded = json.decode(postRes.body);
+        List videos = [];
+        if (decoded is List) {
+          videos = decoded;
+        } else if (decoded is Map && decoded['items'] is List) {
+          videos = decoded['items'];
+        }
+
+        if (videos.isNotEmpty) {
+          final firstItem = videos[0];
+          if (firstItem is Map) {
+            _movieTitle ??= firstItem['ar_title'] ?? firstItem['en_title'];
+            _movieDescription ??= firstItem['ar_content'] ?? firstItem['en_content'];
+            if (firstItem['nb'] != null) {
+              realVideoNb = firstItem['nb'].toString();
+            }
+          }
         }
       }
-
-      // 2. فحص حالة وجود مسار واسم ملف ومجلد تخزين
-      if (data['fileFile'] != null || data['fileName'] != null) {
-        final fileName = data['fileFile'] ?? data['fileName'];
-        final server = data['server'] ?? 'cndw1.shabakaty.com';
-        final folder = data['folder'] ?? 'vascin24-mp4';
-        return 'https://$server/$folder/$fileName?response-content-disposition=inline&AWSAccessKeyId=PSFBSAZRKNBJOAMKHHBIBOBEONKBBOPKEDDBFBOJCH&Expires=1788966299&Signature=VlWCzhalKqlz15nu3xZN316GOKI%3D';
-      }
-
-      // البحث في الفروع الداخلية
-      for (final val in data.values) {
-        if (val is Map || val is List) {
-          final res = _extractStreamUrl(val);
-          if (res != null) return res;
-        }
-      }
-    } else if (data is List) {
-      for (final element in data) {
-        final res = _extractStreamUrl(element);
-        if (res != null) return res;
-      }
+    } catch (e) {
+      debugPrint('Error getting post videos: $e');
     }
-    return null;
-  }
 
-  Future<void> _loadStream() async {
-    String? streamUrl;
-    String lastStatus = '';
-
-    // المسارات التي تستخدمها سينمانا لجلب سيرفرات الفيديو والملفات
-    final endpoints = [
+    // 2. طلب سيرفرات الفيديو بالمعرف الداخلي videoNb
+    final serverUrls = [
+      'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/$realVideoNb',
       'https://cinemana.shabakaty.com/api/android/video/servers/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/transcoddedFiles/videoNb/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/videoFiles/id/${widget.videoId}',
-      'https://cinemana.shabakaty.com/api/android/allVideo/page/0/postNb/${widget.videoId}',
+      'https://cinemana.shabakaty.com/api/android/videoFiles/id/$realVideoNb',
     ];
 
-    for (final url in endpoints) {
+    for (final sUrl in serverUrls) {
       try {
-        final res = await http.get(Uri.parse(url), headers: _networkHeaders);
-        lastStatus = 'HTTP ${res.statusCode}';
-
+        final res = await http.get(Uri.parse(sUrl), headers: _networkHeaders);
         if (res.statusCode == 200) {
-          final decoded = json.decode(res.body);
-
-          // التقاط العنوان والوصف إن توفرا
-          if (decoded is List && decoded.isNotEmpty && decoded[0] is Map) {
-            _movieTitle ??= decoded[0]['ar_title'] ?? decoded[0]['en_title'];
-            _movieDescription ??= decoded[0]['ar_content'] ?? decoded[0]['en_content'];
-          } else if (decoded is Map) {
-            _movieTitle ??= decoded['ar_title'] ?? decoded['en_title'];
-            _movieDescription ??= decoded['ar_content'] ?? decoded['en_content'];
+          final dynamic data = json.decode(res.body);
+          List items = [];
+          if (data is List) {
+            items = data;
+          } else if (data is Map) {
+            if (data['files'] is List) items = data['files'];
+            else if (data['videos'] is List) items = data['videos'];
+            else items = [data];
           }
 
-          streamUrl = _extractStreamUrl(decoded);
-          if (streamUrl != null && streamUrl.isNotEmpty) break;
+          for (var item in items) {
+            if (item is Map) {
+              _movieTitle ??= item['ar_title'] ?? item['en_title'];
+              _movieDescription ??= item['ar_content'] ?? item['en_content'];
+
+              // استخراج الرابط المباشر من السيرفر
+              final url = item['videoUrl'] ??
+                  item['containerUrl'] ??
+                  item['fileUrl'] ??
+                  item['streamUrl'];
+
+              if (url != null && url.toString().startsWith('http')) {
+                finalStreamUrl = url.toString();
+                break;
+              }
+            }
+          }
         }
       } catch (e) {
-        lastStatus = 'خطأ اتصال: $e';
+        debugPrint('Failed to query $sUrl: $e');
       }
+
+      if (finalStreamUrl != null) break;
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    if (finalStreamUrl == null || finalStreamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage =
-              'لم يتم العثور على رابط بث لهذا العمل ($lastStatus).\nتأكد من أن العمل متوفر عبر شبكتي.';
+              'لم يعثر السيرفر على رابط صالح لـ ID: $realVideoNb.\nتأكد من توفر الفيلم على شبكتي.';
         });
       }
       return;
     }
 
-    // تهيئة معامل inline
-    if (streamUrl.contains('response-content-disposition=attachment')) {
-      streamUrl = streamUrl.replaceAll(
+    // 3. ضبط المعامل لـ inline
+    if (finalStreamUrl.contains('response-content-disposition=attachment')) {
+      finalStreamUrl = finalStreamUrl.replaceAll(
         'response-content-disposition=attachment',
         'response-content-disposition=inline',
       );
-    } else if (!streamUrl.contains('response-content-disposition=')) {
-      final sep = streamUrl.contains('?') ? '&' : '?';
-      streamUrl = '$streamUrl${sep}response-content-disposition=inline';
+    } else if (!finalStreamUrl.contains('response-content-disposition=')) {
+      final sep = finalStreamUrl.contains('?') ? '&' : '?';
+      finalStreamUrl = '$finalStreamUrl${sep}response-content-disposition=inline';
     }
 
-    // تهيئة مشغل الفيديو
+    _debugUrl = finalStreamUrl;
+
+    // 4. تشغيل الفيديو
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(streamUrl),
-        httpHeaders: _networkHeaders,
+        Uri.parse(finalStreamUrl),
+        httpHeaders: {
+          'User-Agent': 'Cinemana/3.0.0 (Android)',
+          'Referer': 'https://cinemana.shabakaty.com/',
+        },
       );
 
       await _videoPlayerController!.initialize();
@@ -159,12 +165,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         allowFullScreen: true,
         fullScreenByDefault: false,
         errorBuilder: (context, error) {
-          return const Center(
+          return Center(
             child: Padding(
-              padding: EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Text(
-                'تعذر استلام البث، تأكد من الاتصال بشبكة إيرثلنك.',
-                style: TextStyle(color: Colors.white70),
+                'تعذر استلام البث:\n$error',
+                style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -172,7 +178,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ أثناء تشغيل الوسائط: $e';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\nالرابط: $_debugUrl';
     }
 
     if (mounted) {
@@ -202,9 +208,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
-                    child: Text(
+                    child: SelectableText(
                       _errorMessage!,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
                       textAlign: TextAlign.center,
                     ),
                   ),
