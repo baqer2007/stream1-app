@@ -43,39 +43,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
-    _playVideo();
+    _playTargetMovie();
   }
 
-  String? _extractVideoNb(dynamic data, String postNb) {
-    if (data == null) return null;
-    if (data is List && data.isNotEmpty) {
-      for (var item in data) {
-        if (item is Map) {
-          final candidate = item['nb'] ?? item['videoNb'] ?? item['id'];
-          if (candidate != null &&
-              candidate.toString() != postNb &&
-              candidate.toString() != '3130532') {
-            return candidate.toString();
-          }
-        }
-      }
-      if (data.first is Map) {
-        final firstNb = data.first['nb'] ?? data.first['videoNb'] ?? data.first['id'];
-        if (firstNb != null && firstNb.toString() != postNb) {
-          return firstNb.toString();
-        }
-      }
-    } else if (data is Map) {
-      for (var k in ['videos', 'items', 'list']) {
-        if (data[k] is List) {
-          final res = _extractVideoNb(data[k], postNb);
-          if (res != null) return res;
-        }
-      }
-    }
-    return null;
-  }
-
+  // استخراج رابط الجودة الأنسب (720p -> 1080p -> 480p -> أي رابط متاح)
   String? _extractBestVideoUrl(dynamic jsonList) {
     if (jsonList is! List || jsonList.isEmpty) return null;
 
@@ -102,34 +73,38 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return null;
   }
 
-  Future<void> _playVideo() async {
+  Future<void> _playTargetMovie() async {
     final postNb = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
     String? rawStreamUrl;
     String? videoNb;
 
-    // 1. جلب videoNb التابع للمنشور
+    // 1. جلب videoNb التابع للفيلم المحدد باستخدام مسار allVideo المعتمد
     if (postNb.isNotEmpty) {
-      final postEndpoints = [
-        'https://cinemana.shabakaty.com/api/android/video/postNb/$postNb',
-        'https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=$postNb',
-        'https://cinemana.shabakaty.com/api/android/postFiles/postNb/$postNb',
-      ];
+      try {
+        final uri = Uri.parse('https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=$postNb');
+        final res = await http.get(uri, headers: _headers);
 
-      for (var ep in postEndpoints) {
-        try {
-          final res = await http.get(Uri.parse(ep), headers: _headers);
-          if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
-            final decoded = json.decode(res.body);
-            videoNb = _extractVideoNb(decoded, postNb);
-            if (videoNb != null) break;
+        if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
+          final decoded = json.decode(res.body);
+          if (decoded is List && decoded.isNotEmpty) {
+            final firstVideo = decoded.first;
+            if (firstVideo is Map && firstVideo['nb'] != null) {
+              videoNb = firstVideo['nb'].toString();
+            }
+          } else if (decoded is Map && decoded['videos'] is List && (decoded['videos'] as List).isNotEmpty) {
+            final firstVideo = decoded['videos'][0];
+            if (firstVideo is Map && firstVideo['nb'] != null) {
+              videoNb = firstVideo['nb'].toString();
+            }
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
     }
 
+    // 2. إذا لم يرجع allVideo نتيجة، نعتمد على معرف المنشور مباشرة
     final targetId = videoNb ?? postNb;
 
-    // 2. استخراج الرابط الموقّع من transcoddedFiles
+    // 3. جلب مصفوفة الجودات الحقيقية لهذا الفيلم تحديداً
     if (targetId.isNotEmpty) {
       try {
         final transcodeUrl =
@@ -147,16 +122,16 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'لم يتم العثور على رابط بث صالح (ID: $targetId).';
+          _errorMessage = 'لم يتم العثور على رابط بث لهذا المحتوى (ID: $targetId).';
         });
       }
       return;
     }
 
-    // استخدام الرابط الأصلي تماماً دون لمس بارامتراته للحفاظ على صحة التوقيع
+    // الرابط الموقّع الأصلي دون أي تعديل في نص الرابط
     final String finalStreamUrl = rawStreamUrl.trim();
 
-    // 3. تشغيل الفيديو مباشرة بتمرير الترويسات المطلوبة
+    // 4. تهيئة المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(finalStreamUrl),
@@ -186,7 +161,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$finalStreamUrl';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط:\n$finalStreamUrl';
     }
 
     if (mounted) {
