@@ -97,10 +97,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   }
 
   Future<void> _resolveAndPlay() async {
-    String? streamUrl;
+    String? resolvedUrl;
     StringBuffer debugLog = StringBuffer();
 
-    // المرحلة 1: التحقق المباشر من الـ ID في allVideoInfo
+    // المرحلة 1: فحص الـ ID في allVideoInfo
     try {
       final directInfoUrl = Uri.parse(
           'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/${widget.videoId}');
@@ -109,14 +109,14 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
       if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
         final data = json.decode(res.body);
-        streamUrl = _findVideoFileUrl(data);
+        resolvedUrl = _findVideoFileUrl(data);
       }
     } catch (e) {
       debugLog.writeln('Direct info error: $e');
     }
 
-    // المرحلة 2: إذا لم ينجح، استخراج الـ videoNb من الـ postNb
-    if (streamUrl == null) {
+    // المرحلة 2: استخراج الـ videoNb من الـ postNb
+    if (resolvedUrl == null) {
       final postResolutionUrls = [
         'https://cinemana.shabakaty.com/api/android/video/servers?postNb=${widget.videoId}',
         'https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=${widget.videoId}',
@@ -130,10 +130,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
           if (pRes.statusCode == 200 && pRes.body.isNotEmpty && pRes.body != '[]') {
             final pData = json.decode(pRes.body);
-            streamUrl = _findVideoFileUrl(pData);
-            if (streamUrl != null) break;
+            resolvedUrl = _findVideoFileUrl(pData);
+            if (resolvedUrl != null) break;
 
-            // محاولة جلب videoNb
             final extractedNb = _extractVideoNb(pData);
             if (extractedNb != null) {
               debugLog.writeln('تم العثور على videoNb: $extractedNb');
@@ -142,8 +141,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                   headers: _browserHeaders);
               if (infoRes.statusCode == 200 && infoRes.body.isNotEmpty) {
                 final infoData = json.decode(infoRes.body);
-                streamUrl = _findVideoFileUrl(infoData);
-                if (streamUrl != null) break;
+                resolvedUrl = _findVideoFileUrl(infoData);
+                if (resolvedUrl != null) break;
               }
             }
           }
@@ -153,7 +152,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       }
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    if (resolvedUrl == null || resolvedUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -164,23 +163,25 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       return;
     }
 
-    // تعديل الترويسة إلى inline
-    if (streamUrl.contains('response-content-disposition=attachment')) {
-      streamUrl = streamUrl.replaceAll(
+    // ترقية المتغير لضمان عدم كونه null
+    String finalStreamUrl = resolvedUrl;
+
+    if (finalStreamUrl.contains('response-content-disposition=attachment')) {
+      finalStreamUrl = finalStreamUrl.replaceAll(
           'response-content-disposition=attachment', 'response-content-disposition=inline');
     }
 
-    // حل الـ Redirect (302)
+    // تتبع الـ 302 Redirect بأمان تام للأنواع
     try {
-      final headRes = await http.head(Uri.parse(streamUrl), headers: _browserHeaders);
+      final headRes = await http.head(Uri.parse(finalStreamUrl), headers: _browserHeaders);
       if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
-        streamUrl = headRes.headers['location']!;
+        finalStreamUrl = headRes.headers['location']!;
       }
     } catch (_) {}
 
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(streamUrl),
+        Uri.parse(finalStreamUrl),
         httpHeaders: _browserHeaders,
       );
 
@@ -207,7 +208,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$streamUrl';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$finalStreamUrl';
     }
 
     if (mounted) {
