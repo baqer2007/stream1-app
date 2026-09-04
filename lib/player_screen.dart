@@ -30,107 +30,139 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   Map<String, String> get _browserHeaders => {
     'User-Agent':
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-    'Referer':
-        'https://cinemana.shabakaty.com/video/en/${widget.videoId}?showinfo=true',
+    'Referer': 'https://cinemana.shabakaty.com/',
     'Origin': 'https://cinemana.shabakaty.com',
     'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'ar-IQ,ar;q=0.9,en-IQ;q=0.8,en;q=0.7',
   };
 
   @override
   void initState() {
     super.initState();
     _movieTitle = widget.initialTitle;
-    _startPlaybackFlow();
+    _resolveAndPlay();
   }
 
-  String? _extractStreamUrl(dynamic data) {
-    if (data == null) return null;
+  String? _findVideoFileUrl(dynamic obj) {
+    if (obj == null) return null;
 
-    if (data is Map) {
+    if (obj is Map) {
       for (final key in [
         'videoUrl',
         'containerUrl',
         'fileUrl',
         'directUrl',
         'streamUrl',
-        'url',
-        'link'
+        'url'
       ]) {
-        if (data[key] != null) {
-          final s = data[key].toString().trim();
-          if (s.startsWith('http') && (s.contains('.mp4') || s.contains('vascin'))) {
+        if (obj[key] != null) {
+          final s = obj[key].toString().trim();
+          if (s.startsWith('http') && (s.contains('.mp4') || s.contains('vascin') || s.contains('cndw1'))) {
             return s;
           }
         }
       }
-
-      for (var val in data.values) {
-        if (val is Map || val is List) {
-          final res = _extractStreamUrl(val);
-          if (res != null) return res;
-        }
+      for (var val in obj.values) {
+        final res = _findVideoFileUrl(val);
+        if (res != null) return res;
       }
-    } else if (data is List) {
-      for (var item in data) {
-        final res = _extractStreamUrl(item);
+    } else if (obj is List) {
+      for (var item in obj) {
+        final res = _findVideoFileUrl(item);
         if (res != null) return res;
       }
     }
     return null;
   }
 
-  Future<void> _startPlaybackFlow() async {
-    final targetUrl = Uri.parse(
-        'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/${widget.videoId}');
+  String? _extractVideoNb(dynamic obj) {
+    if (obj == null) return null;
+    if (obj is Map) {
+      if (obj['nb'] != null && obj['nb'].toString() != widget.videoId) {
+        return obj['nb'].toString();
+      }
+      if (obj['videoNb'] != null) {
+        return obj['videoNb'].toString();
+      }
+      for (var val in obj.values) {
+        final res = _extractVideoNb(val);
+        if (res != null) return res;
+      }
+    } else if (obj is List) {
+      for (var item in obj) {
+        final res = _extractVideoNb(item);
+        if (res != null) return res;
+      }
+    }
+    return null;
+  }
 
-    String? foundUrl;
-    String rawResponse = '';
+  Future<void> _resolveAndPlay() async {
+    String? streamUrl;
+    StringBuffer debugLog = StringBuffer();
 
+    // المرحلة 1: التحقق المباشر من الـ ID في allVideoInfo
     try {
-      final res = await http.get(targetUrl, headers: _browserHeaders);
+      final directInfoUrl = Uri.parse(
+          'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/${widget.videoId}');
+      final res = await http.get(directInfoUrl, headers: _browserHeaders);
+      debugLog.writeln('allVideoInfo(${widget.videoId}): ${res.statusCode}');
 
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        final decoded = json.decode(res.body);
-
-        if (decoded is Map) {
-          _movieTitle ??= decoded['ar_title'] ?? decoded['en_title'];
-          _movieDescription ??= decoded['ar_content'] ?? decoded['en_content'];
-          foundUrl = _extractStreamUrl(decoded);
-          if (foundUrl == null) {
-            rawResponse = const JsonEncoder.withIndent('  ').convert(decoded);
-          }
-        } else if (decoded is List && decoded.isNotEmpty) {
-          final first = decoded[0];
-          if (first is Map) {
-            _movieTitle ??= first['ar_title'] ?? first['en_title'];
-            _movieDescription ??= first['ar_content'] ?? first['en_content'];
-          }
-          foundUrl = _extractStreamUrl(decoded);
-          if (foundUrl == null) {
-            rawResponse = const JsonEncoder.withIndent('  ').convert(first);
-          }
-        }
-      } else {
-        rawResponse = 'فشل الرد برمز: ${res.statusCode}\n${res.body}';
+      if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
+        final data = json.decode(res.body);
+        streamUrl = _findVideoFileUrl(data);
       }
     } catch (e) {
-      rawResponse = 'خطأ أثناء الاتصال: $e';
+      debugLog.writeln('Direct info error: $e');
     }
 
-    if (foundUrl == null || foundUrl.isEmpty) {
+    // المرحلة 2: إذا لم ينجح، استخراج الـ videoNb من الـ postNb
+    if (streamUrl == null) {
+      final postResolutionUrls = [
+        'https://cinemana.shabakaty.com/api/android/video/servers?postNb=${widget.videoId}',
+        'https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=${widget.videoId}',
+        'https://cinemana.shabakaty.com/api/android/postFiles/id/${widget.videoId}',
+      ];
+
+      for (final pUrl in postResolutionUrls) {
+        try {
+          final pRes = await http.get(Uri.parse(pUrl), headers: _browserHeaders);
+          debugLog.writeln('$pUrl => ${pRes.statusCode}');
+
+          if (pRes.statusCode == 200 && pRes.body.isNotEmpty && pRes.body != '[]') {
+            final pData = json.decode(pRes.body);
+            streamUrl = _findVideoFileUrl(pData);
+            if (streamUrl != null) break;
+
+            // محاولة جلب videoNb
+            final extractedNb = _extractVideoNb(pData);
+            if (extractedNb != null) {
+              debugLog.writeln('تم العثور على videoNb: $extractedNb');
+              final infoRes = await http.get(
+                  Uri.parse('https://cinemana.shabakaty.com/api/android/allVideoInfo/id/$extractedNb'),
+                  headers: _browserHeaders);
+              if (infoRes.statusCode == 200 && infoRes.body.isNotEmpty) {
+                final infoData = json.decode(infoRes.body);
+                streamUrl = _findVideoFileUrl(infoData);
+                if (streamUrl != null) break;
+              }
+            }
+          }
+        } catch (e) {
+          debugLog.writeln('Post resolve error: $e');
+        }
+      }
+    }
+
+    if (streamUrl == null || streamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = rawResponse.isEmpty
-              ? 'لم يتم العثور على رابط البث في الاستجابة.'
-              : rawResponse;
+          _errorMessage =
+              'تعذر تحويل معرّف المنشور إلى ملف تشغيل.\n\nسجل المحاولات:\n$debugLog';
         });
       }
       return;
     }
-
-    String streamUrl = foundUrl;
 
     // تعديل الترويسة إلى inline
     if (streamUrl.contains('response-content-disposition=attachment')) {
@@ -138,7 +170,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           'response-content-disposition=attachment', 'response-content-disposition=inline');
     }
 
-    // تتبع الـ 302 Redirect مع ضمان النوع غير القابل للـ null
+    // حل الـ Redirect (302)
     try {
       final headRes = await http.head(Uri.parse(streamUrl), headers: _browserHeaders);
       if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
@@ -146,7 +178,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       }
     } catch (_) {}
 
-    // تهيئة المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
@@ -203,35 +234,19 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
           : _errorMessage != null
-              ? SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'محتوى الرد المستلم من السيرفر:',
-                        style: TextStyle(
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        _errorMessage!,
+                        style: const TextStyle(
                             color: Colors.amberAccent,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14),
+                            fontSize: 12,
+                            fontFamily: 'monospace'),
+                        textAlign: TextAlign.left,
                       ),
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: SelectableText(
-                          _errorMessage!,
-                          style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 )
               : SingleChildScrollView(
