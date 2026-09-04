@@ -27,10 +27,11 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
-  // مطابقة الترويسات الدقيقة للمتصفح لمنع خطأ 400
   Map<String, String> get _browserHeaders => {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-    'Referer': 'https://cinemana.shabakaty.com/video/en/${widget.videoId}?showinfo=true',
+    'User-Agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+    'Referer':
+        'https://cinemana.shabakaty.com/video/en/${widget.videoId}?showinfo=true',
     'Origin': 'https://cinemana.shabakaty.com',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'ar-IQ,ar;q=0.9,en-IQ;q=0.8,en;q=0.7',
@@ -43,7 +44,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     _startPlaybackFlow();
   }
 
-  // البحث عن أي رابط بث مباشر أو استخراجه من أي حقل
   String? _extractStreamUrl(dynamic data) {
     if (data == null) return null;
 
@@ -81,11 +81,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   }
 
   Future<void> _startPlaybackFlow() async {
-    // المسار الرسمي الذي أرجع 200 OK في DevTools
     final targetUrl = Uri.parse(
         'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/${widget.videoId}');
 
-    String? streamUrl;
+    String? foundUrl;
     String rawResponse = '';
 
     try {
@@ -97,8 +96,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         if (decoded is Map) {
           _movieTitle ??= decoded['ar_title'] ?? decoded['en_title'];
           _movieDescription ??= decoded['ar_content'] ?? decoded['en_content'];
-          streamUrl = _extractStreamUrl(decoded);
-          if (streamUrl == null) {
+          foundUrl = _extractStreamUrl(decoded);
+          if (foundUrl == null) {
             rawResponse = const JsonEncoder.withIndent('  ').convert(decoded);
           }
         } else if (decoded is List && decoded.isNotEmpty) {
@@ -107,8 +106,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             _movieTitle ??= first['ar_title'] ?? first['en_title'];
             _movieDescription ??= first['ar_content'] ?? first['en_content'];
           }
-          streamUrl = _extractStreamUrl(decoded);
-          if (streamUrl == null) {
+          foundUrl = _extractStreamUrl(decoded);
+          if (foundUrl == null) {
             rawResponse = const JsonEncoder.withIndent('  ').convert(first);
           }
         }
@@ -119,7 +118,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       rawResponse = 'خطأ أثناء الاتصال: $e';
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    if (foundUrl == null || foundUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -131,13 +130,15 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       return;
     }
 
-    // تعديل الترويسة لتعمل بوضع inline للبث
+    String streamUrl = foundUrl;
+
+    // تعديل الترويسة إلى inline
     if (streamUrl.contains('response-content-disposition=attachment')) {
       streamUrl = streamUrl.replaceAll(
           'response-content-disposition=attachment', 'response-content-disposition=inline');
     }
 
-    // تتبع الـ Redirect (302) التلقائي إلى CDN الخادم
+    // تتبع الـ 302 Redirect مع ضمان النوع غير القابل للـ null
     try {
       final headRes = await http.head(Uri.parse(streamUrl), headers: _browserHeaders);
       if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
@@ -145,7 +146,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       }
     } catch (_) {}
 
-    // تهيئة وتشغيل المشغل
+    // تهيئة المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
