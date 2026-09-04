@@ -32,7 +32,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Referer': 'https://cinemana.shabakaty.com/',
     'Origin': 'https://cinemana.shabakaty.com',
-    'Accept': 'application/json, text/plain, */*',
+    'Accept': '*/*',
   };
 
   @override
@@ -46,7 +46,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     _playVideo();
   }
 
-  // استخراج معرّف الفيديو الداخلي الحقيقي من المنشور
   String? _extractVideoNb(dynamic data, String postNb) {
     if (data == null) return null;
     if (data is List && data.isNotEmpty) {
@@ -77,7 +76,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return null;
   }
 
-  // استخراج رابط الجودة الأنسب (تفضيل 720p ثم 1080p ثم 480p)
   String? _extractBestVideoUrl(dynamic jsonList) {
     if (jsonList is! List || jsonList.isEmpty) return null;
 
@@ -95,7 +93,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       }
     }
 
-    // إذا لم تتطابق التسمية نأخذ أول videoUrl متاح
     for (var item in jsonList) {
       if (item is Map && item['videoUrl'] != null) {
         final s = item['videoUrl'].toString();
@@ -105,12 +102,28 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return null;
   }
 
+  // حل مسار الـ Redirect للوصول للرابط النهائي المباشر
+  Future<String> _resolveRedirect(String originalUrl) async {
+    try {
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(originalUrl))
+        ..followRedirects = false
+        ..headers.addAll(_headers);
+
+      final response = await client.send(request);
+      if (response.isRedirect && response.headers['location'] != null) {
+        return response.headers['location']!;
+      }
+    } catch (_) {}
+    return originalUrl;
+  }
+
   Future<void> _playVideo() async {
     final postNb = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
     String? rawStreamUrl;
     String? videoNb;
 
-    // 1. جلب videoNb الحقيقي للمنشور
+    // 1. استخراج معرّف الفيديو الداخلي
     if (postNb.isNotEmpty) {
       final postEndpoints = [
         'https://cinemana.shabakaty.com/api/android/video/postNb/$postNb',
@@ -132,7 +145,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
     final targetId = videoNb ?? postNb;
 
-    // 2. طلب مصفوفة الجودات المباشرة transcoddedFiles/id/{targetId}
+    // 2. استخراج الرابط الموقّع الأصلي من transcoddedFiles
     if (targetId.isNotEmpty) {
       try {
         final transcodeUrl =
@@ -156,21 +169,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       return;
     }
 
-    // 3. تحويل الترويسة إلى inline لتمكين البث المباشر
-    String finalStreamUrl = rawStreamUrl.replaceAll(
-      'response-content-disposition=attachment',
-      'response-content-disposition=inline',
-    );
+    // 3. الحفاظ على الرابط بتوقيعه الأصلي تماماً دون أي تعديل يكسر التوقيع
+    final String finalStreamUrl = await _resolveRedirect(rawStreamUrl);
 
-    // 4. تتبع تحويل CDN (302)
-    try {
-      final headRes = await http.head(Uri.parse(finalStreamUrl), headers: _headers);
-      if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
-        finalStreamUrl = headRes.headers['location']!;
-      }
-    } catch (_) {}
-
-    // 5. تهيئة المشغل وبدء التشغيل
+    // 4. تهيئة وتشغيل المشغل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(finalStreamUrl),
@@ -200,7 +202,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$finalStreamUrl';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط النهائي:\n$finalStreamUrl';
     }
 
     if (mounted) {
