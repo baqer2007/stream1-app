@@ -102,28 +102,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return null;
   }
 
-  // حل مسار الـ Redirect للوصول للرابط النهائي المباشر
-  Future<String> _resolveRedirect(String originalUrl) async {
-    try {
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(originalUrl))
-        ..followRedirects = false
-        ..headers.addAll(_headers);
-
-      final response = await client.send(request);
-      if (response.isRedirect && response.headers['location'] != null) {
-        return response.headers['location']!;
-      }
-    } catch (_) {}
-    return originalUrl;
-  }
-
   Future<void> _playVideo() async {
     final postNb = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
     String? rawStreamUrl;
     String? videoNb;
 
-    // 1. استخراج معرّف الفيديو الداخلي
+    // 1. جلب videoNb التابع للمنشور
     if (postNb.isNotEmpty) {
       final postEndpoints = [
         'https://cinemana.shabakaty.com/api/android/video/postNb/$postNb',
@@ -145,7 +129,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
     final targetId = videoNb ?? postNb;
 
-    // 2. استخراج الرابط الموقّع الأصلي من transcoddedFiles
+    // 2. استخراج الرابط الموقّع من transcoddedFiles
     if (targetId.isNotEmpty) {
       try {
         final transcodeUrl =
@@ -163,16 +147,16 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'لم يتم العثور على رابط بث لهذا المحتوى (ID: $targetId).';
+          _errorMessage = 'لم يتم العثور على رابط بث صالح (ID: $targetId).';
         });
       }
       return;
     }
 
-    // 3. الحفاظ على الرابط بتوقيعه الأصلي تماماً دون أي تعديل يكسر التوقيع
-    final String finalStreamUrl = await _resolveRedirect(rawStreamUrl);
+    // استخدام الرابط الأصلي تماماً دون لمس بارامتراته للحفاظ على صحة التوقيع
+    final String finalStreamUrl = rawStreamUrl.trim();
 
-    // 4. تهيئة وتشغيل المشغل
+    // 3. تشغيل الفيديو مباشرة بتمرير الترويسات المطلوبة
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(finalStreamUrl),
@@ -202,7 +186,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         },
       );
     } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط النهائي:\n$finalStreamUrl';
+      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط المستخرج:\n$finalStreamUrl';
     }
 
     if (mounted) {
