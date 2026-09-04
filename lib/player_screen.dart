@@ -27,7 +27,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
-  final Map<String, String> _browserHeaders = {
+  final Map<String, String> _headers = {
     'User-Agent':
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Referer': 'https://cinemana.shabakaty.com/',
@@ -43,44 +43,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
-    _startResolution();
+    _playVideo();
   }
 
-  String? _scanForStreamUrl(dynamic data) {
+  // استخراج معرّف الفيديو الداخلي الحقيقي من المنشور
+  String? _extractVideoNb(dynamic data, String postNb) {
     if (data == null) return null;
-    if (data is Map) {
-      for (final key in [
-        'videoUrl',
-        'containerUrl',
-        'fileUrl',
-        'directUrl',
-        'streamUrl',
-        'url'
-      ]) {
-        if (data[key] != null) {
-          final s = data[key].toString().trim();
-          if (s.startsWith('http') &&
-              (s.contains('.mp4') || s.contains('vascin') || s.contains('cndw1'))) {
-            return s;
-          }
-        }
-      }
-      for (var val in data.values) {
-        final res = _scanForStreamUrl(val);
-        if (res != null) return res;
-      }
-    } else if (data is List) {
-      for (var item in data) {
-        final res = _scanForStreamUrl(item);
-        if (res != null) return res;
-      }
-    }
-    return null;
-  }
-
-  String? _extractRealVideoId(dynamic data, String postNb) {
-    if (data == null) return null;
-
     if (data is List && data.isNotEmpty) {
       for (var item in data) {
         if (item is Map) {
@@ -101,7 +69,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     } else if (data is Map) {
       for (var k in ['videos', 'items', 'list']) {
         if (data[k] is List) {
-          final res = _extractRealVideoId(data[k], postNb);
+          final res = _extractVideoNb(data[k], postNb);
           if (res != null) return res;
         }
       }
@@ -109,17 +77,41 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return null;
   }
 
-  Future<void> _startResolution() async {
+  // استخراج رابط الجودة الأنسب (تفضيل 720p ثم 1080p ثم 480p)
+  String? _extractBestVideoUrl(dynamic jsonList) {
+    if (jsonList is! List || jsonList.isEmpty) return null;
+
+    final preferredResolutions = ['720p', '1080p', '480p', '360p', '240p'];
+
+    for (var targetRes in preferredResolutions) {
+      for (var item in jsonList) {
+        if (item is Map) {
+          final res = (item['resolution'] ?? item['name'] ?? '').toString();
+          final url = item['videoUrl']?.toString();
+          if (res.contains(targetRes) && url != null && url.isNotEmpty) {
+            return url;
+          }
+        }
+      }
+    }
+
+    // إذا لم تتطابق التسمية نأخذ أول videoUrl متاح
+    for (var item in jsonList) {
+      if (item is Map && item['videoUrl'] != null) {
+        final s = item['videoUrl'].toString();
+        if (s.startsWith('http')) return s;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _playVideo() async {
     final postNb = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
-    String? streamUrl;
-    StringBuffer logs = StringBuffer();
+    String? rawStreamUrl;
+    String? videoNb;
 
-    // 1. فحص كائن الفيلم الأساسي
-    streamUrl = _scanForStreamUrl(widget.movieData);
-
-    // 2. جلب videoNb التابع للـ postNb
-    String? realVideoId;
-    if (streamUrl == null && postNb.isNotEmpty) {
+    // 1. جلب videoNb الحقيقي للمنشور
+    if (postNb.isNotEmpty) {
       final postEndpoints = [
         'https://cinemana.shabakaty.com/api/android/video/postNb/$postNb',
         'https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=$postNb',
@@ -128,83 +120,61 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
       for (var ep in postEndpoints) {
         try {
-          final res = await http.get(Uri.parse(ep), headers: _browserHeaders);
-          logs.writeln('$ep => ${res.statusCode}');
+          final res = await http.get(Uri.parse(ep), headers: _headers);
           if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
             final decoded = json.decode(res.body);
-            streamUrl = _scanForStreamUrl(decoded);
-            if (streamUrl != null) break;
-
-            realVideoId = _extractRealVideoId(decoded, postNb);
-            if (realVideoId != null) {
-              logs.writeln('تم العثور على videoNb حقيقي: $realVideoId');
-              break;
-            }
+            videoNb = _extractVideoNb(decoded, postNb);
+            if (videoNb != null) break;
           }
-        } catch (e) {
-          logs.writeln('خطأ $ep: $e');
-        }
+        } catch (_) {}
       }
     }
 
-    // 3. طلب تفاصيل الفيديو بواسطة videoNb وعرض الاستجابة في حال عدم وجود رابط صريح
-    final targetVideoId = realVideoId ?? postNb;
-    if (streamUrl == null && targetVideoId.isNotEmpty) {
+    final targetId = videoNb ?? postNb;
+
+    // 2. طلب مصفوفة الجودات المباشرة transcoddedFiles/id/{targetId}
+    if (targetId.isNotEmpty) {
       try {
-        final infoUri = Uri.parse(
-            'https://cinemana.shabakaty.com/api/android/allVideoInfo/id/$targetVideoId');
-        final res = await http.get(infoUri, headers: _browserHeaders);
-        logs.writeln('allVideoInfo: ${res.statusCode}');
+        final transcodeUrl =
+            'https://cinemana.shabakaty.com/api/android/transcoddedFiles/id/$targetId';
+        final res = await http.get(Uri.parse(transcodeUrl), headers: _headers);
 
         if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
           final decoded = json.decode(res.body);
-          streamUrl = _scanForStreamUrl(decoded);
-
-          if (streamUrl == null) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _errorMessage = "استجابة allVideoInfo الناجحة (200 OK):\n\n" +
-                    const JsonEncoder.withIndent('  ').convert(decoded);
-              });
-            }
-            return;
-          }
+          rawStreamUrl = _extractBestVideoUrl(decoded);
         }
-      } catch (e) {
-        logs.writeln('خطأ allVideoInfo: $e');
-      }
+      } catch (_) {}
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    if (rawStreamUrl == null || rawStreamUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              'تعذر الحصول على ملف الفيديو لهذا العمل.\n\nسجل العمليات:\n$logs';
+          _errorMessage = 'لم يتم العثور على رابط بث لهذا المحتوى (ID: $targetId).';
         });
       }
       return;
     }
 
-    String finalStreamUrl = streamUrl;
+    // 3. تحويل الترويسة إلى inline لتمكين البث المباشر
+    String finalStreamUrl = rawStreamUrl.replaceAll(
+      'response-content-disposition=attachment',
+      'response-content-disposition=inline',
+    );
 
-    if (finalStreamUrl.contains('response-content-disposition=attachment')) {
-      finalStreamUrl = finalStreamUrl.replaceAll(
-          'response-content-disposition=attachment', 'response-content-disposition=inline');
-    }
-
+    // 4. تتبع تحويل CDN (302)
     try {
-      final headRes = await http.head(Uri.parse(finalStreamUrl), headers: _browserHeaders);
+      final headRes = await http.head(Uri.parse(finalStreamUrl), headers: _headers);
       if (headRes.statusCode == 302 && headRes.headers['location'] != null) {
         finalStreamUrl = headRes.headers['location']!;
       }
     } catch (_) {}
 
+    // 5. تهيئة المشغل وبدء التشغيل
     try {
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(finalStreamUrl),
-        httpHeaders: _browserHeaders,
+        httpHeaders: _headers,
       );
 
       await _videoPlayerController!.initialize();
@@ -259,16 +229,14 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           : _errorMessage != null
               ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: SingleChildScrollView(
-                      child: SelectableText(
-                        _errorMessage!,
-                        style: const TextStyle(
-                            color: Colors.amberAccent,
-                            fontSize: 12,
-                            fontFamily: 'monospace'),
-                        textAlign: TextAlign.left,
-                      ),
+                    padding: const EdgeInsets.all(20.0),
+                    child: SelectableText(
+                      _errorMessage!,
+                      style: const TextStyle(
+                          color: Colors.amberAccent,
+                          fontSize: 12,
+                          fontFamily: 'monospace'),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 )
