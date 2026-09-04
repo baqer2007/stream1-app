@@ -17,9 +17,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   final Map<String, String> _headers = {
-    'User-Agent': 'Cinemana/3.0.0 (Android)',
-    'Accept': 'application/json',
+    'User-Agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
     'Referer': 'https://cinemana.shabakaty.com/',
+    'Origin': 'https://cinemana.shabakaty.com',
   };
 
   @override
@@ -36,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final trimmedQuery = query.trim();
 
-    // نقطة النهاية المعتمدة لسينمانا
     final Uri requestUri = Uri.parse(
       'https://cinemana.shabakaty.com/api/android/AdvancedSearch'
     ).replace(queryParameters: {
@@ -99,7 +100,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // حقل البحث
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -133,7 +133,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // شبكة عرض الأفلام
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
@@ -166,16 +165,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                 item['imgThumbObjUrl'] ??
                                 item['imgObjUrl'] ??
                                 '';
-                            final videoId = (item['nb'] ?? item['id'] ?? '').toString();
 
                             return GestureDetector(
                               onTap: () {
-                                if (videoId.isNotEmpty) {
+                                if (item is Map) {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => CinemanaPlayerScreen(
-                                        videoId: videoId,
+                                        movieData: Map<String, dynamic>.from(item),
                                         initialTitle: title,
                                       ),
                                     ),
