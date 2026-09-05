@@ -235,8 +235,14 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         _statusText = 'جاري تهيئة المشغل...';
       });
 
+      // تمرير الهيدرز الحيوية لتجاوز خطأ Source error وإرضاء حماية المنصة
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
+        httpHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://cee.buzz/',
+          'Origin': 'https://cee.buzz',
+        },
       );
 
       await _videoPlayerController!.initialize();
