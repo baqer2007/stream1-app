@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
-// رابط سيرفر Render الثابت
 String appGlobalServerUrl = 'https://cee-relay.onrender.com';
 
 class CinemanaPlayerScreen extends StatefulWidget {
@@ -191,11 +190,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
-        _statusText = 'جاري استخراج بيانات الفيديو والترجمة عبر البروكسي...';
+        _statusText = 'جاري استخراج رابط الفيديو عبر البروكسي...';
       });
 
       final uri = Uri.parse('$appGlobalServerUrl/api/get-stream?id=$postId');
-      // تم رفع المهلة إلى 60 ثانية لتجنب انقطاع النفق المجاني
       final res = await http.get(uri).timeout(const Duration(seconds: 60));
 
       if (res.statusCode == 200) {
@@ -239,8 +237,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
-        httpHeaders: const {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        httpHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://cee.buzz/',
+          'Origin': 'https://cee.buzz',
         },
       );
 
