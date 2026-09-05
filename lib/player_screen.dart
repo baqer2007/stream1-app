@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -23,17 +24,16 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   ChewieController? _chewieController;
 
   bool _isLoading = true;
+  double _progressValue = 0.0;
+  String _statusText = 'جاري بدء الاتصال...';
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
 
-  final Map<String, String> _headers = {
-    'User-Agent':
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-    'Referer': 'https://cinemana.shabakaty.com/',
-    'Origin': 'https://cinemana.shabakaty.com',
-    'Accept': '*/*',
-  };
+  StreamSubscription? _streamSub;
+
+  // ضع عنوان IP هاتف Termux الفعلي هنا
+  static const String serverBaseUrl = 'http://192.168.1.50:3000';
 
   @override
   void initState() {
@@ -43,99 +43,86 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
-    _playTargetMovie();
+    _listenToLiveProgress();
   }
 
-  // استخراج رابط الجودة الأنسب (720p -> 1080p -> 480p -> أي رابط متاح)
-  String? _extractBestVideoUrl(dynamic jsonList) {
-    if (jsonList is! List || jsonList.isEmpty) return null;
+  Future<void> _listenToLiveProgress() async {
+    final postId = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
+    final title = _movieTitle ?? 'Movie_$postId';
 
-    final preferredResolutions = ['720p', '1080p', '480p', '360p', '240p'];
-
-    for (var targetRes in preferredResolutions) {
-      for (var item in jsonList) {
-        if (item is Map) {
-          final res = (item['resolution'] ?? item['name'] ?? '').toString();
-          final url = item['videoUrl']?.toString();
-          if (res.contains(targetRes) && url != null && url.isNotEmpty) {
-            return url;
-          }
-        }
-      }
-    }
-
-    for (var item in jsonList) {
-      if (item is Map && item['videoUrl'] != null) {
-        final s = item['videoUrl'].toString();
-        if (s.startsWith('http')) return s;
-      }
-    }
-    return null;
-  }
-
-  Future<void> _playTargetMovie() async {
-    final postNb = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
-    String? rawStreamUrl;
-    String? videoNb;
-
-    // 1. جلب videoNb التابع للفيلم المحدد باستخدام مسار allVideo المعتمد
-    if (postNb.isNotEmpty) {
-      try {
-        final uri = Uri.parse('https://cinemana.shabakaty.com/api/android/allVideo/page/0?postNb=$postNb');
-        final res = await http.get(uri, headers: _headers);
-
-        if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
-          final decoded = json.decode(res.body);
-          if (decoded is List && decoded.isNotEmpty) {
-            final firstVideo = decoded.first;
-            if (firstVideo is Map && firstVideo['nb'] != null) {
-              videoNb = firstVideo['nb'].toString();
-            }
-          } else if (decoded is Map && decoded['videos'] is List && (decoded['videos'] as List).isNotEmpty) {
-            final firstVideo = decoded['videos'][0];
-            if (firstVideo is Map && firstVideo['nb'] != null) {
-              videoNb = firstVideo['nb'].toString();
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 2. إذا لم يرجع allVideo نتيجة، نعتمد على معرف المنشور مباشرة
-    final targetId = videoNb ?? postNb;
-
-    // 3. جلب مصفوفة الجودات الحقيقية لهذا الفيلم تحديداً
-    if (targetId.isNotEmpty) {
-      try {
-        final transcodeUrl =
-            'https://cinemana.shabakaty.com/api/android/transcoddedFiles/id/$targetId';
-        final res = await http.get(Uri.parse(transcodeUrl), headers: _headers);
-
-        if (res.statusCode == 200 && res.body.isNotEmpty && res.body != '[]') {
-          final decoded = json.decode(res.body);
-          rawStreamUrl = _extractBestVideoUrl(decoded);
-        }
-      } catch (_) {}
-    }
-
-    if (rawStreamUrl == null || rawStreamUrl.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'لم يتم العثور على رابط بث لهذا المحتوى (ID: $targetId).';
-        });
-      }
+    if (postId.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'معرف الفيديو غير صالح.';
+      });
       return;
     }
 
-    // الرابط الموقّع الأصلي دون أي تعديل في نص الرابط
-    final String finalStreamUrl = rawStreamUrl.trim();
-
-    // 4. تهيئة المشغل
     try {
+      final client = http.Client();
+      final request = http.Request(
+        'GET',
+        Uri.parse('$serverBaseUrl/progress?postId=$postId&title=${Uri.encodeComponent(title)}&res=240p'),
+      );
+
+      final response = await client.send(request);
+
+      _streamSub = response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (line.startsWith('data: ')) {
+          final rawJson = line.substring(6).trim();
+          try {
+            final data = json.decode(rawJson);
+
+            if (data['status'] == 'uploading' || data['status'] == 'downloading') {
+              setState(() {
+                _statusText = data['message'] ?? 'جاري التجهيز...';
+                if (data['progress'] != null) {
+                  _progressValue = (data['progress'] as num).toDouble();
+                }
+              });
+            } else if (data['status'] == 'ready') {
+              final String embedUrl = data['embedUrl'];
+              final videoId = embedUrl.split('/').last;
+              const libraryId = '744597';
+              final streamUrl = 'https://video.bunnycdn.com/play/$libraryId/$videoId/playlist.m3u8';
+              _streamSub?.cancel();
+              _initPlayer(streamUrl);
+            } else if (data['status'] == 'error') {
+              setState(() {
+                _isLoading = false;
+                _errorMessage = data['message'];
+              });
+              _streamSub?.cancel();
+            }
+          } catch (_) {}
+        }
+      }, onError: (err) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'خطأ في استقبال البيانات: $err';
+        });
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'تعذر الاتصال بالسيرفر: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _initPlayer(String streamUrl) async {
+    try {
+      setState(() {
+        _statusText = 'جاري فتح المشغل...';
+      });
+
       _videoPlayerController = VideoPlayerController.networkUrl(
-        Uri.parse(finalStreamUrl),
-        httpHeaders: _headers,
+        Uri.parse(streamUrl),
       );
 
       await _videoPlayerController!.initialize();
@@ -147,30 +134,24 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         aspectRatio: _videoPlayerController!.value.aspectRatio,
         allowFullScreen: true,
         fullScreenByDefault: false,
-        errorBuilder: (context, error) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'تعذر البث: $error',
-                style: const TextStyle(color: Colors.white70),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        },
       );
-    } catch (e) {
-      _errorMessage = 'خطأ مشغل الفيديو: $e\n\nالرابط:\n$finalStreamUrl';
-    }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'فشل المشغل: $e';
+        });
+      }
     }
   }
 
   @override
   void dispose() {
+    _streamSub?.cancel();
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
     super.dispose();
@@ -186,17 +167,52 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         elevation: 0,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: CircularProgressIndicator(
+                            value: _progressValue > 0 ? _progressValue / 100 : null,
+                            strokeWidth: 6,
+                            color: Colors.redAccent,
+                            backgroundColor: Colors.white12,
+                          ),
+                        ),
+                        Text(
+                          '${_progressValue.toInt()}%',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      _statusText,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
           : _errorMessage != null
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
                     child: SelectableText(
                       _errorMessage!,
-                      style: const TextStyle(
-                          color: Colors.amberAccent,
-                          fontSize: 12,
-                          fontFamily: 'monospace'),
+                      style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -222,20 +238,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                           children: [
                             Text(
                               _movieTitle ?? 'بدون عنوان',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               _movieDescription ?? 'لا يوجد وصف متاح.',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.white70,
-                                height: 1.5,
-                              ),
+                              style: const TextStyle(fontSize: 13, color: Colors.white70, height: 1.5),
                             ),
                           ],
                         ),
