@@ -4,8 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
-// متغير عام محفوظ طوال فترة تشغيل التطبيق
-String appGlobalServerUrl = 'https://aec590f78afcbe.lhr.life';
+// رابط سيرفر Render الثابت
+String appGlobalServerUrl = 'https://cee-relay.onrender.com';
 
 class CinemanaPlayerScreen extends StatefulWidget {
   final Map<String, dynamic> movieData;
@@ -26,7 +26,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   ChewieController? _chewieController;
 
   bool _isLoading = true;
-  String _statusText = 'جاري التحضير...';
+  String _statusText = 'جاري الاتصال بالسيرفر...';
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
@@ -36,9 +36,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     super.initState();
     _movieTitle = widget.initialTitle ??
         widget.movieData['ar_title'] ??
-        widget.movieData['en_title'];
+        widget.movieData['en_title'] ??
+        widget.movieData['title'];
     _movieDescription =
-        widget.movieData['ar_content'] ?? widget.movieData['en_content'];
+        widget.movieData['ar_content'] ?? widget.movieData['en_content'] ?? widget.movieData['content'];
     _requestAndStartStreaming();
   }
 
@@ -56,7 +57,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'الصق رابط localhost.run الجديد هنا دون الحاجة لإعادة تنزيل التطبيق:',
+              'رابط سيرفر Render الحالي:',
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 12),
@@ -64,7 +65,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
               controller: controller,
               style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
               decoration: const InputDecoration(
-                hintText: 'https://xxxx.lhr.life',
+                hintText: 'https://cee-relay.onrender.com',
                 hintStyle: TextStyle(color: Colors.white30),
                 enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.redAccent),
@@ -86,9 +87,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                 newUrl = newUrl.substring(0, newUrl.length - 1);
               }
 
-              appGlobalServerUrl = newUrl;
-
               setState(() {
+                appGlobalServerUrl = newUrl;
                 _isLoading = true;
                 _errorMessage = null;
               });
@@ -103,12 +103,16 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   }
 
   Future<void> _requestAndStartStreaming() async {
-    final postId = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
+    final postId = (widget.movieData['nb'] ??
+            widget.movieData['id'] ??
+            widget.movieData['video_id'] ??
+            '')
+        .toString();
 
     if (postId.isEmpty) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'معرف الفيلم غير متوفر.';
+        _errorMessage = 'معرف الفيديو غير متوفر.';
       });
       return;
     }
@@ -117,32 +121,30 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
-        _statusText = 'جاري إرسال طلب التجهيز للسيرفر...';
+        _statusText = 'جاري استخراج رابط البث من CEE...';
       });
 
-      final uri = Uri.parse('$appGlobalServerUrl/play-hls?postId=$postId&res=240p');
-      final res = await http.get(uri).timeout(const Duration(seconds: 15));
+      // طلب الرابط الموقع مباشرة من سيرفر Render بصيغة JSON
+      final uri = Uri.parse('$appGlobalServerUrl/api/get-stream?id=$postId');
+      final res = await http.get(uri).timeout(const Duration(seconds: 20));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        // تكوين رابط التشغيل المباشر من سيرفر الهاتف عبر النفق
-        final String streamUrl = '$appGlobalServerUrl${data['streamPath']}';
+        final String? videoUrl = data['video_url'];
 
-        setState(() {
-          _statusText = 'جاري تقطيع أولى الثواني وتشغيل البث...';
-        });
-
-        // انتظار زمني قصير لإنشاء أول أجزاء الفيديو في Termux
-        await Future.delayed(const Duration(seconds: 6));
-        await _initPlayer(streamUrl);
+        if (videoUrl != null && videoUrl.isNotEmpty) {
+          await _initPlayer(videoUrl);
+        } else {
+          throw 'لم يتم العثور على رابط صالح في الاستجابة';
+        }
       } else {
-        throw 'استجابة السيرفر: ${res.statusCode}';
+        throw 'خطأ من الخادم (${res.statusCode}): ${res.body}';
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nاضغط على زر تغيير الرابط لتحديثه.';
+          _errorMessage = 'تعذر تجهيز الفيديو: $e';
         });
       }
     }
@@ -151,11 +153,17 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   Future<void> _initPlayer(String streamUrl) async {
     try {
       setState(() {
-        _statusText = 'جاري فتح الفيديو...';
+        _statusText = 'جاري تهيئة مشغل الفيديو...';
       });
 
+      // تزويد المشغل بالترويسات المطلوبة لفك حماية CDN
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
+        httpHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': 'https://cee.buzz/',
+          'Origin': 'https://cee.buzz',
+        },
       );
 
       await _videoPlayerController!.initialize();
@@ -172,7 +180,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'جاري تحميل أجزاء إضافية من البث... يرجى الانتظار ثوانٍ ($error)',
+                'حدث خطأ أثناء التشغيل: $error',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -188,7 +196,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'فشل تشغيل تدفق HLS: $e';
+          _errorMessage = 'فشل تشغيل مشغل الفيديو: $e';
         });
       }
     }
@@ -206,13 +214,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0B0F19),
       appBar: AppBar(
-        title: Text(_movieTitle ?? 'مشغل سينمانا'),
+        title: Text(_movieTitle ?? 'مشاهدة الفيديو'),
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.white70),
-            tooltip: 'تغيير رابط السيرفر',
+            tooltip: 'إعدادات السيرفر',
             onPressed: _showChangeUrlDialog,
           ),
         ],
@@ -247,9 +255,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-                          icon: const Icon(Icons.edit, size: 16),
-                          label: const Text('تغيير الرابط الآن'),
-                          onPressed: _showChangeUrlDialog,
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('إعادة المحاولة'),
+                          onPressed: _requestAndStartStreaming,
                         ),
                       ],
                     ),
