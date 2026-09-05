@@ -28,9 +28,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
-  // الرابط العام المباشر من localhost.run
-  static const String serverBaseUrl = 'https://9518c92e23b550.lhr.life
-';
+  // الرابط الجديد من localhost.run
+  static const String serverBaseUrl = 'https://9518c92e23b550.lhr.life';
 
   @override
   void initState() {
@@ -55,7 +54,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     }
 
     try {
-      // 1. إرسال طلب المعالجة للسيرفر
       final uri = Uri.parse('$serverBaseUrl/play-hls?postId=$postId&res=240p');
       final res = await http.get(uri);
 
@@ -67,7 +65,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           _statusText = 'جاري تهيئة أولى أجزاء البث...';
         });
 
-        // انتظار زمني قصير لضمان رفع القطع الأولى إلى السحابة
+        // انتظار زمني قصير لضمان بدء رفع أجزاء الـ HLS
         await Future.delayed(const Duration(seconds: 8));
 
         await _initPlayer(streamUrl);
