@@ -25,15 +25,15 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
   bool _isLoading = true;
   double _progressValue = 0.0;
-  String _statusText = 'جاري بدء الاتصال...';
+  String _statusText = 'جاري الاتصال بالسيرفر...';
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
 
   StreamSubscription? _streamSub;
 
-  // ضع عنوان IP هاتف Termux الفعلي هنا
-  static const String serverBaseUrl = 'http://192.168.1.50:3000';
+  // الرابط العالمي المولد عبر Pinggy
+  static const String serverBaseUrl = 'https://srcru-37-236-157-14.run.pinggy.free.link';
 
   @override
   void initState() {
