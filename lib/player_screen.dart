@@ -235,7 +235,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         _statusText = 'جاري تهيئة المشغل...';
       });
 
-      // تمرير الهيدرز الحيوية لتجاوز خطأ Source error وإرضاء حماية المنصة
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
         httpHeaders: {
