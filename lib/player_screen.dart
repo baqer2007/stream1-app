@@ -236,12 +236,11 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         _statusText = 'جاري تهيئة المشغل...';
       });
 
+      // استخدام User-Agent قياسي متوافق مع CDN وتفادي الترويسات التي تعطل التوقيع
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
-        httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': 'https://cee.buzz/',
-          'Origin': 'https://cee.buzz',
+        httpHeaders: const {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         },
       );
 
