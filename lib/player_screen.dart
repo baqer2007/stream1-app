@@ -191,11 +191,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
-        _statusText = 'جاري استخراج بيانات الفيديو والترجمة...';
+        _statusText = 'جاري استخراج بيانات الفيديو والترجمة عبر البروكسي...';
       });
 
       final uri = Uri.parse('$appGlobalServerUrl/api/get-stream?id=$postId');
-      final res = await http.get(uri).timeout(const Duration(seconds: 25));
+      // تم رفع المهلة إلى 60 ثانية لتجنب انقطاع النفق المجاني
+      final res = await http.get(uri).timeout(const Duration(seconds: 60));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
@@ -236,7 +237,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         _statusText = 'جاري تهيئة المشغل...';
       });
 
-      // استخدام User-Agent قياسي متوافق مع CDN وتفادي الترويسات التي تعطل التوقيع
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
         httpHeaders: const {
