@@ -107,7 +107,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     );
   }
 
-  // نافذة اختيار الجودة
   void _showQualityDialog() {
     if (_qualities.isEmpty) return;
 
@@ -259,12 +258,12 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         aspectRatio: _videoPlayerController!.value.aspectRatio,
         allowFullScreen: true,
         fullScreenByDefault: false,
-        additionalOptions: (context) {
+        additionalOptions: (ctx) {
           return <OptionItem>[
             if (_qualities.isNotEmpty)
               OptionItem(
-                onTap: () {
-                  Navigator.pop(context);
+                onTap: (optCtx) {
+                  Navigator.pop(optCtx);
                   _showQualityDialog();
                 },
                 iconData: Icons.high_quality,
