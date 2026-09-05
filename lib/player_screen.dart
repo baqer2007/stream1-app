@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+
+// متغير عام محفوظ طوال فترة فتح التطبيق
+String appGlobalServerUrl = 'https://ffbdca9fc0bc6f.lhr.life';
 
 class CinemanaPlayerScreen extends StatefulWidget {
   final Map<String, dynamic> movieData;
@@ -29,9 +31,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
-  // الرابط الافتراضي الحالي
-  String _serverBaseUrl = 'https://ffbdca9fc0bc6f.lhr.life';
-
   @override
   void initState() {
     super.initState();
@@ -40,23 +39,11 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
-    
-    _loadSavedUrlAndStart();
-  }
-
-  // قراءة الرابط المخزن في الهاتف
-  Future<void> _loadSavedUrlAndStart() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUrl = prefs.getString('saved_server_url');
-    if (savedUrl != null && savedUrl.isNotEmpty) {
-      _serverBaseUrl = savedUrl;
-    }
     _requestAndStartStreaming();
   }
 
-  // نافذة لتغيير الرابط ولصق الجديد بنقرة زر
   void _showChangeUrlDialog() {
-    final controller = TextEditingController(text: _serverBaseUrl);
+    final controller = TextEditingController(text: appGlobalServerUrl);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -88,15 +75,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () async {
+            onPressed: () {
               String newUrl = controller.text.trim();
               if (newUrl.endsWith('/')) newUrl = newUrl.substring(0, newUrl.length - 1);
-              
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('saved_server_url', newUrl);
+
+              appGlobalServerUrl = newUrl;
 
               setState(() {
-                _serverBaseUrl = newUrl;
                 _isLoading = true;
                 _errorMessage = null;
               });
@@ -128,7 +113,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         _statusText = 'جاري إرسال طلب التجهيز للسيرفر...';
       });
 
-      final uri = Uri.parse('$_serverBaseUrl/play-hls?postId=$postId&res=240p');
+      final uri = Uri.parse('$appGlobalServerUrl/play-hls?postId=$postId&res=240p');
       final res = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
@@ -148,7 +133,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nتأكد من الرابط أو اضغط أيقونة الإعدادات ⚙️ بالأعلى لتغييره.';
+          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nاضغط على زر تغيير الرابط في الأسفل أو أيقونة ⚙️ لتحديثه.';
         });
       }
     }
