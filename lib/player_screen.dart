@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -24,16 +23,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   ChewieController? _chewieController;
 
   bool _isLoading = true;
-  double _progressValue = 0.0;
-  String _statusText = 'جاري الاتصال بالسيرفر...';
+  String _statusText = 'جاري إرسال طلب التجهيز للسيرفر...';
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
 
-  StreamSubscription? _streamSub;
-
-  // الرابط العالمي المولد عبر Pinggy
-  static const String serverBaseUrl = 'https://srcru-37-236-157-14.run.pinggy.free.link';
+  // الرابط العام المباشر من localhost.run
+  static const String serverBaseUrl = 'https://d411179c9d0b62.lhr.life';
 
   @override
   void initState() {
@@ -43,73 +39,45 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
-    _listenToLiveProgress();
+    _requestAndStartStreaming();
   }
 
-  Future<void> _listenToLiveProgress() async {
+  Future<void> _requestAndStartStreaming() async {
     final postId = (widget.movieData['nb'] ?? widget.movieData['id'] ?? '').toString();
-    final title = _movieTitle ?? 'Movie_$postId';
 
     if (postId.isEmpty) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'معرف الفيديو غير صالح.';
+        _errorMessage = 'معرف الفيلم غير متوفر.';
       });
       return;
     }
 
     try {
-      final client = http.Client();
-      final request = http.Request(
-        'GET',
-        Uri.parse('$serverBaseUrl/progress?postId=$postId&title=${Uri.encodeComponent(title)}&res=240p'),
-      );
+      // 1. إرسال طلب المعالجة للسيرفر
+      final uri = Uri.parse('$serverBaseUrl/play-hls?postId=$postId&res=240p');
+      final res = await http.get(uri);
 
-      final response = await client.send(request);
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final String streamUrl = data['streamUrl'];
 
-      _streamSub = response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen((line) {
-        if (line.startsWith('data: ')) {
-          final rawJson = line.substring(6).trim();
-          try {
-            final data = json.decode(rawJson);
-
-            if (data['status'] == 'uploading' || data['status'] == 'downloading') {
-              setState(() {
-                _statusText = data['message'] ?? 'جاري التجهيز...';
-                if (data['progress'] != null) {
-                  _progressValue = (data['progress'] as num).toDouble();
-                }
-              });
-            } else if (data['status'] == 'ready') {
-              final String embedUrl = data['embedUrl'];
-              final videoId = embedUrl.split('/').last;
-              const libraryId = '744597';
-              final streamUrl = 'https://video.bunnycdn.com/play/$libraryId/$videoId/playlist.m3u8';
-              _streamSub?.cancel();
-              _initPlayer(streamUrl);
-            } else if (data['status'] == 'error') {
-              setState(() {
-                _isLoading = false;
-                _errorMessage = data['message'];
-              });
-              _streamSub?.cancel();
-            }
-          } catch (_) {}
-        }
-      }, onError: (err) {
         setState(() {
-          _isLoading = false;
-          _errorMessage = 'خطأ في استقبال البيانات: $err';
+          _statusText = 'جاري تهيئة أولى أجزاء البث...';
         });
-      });
+
+        // انتظار زمني قصير لضمان رفع القطع الأولى إلى السحابة
+        await Future.delayed(const Duration(seconds: 8));
+
+        await _initPlayer(streamUrl);
+      } else {
+        throw 'استجابة السيرفر: ${res.statusCode}';
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر الاتصال بالسيرفر: $e';
+          _errorMessage = 'تعذر الاتصال بالسيرفر:\n$e';
         });
       }
     }
@@ -118,7 +86,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   Future<void> _initPlayer(String streamUrl) async {
     try {
       setState(() {
-        _statusText = 'جاري فتح المشغل...';
+        _statusText = 'جاري فتح الفيديو...';
       });
 
       _videoPlayerController = VideoPlayerController.networkUrl(
@@ -134,6 +102,18 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         aspectRatio: _videoPlayerController!.value.aspectRatio,
         allowFullScreen: true,
         fullScreenByDefault: false,
+        errorBuilder: (context, error) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'جاري تحميل أجزاء إضافية من البث... يرجى الانتظار ثوانٍ ($error)',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        },
       );
 
       if (mounted) {
@@ -143,7 +123,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'فشل المشغل: $e';
+          _errorMessage = 'فشل تشغيل تدفق HLS: $e';
         });
       }
     }
@@ -151,7 +131,6 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
   @override
   void dispose() {
-    _streamSub?.cancel();
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
     super.dispose();
@@ -168,42 +147,17 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       ),
       body: _isLoading
           ? Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: CircularProgressIndicator(
-                            value: _progressValue > 0 ? _progressValue / 100 : null,
-                            strokeWidth: 6,
-                            color: Colors.redAccent,
-                            backgroundColor: Colors.white12,
-                          ),
-                        ),
-                        Text(
-                          '${_progressValue.toInt()}%',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      _statusText,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(color: Colors.redAccent),
+                  const SizedBox(height: 16),
+                  Text(
+                    _statusText,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             )
           : _errorMessage != null
@@ -238,12 +192,20 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                           children: [
                             Text(
                               _movieTitle ?? 'بدون عنوان',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               _movieDescription ?? 'لا يوجد وصف متاح.',
-                              style: const TextStyle(fontSize: 13, color: Colors.white70, height: 1.5),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.white70,
+                                height: 1.5,
+                              ),
                             ),
                           ],
                         ),
