@@ -4,8 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
-// متغير عام محفوظ طوال فترة فتح التطبيق
-String appGlobalServerUrl = 'https://ffbdca9fc0bc6f.lhr.life';
+// متغير عام محفوظ طوال فترة تشغيل التطبيق
+String appGlobalServerUrl = 'https://aec590f78afcbe.lhr.life';
 
 class CinemanaPlayerScreen extends StatefulWidget {
   final Map<String, dynamic> movieData;
@@ -48,7 +48,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1F2937),
-        title: const Text('تحديث رابط السيرفر', style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text(
+          'تحديث رابط السيرفر',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -63,7 +66,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
               decoration: const InputDecoration(
                 hintText: 'https://xxxx.lhr.life',
                 hintStyle: TextStyle(color: Colors.white30),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.redAccent),
+                ),
               ),
             ),
           ],
@@ -77,7 +82,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               String newUrl = controller.text.trim();
-              if (newUrl.endsWith('/')) newUrl = newUrl.substring(0, newUrl.length - 1);
+              if (newUrl.endsWith('/')) {
+                newUrl = newUrl.substring(0, newUrl.length - 1);
+              }
 
               appGlobalServerUrl = newUrl;
 
@@ -118,13 +125,15 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        final String streamUrl = data['streamUrl'];
+        // تكوين رابط التشغيل المباشر من سيرفر الهاتف عبر النفق
+        final String streamUrl = '$appGlobalServerUrl${data['streamPath']}';
 
         setState(() {
-          _statusText = 'جاري تهيئة أجزاء البث...';
+          _statusText = 'جاري تقطيع أولى الثواني وتشغيل البث...';
         });
 
-        await Future.delayed(const Duration(seconds: 8));
+        // انتظار زمني قصير لإنشاء أول أجزاء الفيديو في Termux
+        await Future.delayed(const Duration(seconds: 6));
         await _initPlayer(streamUrl);
       } else {
         throw 'استجابة السيرفر: ${res.statusCode}';
@@ -133,7 +142,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nاضغط على زر تغيير الرابط في الأسفل أو أيقونة ⚙️ لتحديثه.';
+          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nاضغط على زر تغيير الرابط لتحديثه.';
         });
       }
     }
@@ -163,7 +172,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'جاري تحميل أجزاء إضافية من البث... ($error)',
+                'جاري تحميل أجزاء إضافية من البث... يرجى الانتظار ثوانٍ ($error)',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
