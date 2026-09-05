@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
@@ -23,13 +24,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   ChewieController? _chewieController;
 
   bool _isLoading = true;
-  String _statusText = 'جاري إرسال طلب التجهيز للسيرفر...';
+  String _statusText = 'جاري التحضير...';
   String? _movieTitle;
   String? _movieDescription;
   String? _errorMessage;
 
-  // الرابط الجديد من localhost.run
-  static const String serverBaseUrl = 'https://9518c92e23b550.lhr.life';
+  // الرابط الافتراضي الحالي
+  String _serverBaseUrl = 'https://ffbdca9fc0bc6f.lhr.life';
 
   @override
   void initState() {
@@ -39,7 +40,74 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['en_title'];
     _movieDescription =
         widget.movieData['ar_content'] ?? widget.movieData['en_content'];
+    
+    _loadSavedUrlAndStart();
+  }
+
+  // قراءة الرابط المخزن في الهاتف
+  Future<void> _loadSavedUrlAndStart() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString('saved_server_url');
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      _serverBaseUrl = savedUrl;
+    }
     _requestAndStartStreaming();
+  }
+
+  // نافذة لتغيير الرابط ولصق الجديد بنقرة زر
+  void _showChangeUrlDialog() {
+    final controller = TextEditingController(text: _serverBaseUrl);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1F2937),
+        title: const Text('تحديث رابط السيرفر', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'الصق رابط localhost.run الجديد هنا دون الحاجة لإعادة تنزيل التطبيق:',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: 'https://xxxx.lhr.life',
+                hintStyle: TextStyle(color: Colors.white30),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              String newUrl = controller.text.trim();
+              if (newUrl.endsWith('/')) newUrl = newUrl.substring(0, newUrl.length - 1);
+              
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('saved_server_url', newUrl);
+
+              setState(() {
+                _serverBaseUrl = newUrl;
+                _isLoading = true;
+                _errorMessage = null;
+              });
+              Navigator.pop(context);
+              _requestAndStartStreaming();
+            },
+            child: const Text('حفظ وتشغيل', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _requestAndStartStreaming() async {
@@ -54,20 +122,24 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     }
 
     try {
-      final uri = Uri.parse('$serverBaseUrl/play-hls?postId=$postId&res=240p');
-      final res = await http.get(uri);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+        _statusText = 'جاري إرسال طلب التجهيز للسيرفر...';
+      });
+
+      final uri = Uri.parse('$_serverBaseUrl/play-hls?postId=$postId&res=240p');
+      final res = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final String streamUrl = data['streamUrl'];
 
         setState(() {
-          _statusText = 'جاري تهيئة أولى أجزاء البث...';
+          _statusText = 'جاري تهيئة أجزاء البث...';
         });
 
-        // انتظار زمني قصير لضمان بدء رفع أجزاء الـ HLS
         await Future.delayed(const Duration(seconds: 8));
-
         await _initPlayer(streamUrl);
       } else {
         throw 'استجابة السيرفر: ${res.statusCode}';
@@ -76,7 +148,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر الاتصال بالسيرفر:\n$e';
+          _errorMessage = 'تعذر الاتصال بالسيرفر ($e)\n\nتأكد من الرابط أو اضغط أيقونة الإعدادات ⚙️ بالأعلى لتغييره.';
         });
       }
     }
@@ -106,7 +178,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'جاري تحميل أجزاء إضافية من البث... يرجى الانتظار ثوانٍ ($error)',
+                'جاري تحميل أجزاء إضافية من البث... ($error)',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -143,6 +215,13 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         title: Text(_movieTitle ?? 'مشغل سينمانا'),
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white70),
+            tooltip: 'تغيير رابط السيرفر',
+            onPressed: _showChangeUrlDialog,
+          ),
+        ],
       ),
       body: _isLoading
           ? Center(
@@ -163,10 +242,22 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
-                    child: SelectableText(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
-                      textAlign: TextAlign.center,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SelectableText(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: const Text('تغيير الرابط الآن'),
+                          onPressed: _showChangeUrlDialog,
+                        ),
+                      ],
                     ),
                   ),
                 )
