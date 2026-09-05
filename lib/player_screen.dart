@@ -29,7 +29,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _errorMessage;
 
   // الرابط العام المباشر من localhost.run
-  static const String serverBaseUrl = 'https://d411179c9d0b62.lhr.life';
+  static const String serverBaseUrl = 'https://9518c92e23b550.lhr.life
+';
 
   @override
   void initState() {
