@@ -31,6 +31,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
   String? _movieDescription;
   String? _errorMessage;
 
+  List<dynamic> _qualities = [];
+  List<dynamic> _subtitles = [];
+  String _currentQuality = 'تلقائي';
+
   @override
   void initState() {
     super.initState();
@@ -38,8 +42,9 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         widget.movieData['ar_title'] ??
         widget.movieData['en_title'] ??
         widget.movieData['title'];
-    _movieDescription =
-        widget.movieData['ar_content'] ?? widget.movieData['en_content'] ?? widget.movieData['content'];
+    _movieDescription = widget.movieData['ar_content'] ??
+        widget.movieData['en_content'] ??
+        widget.movieData['content'];
     _requestAndStartStreaming();
   }
 
@@ -102,6 +107,72 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     );
   }
 
+  // نافذة اختيار الجودة
+  void _showQualityDialog() {
+    if (_qualities.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1F2937),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'اختر جودة الفيديو',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ..._qualities.map((item) {
+              final res = item['resolution'] ?? 'غير محدد';
+              final url = item['url'] ?? '';
+              final isSelected = _currentQuality == res;
+
+              return ListTile(
+                leading: Icon(
+                  isSelected ? Icons.check_circle : Icons.circle_outlined,
+                  color: isSelected ? Colors.redAccent : Colors.white54,
+                ),
+                title: Text(
+                  res,
+                  style: TextStyle(
+                    color: isSelected ? Colors.redAccent : Colors.white,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  if (!isSelected && url.isNotEmpty) {
+                    final currentPos = _videoPlayerController?.value.position ?? Duration.zero;
+                    _currentQuality = res;
+                    await _switchQuality(url, currentPos);
+                  }
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _switchQuality(String newUrl, Duration resumePosition) async {
+    setState(() {
+      _isLoading = true;
+      _statusText = 'جاري التبديل إلى جودة $_currentQuality...';
+    });
+
+    _chewieController?.dispose();
+    _videoPlayerController?.dispose();
+
+    await _initPlayer(newUrl, startAt: resumePosition);
+  }
+
   Future<void> _requestAndStartStreaming() async {
     final postId = (widget.movieData['nb'] ??
             widget.movieData['id'] ??
@@ -121,42 +192,51 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
-        _statusText = 'جاري استخراج رابط البث من CEE...';
+        _statusText = 'جاري استخراج بيانات الفيديو والترجمة...';
       });
 
-      // طلب الرابط الموقع مباشرة من سيرفر Render بصيغة JSON
       final uri = Uri.parse('$appGlobalServerUrl/api/get-stream?id=$postId');
-      final res = await http.get(uri).timeout(const Duration(seconds: 20));
+      final res = await http.get(uri).timeout(const Duration(seconds: 25));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final String? videoUrl = data['video_url'];
 
+        _qualities = data['qualities'] ?? [];
+        _subtitles = data['subtitles'] ?? [];
+
+        if (_qualities.isNotEmpty) {
+          final matched = _qualities.firstWhere(
+            (q) => q['url'] == videoUrl,
+            orElse: () => _qualities.first,
+          );
+          _currentQuality = matched['resolution'] ?? 'Auto';
+        }
+
         if (videoUrl != null && videoUrl.isNotEmpty) {
           await _initPlayer(videoUrl);
         } else {
-          throw 'لم يتم العثور على رابط صالح في الاستجابة';
+          throw 'لم يتم العثور على رابط فيديو صالح في الرد.';
         }
       } else {
-        throw 'خطأ من الخادم (${res.statusCode}): ${res.body}';
+        throw 'استجابة السيرفر (${res.statusCode}): ${res.body}';
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر تجهيز الفيديو: $e';
+          _errorMessage = 'تعذر تشغيل الفيديو: $e';
         });
       }
     }
   }
 
-  Future<void> _initPlayer(String streamUrl) async {
+  Future<void> _initPlayer(String streamUrl, {Duration? startAt}) async {
     try {
       setState(() {
-        _statusText = 'جاري تهيئة مشغل الفيديو...';
+        _statusText = 'جاري تهيئة المشغل...';
       });
 
-      // تزويد المشغل بالترويسات المطلوبة لفك حماية CDN
       _videoPlayerController = VideoPlayerController.networkUrl(
         Uri.parse(streamUrl),
         httpHeaders: {
@@ -168,6 +248,10 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
       await _videoPlayerController!.initialize();
 
+      if (startAt != null && startAt > Duration.zero) {
+        await _videoPlayerController!.seekTo(startAt);
+      }
+
       _chewieController = ChewieController(
         videoPlayerController: _videoPlayerController!,
         autoPlay: true,
@@ -175,12 +259,25 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
         aspectRatio: _videoPlayerController!.value.aspectRatio,
         allowFullScreen: true,
         fullScreenByDefault: false,
+        additionalOptions: (context) {
+          return <OptionItem>[
+            if (_qualities.isNotEmpty)
+              OptionItem(
+                onTap: () {
+                  Navigator.pop(context);
+                  _showQualityDialog();
+                },
+                iconData: Icons.high_quality,
+                title: 'الجودة ($_currentQuality)',
+              ),
+          ];
+        },
         errorBuilder: (context, error) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'حدث خطأ أثناء التشغيل: $error',
+                'حدث خطأ في المشغل: $error',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -196,7 +293,7 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'فشل تشغيل مشغل الفيديو: $e';
+          _errorMessage = 'فشل تهيئة مشغل الفيديو: $e';
         });
       }
     }
@@ -204,8 +301,8 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
 
   @override
   void dispose() {
-    _videoPlayerController?.dispose();
     _chewieController?.dispose();
+    _videoPlayerController?.dispose();
     super.dispose();
   }
 
@@ -214,10 +311,16 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0B0F19),
       appBar: AppBar(
-        title: Text(_movieTitle ?? 'مشاهدة الفيديو'),
+        title: Text(_movieTitle ?? 'مشغل الفيديو'),
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
         actions: [
+          if (_qualities.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.tune, color: Colors.white70),
+              tooltip: 'تغيير الجودة',
+              onPressed: _showQualityDialog,
+            ),
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.white70),
             tooltip: 'إعدادات السيرفر',
@@ -282,13 +385,32 @@ class _CinemanaPlayerScreenState extends State<CinemanaPlayerScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _movieTitle ?? 'بدون عنوان',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _movieTitle ?? 'بدون عنوان',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                if (_currentQuality.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.redAccent, width: 0.8),
+                                    ),
+                                    child: Text(
+                                      _currentQuality,
+                                      style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                                    ),
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 8),
                             Text(
