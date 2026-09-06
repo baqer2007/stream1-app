@@ -44,19 +44,41 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   static const String _apiKey = '8265bd1679663a7ea12ac168da84d2e8';
   static const String _imgBase = 'https://image.tmdb.org/t/p/w500';
 
+  final ScrollController _scrollController = ScrollController();
+
   List<dynamic> _trending = [];
   List<dynamic> _popularSeries = [];
   List<dynamic> _animeList = [];
-  bool _isLoading = true;
+  List<dynamic> _infiniteExploreList = [];
+
+  int _explorePage = 1;
+  bool _isLoadingInitial = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
     StreamService.startRelayWorker();
-    _loadData();
+    _loadInitialData();
+
+    // الاستماع لحركة التمرير لتفعيل الجلب اللانهائي
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
+        if (!_isLoadingMore && _hasMore) {
+          _loadMoreExplore();
+        }
+      }
+    });
   }
 
-  Future<void> _loadData() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
     try {
       final resTrending = await http.get(Uri.parse(
           'https://api.themoviedb.org/3/trending/movie/day?api_key=$_apiKey&language=ar-SA'));
@@ -64,18 +86,65 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           'https://api.themoviedb.org/3/trending/tv/day?api_key=$_apiKey&language=ar-SA'));
       final resAnime = await http.get(Uri.parse(
           'https://api.themoviedb.org/3/discover/tv?api_key=$_apiKey&with_genres=16&with_original_language=ja&sort_by=popularity.desc&language=ar-SA'));
+      final resExplore = await http.get(Uri.parse(
+          'https://api.themoviedb.org/3/discover/movie?api_key=$_apiKey&sort_by=popularity.desc&page=$_explorePage&language=ar-SA'));
 
       if (mounted) {
         setState(() {
           _trending = jsonDecode(resTrending.body)['results'] ?? [];
           _popularSeries = jsonDecode(resSeries.body)['results'] ?? [];
           _animeList = jsonDecode(resAnime.body)['results'] ?? [];
-          _isLoading = false;
+          _infiniteExploreList = jsonDecode(resExplore.body)['results'] ?? [];
+          _isLoadingInitial = false;
         });
+
+        // سحب 20 رابطاً استباقياً وتخزينها في Firebase بصمت
+        _triggerBatchPreCaching();
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoadingInitial = false);
     }
+  }
+
+  /// أخذ أول 20 عملاً وتمريرها للعامل لتخزين روابطها إذا كان المستخدم في العراق
+  void _triggerBatchPreCaching() {
+    final List<String> targetIds = [];
+    for (var item in _trending) {
+      if (item['id'] != null) targetIds.add(item['id'].toString());
+      if (targetIds.length >= 20) break;
+    }
+    if (targetIds.length < 20) {
+      for (var item in _infiniteExploreList) {
+        if (item['id'] != null) targetIds.add(item['id'].toString());
+        if (targetIds.length >= 20) break;
+      }
+    }
+
+    if (targetIds.isNotEmpty) {
+      StreamService.preCacheMovieIds(targetIds);
+    }
+  }
+
+  Future<void> _loadMoreExplore() async {
+    setState(() => _isLoadingMore = true);
+    _explorePage++;
+
+    try {
+      final res = await http.get(Uri.parse(
+          'https://api.themoviedb.org/3/discover/movie?api_key=$_apiKey&sort_by=popularity.desc&page=$_explorePage&language=ar-SA'));
+      if (res.statusCode == 200) {
+        final List newItems = jsonDecode(res.body)['results'] ?? [];
+        if (newItems.isEmpty) {
+          _hasMore = false;
+        } else {
+          setState(() {
+            _infiniteExploreList.addAll(newItems);
+          });
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) setState(() => _isLoadingMore = false);
   }
 
   void _openDetails(Map<String, dynamic> item, String type) {
@@ -121,20 +190,42 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             ],
           ),
         ),
-        body: _isLoading
+        body: _isLoadingInitial
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
             : RefreshIndicator(
                 color: const Color(0xFFE50914),
-                onRefresh: _loadData,
+                onRefresh: () async {
+                  _explorePage = 1;
+                  _hasMore = true;
+                  await _loadInitialData();
+                },
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_trending.isNotEmpty) _buildHeroBanner(_trending.first, screenWidth),
                       const SizedBox(height: 12),
-                      _buildShelf('🔥 الأفلام الأكثر رواجاً اليوم', _trending, 'movie'),
-                      _buildShelf('📺 المسلسلات والدراما الأسبوعية', _popularSeries, 'tv'),
+                      _buildShelf('🔥 الأكثر رواجاً اليوم', _trending, 'movie'),
+                      _buildShelf('📺 المسلسلات والدراما التلفزيونية', _popularSeries, 'tv'),
                       _buildShelf('⛩️ عالم الأنمي الياباني', _animeList, 'tv'),
+                      const SizedBox(height: 16),
+
+                      // شبكة الاستكشاف اللانهائي
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
+                        child: Text(
+                          '🌐 استكشاف عروض لا نهائية',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                        ),
+                      ),
+                      _buildInfiniteGrid(),
+
+                      if (_isLoadingMore)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+                        ),
                       const SizedBox(height: 30),
                     ],
                   ),
@@ -184,15 +275,21 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
               ),
               const SizedBox(height: 8),
-              ElevatedButton.icon(
+              ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE50914),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 ),
                 onPressed: () => _openDetails(item, 'movie'),
-                icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                label: const Text('عرض التفاصيل والمشاهدة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_arrow_rounded, size: 20, color: Colors.white),
+                    SizedBox(width: 6),
+                    Text('عرض التفاصيل والمشاهدة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                  ],
+                ),
               ),
             ],
           ),
@@ -276,8 +373,79 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       ],
     );
   }
+
+  Widget _buildInfiniteGrid() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10.0),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.58,
+        ),
+        itemCount: _infiniteExploreList.length,
+        itemBuilder: (ctx, i) {
+          final item = _infiniteExploreList[i];
+          final mTitle = item['title'] ?? item['name'] ?? '';
+          final path = item['poster_path'];
+          final score = (item['vote_average'] as num?)?.toStringAsFixed(1) ?? '7.5';
+
+          return InkWell(
+            onTap: () => _openDetails(item, 'movie'),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F1422),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                      child: path != null
+                          ? Image.network(
+                              '$_imgBase$path',
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: const Color(0xFF172033)),
+                            )
+                          : Container(color: const Color(0xFF172033)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(5.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                        const SizedBox(height: 2),
+                        Text('⭐ $score', style: const TextStyle(fontSize: 9.5, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
+// -------------------------------------------------------------
+// شاشة تفاصيل العمل
+// -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   final String type;
@@ -290,12 +458,12 @@ class MediaDetailScreen extends StatefulWidget {
 
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
   static const String _apiKey = '8265bd1679663a7ea12ac168da84d2e8';
-  final TextEditingController _manualIdController = TextEditingController(text: '3130508');
 
   List<dynamic> _similarMedia = [];
   List<dynamic> _seasons = [];
   int _selectedSeason = 1;
   int _episodesCount = 12;
+  String? _imdbId;
   bool _isLoadingDetails = true;
   bool _isLaunchingStream = false;
 
@@ -309,12 +477,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final id = widget.media['id'];
     try {
       final resDetails = await http.get(Uri.parse(
-          'https://api.themoviedb.org/3/${widget.type}/$id?api_key=$_apiKey&language=ar-SA'));
+          'https://api.themoviedb.org/3/${widget.type}/$id?api_key=$_apiKey&append_to_response=external_ids&language=ar-SA'));
       final resSimilar = await http.get(Uri.parse(
           'https://api.themoviedb.org/3/${widget.type}/$id/similar?api_key=$_apiKey&language=ar-SA'));
 
       if (resDetails.statusCode == 200) {
         final data = jsonDecode(resDetails.body);
+        _imdbId = data['external_ids']?['imdb_id'] ?? data['imdb_id'];
+
         if (widget.type == 'tv' && data['seasons'] != null) {
           _seasons = (data['seasons'] as List).where((s) => (s['season_number'] ?? 0) > 0).toList();
           if (_seasons.isNotEmpty) {
@@ -335,8 +505,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _playEpisode(int season, int episode) async {
     setState(() => _isLaunchingStream = true);
 
-    final targetId = _manualIdController.text.trim();
-    final data = await StreamService.getVideoSource(targetId);
+    final mediaId = widget.media['id'].toString();
+    final internalTargetId = widget.type == 'tv'
+        ? '${mediaId}_s${season}_e$episode'
+        : mediaId;
+
+    final data = await StreamService.getVideoSource(internalTargetId);
 
     setState(() => _isLaunchingStream = false);
 
@@ -353,13 +527,17 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             title: fullTitle,
             videoUrl: data['video_url'],
             qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
+            imdbId: _imdbId,
+            type: widget.type,
+            season: season,
+            episode: episode,
           ),
         ),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تعذر جلب رابط الحلقة حالياً، جاري البحث عبر شبكة الـ Relay...'),
+          content: Text('جاري معالجة وجلب رابط الفيديو من الشبكة السحابية...'),
           backgroundColor: Color(0xFFE50914),
         ),
       );
@@ -450,16 +628,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                       ],
                                     ),
                                     const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _manualIdController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: 'معرف البث (cee.buzz ID)',
-                                        isDense: true,
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                        filled: true,
-                                        fillColor: const Color(0xFF0F1422),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F1422),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Colors.white12),
                                       ),
+                                      child: const Text('سيرفر البث والترجمة: جاهز تلقائياً', style: TextStyle(fontSize: 11, color: Color(0xFF00F0FF))),
                                     ),
                                   ],
                                 ),
@@ -470,19 +646,25 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                           SizedBox(
                             width: double.infinity,
                             height: 48,
-                            child: ElevatedButton.icon(
+                            child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFE50914),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                               onPressed: _isLaunchingStream ? null : () => _playEpisode(_selectedSeason, 1),
-                              icon: _isLaunchingStream
-                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                  : const Icon(Icons.play_arrow_rounded, size: 28),
-                              label: Text(
-                                widget.type == 'tv' ? 'مشاهدة الحلقة الأولى' : 'مشاهدة الفيلم الآن',
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-                              ),
+                              child: _isLaunchingStream
+                                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.white),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          widget.type == 'tv' ? 'مشاهدة الحلقة الأولى' : 'مشاهدة الفيلم الآن',
+                                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -628,16 +810,27 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
+// -------------------------------------------------------------
+// مشغل الفيديو الاحترافي (جلب الترجمة العربية وتفعيلها تلقائياً)
+// -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String title;
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
+  final String? imdbId;
+  final String type;
+  final int season;
+  final int episode;
 
   const PlayerScreen({
     super.key,
     required this.title,
     required this.videoUrl,
     required this.qualities,
+    this.imdbId,
+    required this.type,
+    this.season = 1,
+    this.episode = 1,
   });
 
   @override
@@ -648,13 +841,72 @@ class _PlayerScreenState extends State<PlayerScreen> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _currentUrl;
+  List<Subtitle> _parsedSubtitles = [];
   bool _isReady = false;
 
   @override
   void initState() {
     super.initState();
     _currentUrl = widget.videoUrl;
+    _loadSubtitlesAndInitPlayer();
+  }
+
+  Future<void> _loadSubtitlesAndInitPlayer() async {
+    if (widget.imdbId != null && widget.imdbId!.isNotEmpty) {
+      try {
+        final endpoint = widget.type == 'tv'
+            ? 'https://opensubtitles-v3.strem.io/subtitles/series/${widget.imdbId}:${widget.season}:${widget.episode}.json'
+            : 'https://opensubtitles-v3.strem.io/subtitles/movie/${widget.imdbId}.json';
+
+        final res = await http.get(Uri.parse(endpoint)).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final subs = data['subtitles'] as List?;
+          if (subs != null && subs.isNotEmpty) {
+            final arSub = subs.firstWhere(
+              (s) => s['lang'] == 'ara' || s['lang'] == 'ar' || s['lang'] == 'arabic',
+              orElse: () => subs.first,
+            );
+            if (arSub['url'] != null) {
+              final subContent = await http.get(Uri.parse(arSub['url'])).timeout(const Duration(seconds: 4));
+              if (subContent.statusCode == 200) {
+                _parsedSubtitles = _parseSrt(subContent.body);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     _initPlayer(_currentUrl!);
+  }
+
+  List<Subtitle> _parseSrt(String srtText) {
+    final List<Subtitle> list = [];
+    final pattern = RegExp(r'(\d+)\r?\n(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n([\s\S]*?)(?=\n\n|\r\n\r\n|$)');
+    final matches = pattern.allMatches(srtText);
+
+    int idx = 0;
+    for (var m in matches) {
+      final start = _parseDuration(m.group(2)!);
+      final end = _parseDuration(m.group(3)!);
+      final text = m.group(4)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+
+      if (text.isNotEmpty) {
+        list.add(Subtitle(index: idx++, start: start, end: end, text: text));
+      }
+    }
+    return list;
+  }
+
+  Duration _parseDuration(String timeStr) {
+    final parts = timeStr.replaceAll(',', '.').split(':');
+    final hours = int.parse(parts[0]);
+    final minutes = int.parse(parts[1]);
+    final secondsParts = parts[2].split('.');
+    final seconds = int.parse(secondsParts[0]);
+    final millis = int.parse(secondsParts[1].padRight(3, '0').substring(0, 3));
+    return Duration(hours: hours, minutes: minutes, seconds: seconds, milliseconds: millis);
   }
 
   void _initPlayer(String streamUrl) async {
@@ -671,23 +923,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       autoPlay: true,
       looping: false,
       aspectRatio: _videoPlayerController!.value.aspectRatio,
-      subtitle: Subtitles([
-        Subtitle(
-          index: 0,
-          start: Duration.zero,
-          end: const Duration(seconds: 5),
-          text: 'ONEBR TV - مشاهدة ممتعة',
-        ),
-      ]),
+      subtitle: _parsedSubtitles.isNotEmpty ? Subtitles(_parsedSubtitles) : null,
       subtitleBuilder: (context, subtitle) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.75),
-          borderRadius: BorderRadius.circular(4),
+          color: Colors.black.withOpacity(0.8),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           subtitle,
-          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, height: 1.3),
           textAlign: TextAlign.center,
         ),
       ),
