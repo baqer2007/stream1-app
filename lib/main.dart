@@ -37,7 +37,7 @@ class OnebrTvApp extends StatelessWidget {
 }
 
 // -------------------------------------------------------------
-// الصفحة الرئيسية
+// الصفحة الرئيسية (تعتمد على TMDB للعرض فائق السرعة)
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -47,31 +47,44 @@ class MainHomeScreen extends StatefulWidget {
 }
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
+  // مفتاح TMDB الرسمي العام
+  final String _tmdbApiKey = 'b7cd3340a794e5a2f35e3abb820b497f';
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
-  List<dynamic> _items = [];
-  List<dynamic> _movies = [];
-  List<dynamic> _series = [];
-  List<dynamic> _categories = [];
+  List<dynamic> _trending = [];
+  List<dynamic> _popularMovies = [];
+  List<dynamic> _popularSeries = [];
+  List<dynamic> _activeGrid = [];
 
-  int _currentPage = 0;
+  int _page = 1;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  String _activeCategoryTitle = 'الكل';
+  String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
+
+  final List<Map<String, dynamic>> _genres = [
+    {'id': 'all', 'name': 'الكل', 'type': 'all'},
+    {'id': '28', 'name': 'أكشن', 'type': 'movie'},
+    {'id': '12', 'name': 'مغامرة', 'type': 'movie'},
+    {'id': '16', 'name': 'أنمي ورسوم متحركة', 'type': 'both'},
+    {'id': '35', 'name': 'كوميديا', 'type': 'both'},
+    {'id': '80', 'name': 'جريمة', 'type': 'both'},
+    {'id': '18', 'name': 'دراما', 'type': 'both'},
+    {'id': '27', 'name': 'رعب', 'type': 'movie'},
+    {'id': '878', 'name': 'خيال علمي', 'type': 'both'},
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadCategories();
-    _loadCeeContent(reset: true);
+    _fetchTmdbData(reset: true);
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
-          _loadCeeContent(reset: false);
+          _fetchTmdbData(reset: false);
         }
       }
     });
@@ -84,26 +97,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     super.dispose();
   }
 
-  // جلب التصنيفات الحقيقية من API سينمانا DevTools
-  Future<void> _loadCategories() async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/mainCategories?lang=en'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      );
-      if (res.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        if (decoded is List && mounted) {
-          setState(() => _categories = decoded);
-        }
-      }
-    } catch (_) {}
-  }
-
-  // جلب المحتوى المباشر عبر AdvancedSearch
-  Future<void> _loadCeeContent({bool reset = false, String? categoryId}) async {
+  Future<void> _fetchTmdbData({bool reset = false}) async {
     if (reset) {
-      _currentPage = 0;
+      _page = 1;
       _hasMore = true;
       setState(() => _isLoadingInitial = true);
     } else {
@@ -111,55 +107,77 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
 
     try {
-      String urlStr = 'https://cee.buzz/api/android/AdvancedSearch?level=0&page=$_currentPage&year=1900,2026';
-      if (categoryId != null && categoryId != 'all') {
-        urlStr += '&category=$categoryId';
-      }
+      if (reset) {
+        // جلب التريند، الأفلام الشائعة، والمسلسلات
+        final trendingRes = await http.get(Uri.parse(
+            'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar'));
+        final moviesRes = await http.get(Uri.parse(
+            'https://api.themoviedb.org/3/movie/popular?api_key=$_tmdbApiKey&language=ar&page=1'));
+        final seriesRes = await http.get(Uri.parse(
+            'https://api.themoviedb.org/3/tv/popular?api_key=$_tmdbApiKey&language=ar&page=1'));
 
-      final res = await http.get(Uri.parse(urlStr), headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://cee.buzz/home',
-        'Accept': 'application/json, text/plain, */*',
-      }).timeout(const Duration(seconds: 8));
+        if (trendingRes.statusCode == 200 && mounted) {
+          final tList = jsonDecode(trendingRes.body)['results'] ?? [];
+          final mList = jsonDecode(moviesRes.body)['results'] ?? [];
+          final sList = jsonDecode(seriesRes.body)['results'] ?? [];
 
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List list = (decoded is List) ? decoded : (decoded['articles'] ?? decoded['data'] ?? []);
-
-        if (mounted) {
           setState(() {
-            if (reset) {
-              _items = list;
-            } else {
-              _items.addAll(list);
-            }
-
-            if (list.length < 8) {
-              _hasMore = false;
-            } else {
-              _currentPage++;
-            }
-
-            _movies = _items.where((it) => (it['kind']?.toString() ?? '1') == '1' && (it['season'] == null || it['season'] == '0')).toList();
-            _series = _items.where((it) => (it['kind']?.toString() ?? '1') != '1' || (it['season'] != null && it['season'] != '0')).toList();
-
+            _trending = tList;
+            _popularMovies = mList;
+            _popularSeries = sList;
+            _activeGrid = List.from(tList);
             _isLoadingInitial = false;
-            _isLoadingMore = false;
           });
-
-          StreamService.preCacheMovieTitles(list.take(10).map((e) => {
-            'id': e['nb']?.toString() ?? '',
-            'title': e['en_title']?.toString() ?? e['ar_title']?.toString() ?? ''
-          }).toList());
         }
       } else {
-        if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
+        // تحميل المزيد من الصفحات
+        _page++;
+        final moreRes = await http.get(Uri.parse(
+            'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar&page=$_page'));
+        if (moreRes.statusCode == 200 && mounted) {
+          final mList = jsonDecode(moreRes.body)['results'] ?? [];
+          setState(() {
+            _activeGrid.addAll(mList);
+            if (mList.isEmpty) _hasMore = false;
+            _isLoadingMore = false;
+          });
+        }
       }
     } catch (_) {
       if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
     }
   }
 
+  // فلترة التصنيفات عبر TMDB
+  void _filterGenre(Map<String, dynamic> genre) async {
+    final gId = genre['id'];
+    setState(() {
+      _activeTitle = 'تصنيف: ${genre['name']}';
+      _isLoadingInitial = true;
+    });
+
+    if (gId == 'all') {
+      _fetchTmdbData(reset: true);
+      return;
+    }
+
+    try {
+      final res = await http.get(Uri.parse(
+          'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc'));
+      if (res.statusCode == 200 && mounted) {
+        final list = jsonDecode(res.body)['results'] ?? [];
+        setState(() {
+          _activeGrid = list;
+          _hasMore = false;
+          _isLoadingInitial = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingInitial = false);
+    }
+  }
+
+  // البحث الشامل في TMDB
   void _search(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return;
@@ -171,23 +189,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
 
     try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/AdvancedSearch?videoTitle=${Uri.encodeComponent(clean)}&level=0&page=0&year=1900,2026'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      ).timeout(const Duration(seconds: 8));
-
+      final res = await http.get(Uri.parse(
+          'https://api.themoviedb.org/3/search/multi?api_key=$_tmdbApiKey&language=ar&query=${Uri.encodeComponent(clean)}'));
       Navigator.pop(context);
 
-      if (res.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List results = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-        if (mounted && results.isNotEmpty) {
-          setState(() {
-            _items = results;
-            _hasMore = false;
-            _activeCategoryTitle = 'نتائج البحث: $clean';
-          });
-        }
+      if (res.statusCode == 200 && mounted) {
+        final list = jsonDecode(res.body)['results'] ?? [];
+        setState(() {
+          _activeGrid = list;
+          _hasMore = false;
+          _activeTitle = 'نتائج البحث عن: $clean';
+        });
       }
     } catch (_) {
       Navigator.pop(context);
@@ -211,29 +223,30 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(
-                decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFE50914), Color(0xFF0F1422)])),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFE50914), Color(0xFF0F1422)]),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: const [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
                     SizedBox(height: 4),
-                    Text('أقسام وتصنيفات سينمانا الحقيقية', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('المكتبة السينمائية الشاملة', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
               ListTile(
                 leading: const Icon(Icons.home_rounded, color: Color(0xFF00F0FF)),
-                title: const Text('الرئيسية'),
+                title: const Text('الرئيسية (الكل)'),
                 onTap: () {
                   Navigator.pop(context);
-                  setState(() => _activeCategoryTitle = 'الكل');
-                  _loadCeeContent(reset: true);
+                  _fetchTmdbData(reset: true);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-                title: const Text('المفضلة'),
+                title: const Text('قائمة المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
@@ -242,24 +255,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               const Divider(color: Colors.white12),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('الأقسام والتصنيفات:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
+                child: Text('التصنيفات والأنواع:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
               ),
-              ..._categories.map((c) {
-                final cId = c['nb']?.toString() ?? '';
-                final cTitle = c['title']?.toString() ?? '';
-                return ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.movie_creation_outlined, size: 20, color: Colors.white60),
-                  title: Text(cTitle),
-                  selected: _activeCategoryTitle == cTitle,
-                  selectedColor: const Color(0xFF00F0FF),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _activeCategoryTitle = cTitle);
-                    _loadCeeContent(reset: true, categoryId: cId);
-                  },
-                );
-              }),
+              ..._genres.map((g) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.movie_creation_outlined, size: 20, color: Colors.white70),
+                    title: Text(g['name']),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _filterGenre(g);
+                    },
+                  )),
             ],
           ),
         ),
@@ -278,7 +284,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
             : RefreshIndicator(
                 color: const Color(0xFFE50914),
-                onRefresh: () => _loadCeeContent(reset: true),
+                onRefresh: () => _fetchTmdbData(reset: true),
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   child: Column(
@@ -291,14 +297,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           textInputAction: TextInputAction.search,
                           onSubmitted: _search,
                           decoration: InputDecoration(
-                            hintText: 'ابحث عن أي فيلم، مسلسل أو أنمي...',
+                            hintText: 'ابحث بالاسم (عربي أو إنجليزي)...',
                             hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
                             prefixIcon: const Icon(Icons.search, color: Color(0xFF00F0FF)),
                             suffixIcon: IconButton(
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchController.clear();
-                                _loadCeeContent(reset: true);
+                                _fetchTmdbData(reset: true);
                               },
                             ),
                             filled: true,
@@ -308,17 +314,19 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           ),
                         ),
                       ),
-                      if (_items.isNotEmpty) _buildHeroBanner(_items.first, screenWidth),
-                      if (_movies.isNotEmpty) _buildSectionShelf('🎬 أحدث الأفلام المتوفرة', _movies),
-                      if (_series.isNotEmpty) _buildSectionShelf('📺 المسلسلات والأنمي المتجددة', _series),
+                      if (_trending.isNotEmpty && _activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً')) ...[
+                        _buildHeroBanner(_trending.first, screenWidth),
+                        if (_popularMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة وجديدة', _popularMovies),
+                        if (_popularSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _popularSeries),
+                      ],
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
                         child: Text(
-                          _activeCategoryTitle == 'الكل' ? '🌐 جميع العروض' : '📂 $_activeCategoryTitle',
+                          _activeTitle,
                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                       ),
-                      _buildGrid(_items),
+                      _buildGrid(_activeGrid),
                       if (_isLoadingMore)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 20),
@@ -334,20 +342,41 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   }
 
   Widget _buildHeroBanner(Map<String, dynamic> item, double width) {
-    final title = item['ar_title'] ?? item['en_title'] ?? '';
-    final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
+    final title = item['title'] ?? item['name'] ?? '';
+    final backdrop = item['backdrop_path'] != null
+        ? 'https://image.tmdb.org/t/p/w780${item['backdrop_path']}'
+        : '';
+
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
-        Container(height: width * 0.52, width: double.infinity, decoration: BoxDecoration(image: poster.toString().isNotEmpty ? DecorationImage(image: NetworkImage(poster.toString()), fit: BoxFit.cover) : null)),
-        Container(height: width * 0.52, decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Color(0xFF07090E), Colors.transparent]))),
+        Container(
+          height: width * 0.52,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            image: backdrop.isNotEmpty
+                ? DecorationImage(image: NetworkImage(backdrop), fit: BoxFit.cover)
+                : null,
+          ),
+        ),
+        Container(
+          height: width * 0.52,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [Color(0xFF07090E), Colors.transparent],
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(14.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE50914), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
@@ -365,6 +394,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   Widget _buildSectionShelf(String title, List<dynamic> list) {
     final cardWidth = (MediaQuery.of(context).size.width * 0.31).clamp(105.0, 140.0);
     final cardHeight = cardWidth * 1.5;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -377,9 +407,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             itemCount: list.length,
             itemBuilder: (ctx, i) {
               final item = list[i];
-              final mTitle = item['ar_title'] ?? item['en_title'] ?? '';
-              final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
-              final score = item['stars']?.toString() ?? '8.0';
+              final mTitle = item['title'] ?? item['name'] ?? '';
+              final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+              final score = (item['vote_average'] ?? 8.0).toStringAsFixed(1);
+
               return InkWell(
                 onTap: () => _openDetails(item),
                 child: Container(
@@ -389,7 +420,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: poster.toString().isNotEmpty ? Image.network(poster.toString(), height: cardHeight, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(height: cardHeight, color: const Color(0xFF172033))) : Container(height: cardHeight, color: const Color(0xFF172033))),
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                        child: poster.isNotEmpty
+                            ? Image.network(poster, height: cardHeight, width: double.infinity, fit: BoxFit.cover)
+                            : Container(height: cardHeight, color: const Color(0xFF172033)),
+                      ),
                       Padding(
                         padding: const EdgeInsets.all(5.0),
                         child: Column(
@@ -422,9 +458,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         itemCount: list.length,
         itemBuilder: (ctx, i) {
           final item = list[i];
-          final title = item['ar_title'] ?? item['en_title'] ?? '';
-          final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
-          final stars = item['stars']?.toString() ?? '8.0';
+          final title = item['title'] ?? item['name'] ?? '';
+          final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+          final score = (item['vote_average'] ?? 8.0).toStringAsFixed(1);
+
           return InkWell(
             onTap: () => _openDetails(item),
             child: Container(
@@ -433,7 +470,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: poster.toString().isNotEmpty ? Image.network(poster.toString(), width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: const Color(0xFF172033))) : Container(color: const Color(0xFF172033))),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                      child: poster.isNotEmpty
+                          ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                          : Container(color: const Color(0xFF172033)),
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(5.0),
@@ -442,7 +484,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                       children: [
                         Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white)),
                         const SizedBox(height: 2),
-                        Text('⭐ $stars', style: const TextStyle(fontSize: 9.5, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                        Text('⭐ $score', style: const TextStyle(fontSize: 9.5, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -457,7 +499,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (الحلقات وسحب الرابط الموقع الأصلي للترجمة)
+// شاشة التفاصيل: تبحث في سينمانا خلف الكواليس وتستخرج البث
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -470,27 +512,24 @@ class MediaDetailScreen extends StatefulWidget {
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isLaunching = false;
   bool _isFav = false;
-  bool _isLoadingEpisodes = false;
+  bool _isLoadingCee = true;
 
-  List<dynamic> _episodes = [];
+  // البيانات المستخرجة من سينمانا في الكواليس
+  Map<String, dynamic>? _ceeData;
+  List<dynamic> _ceeEpisodes = [];
   bool _isSeries = false;
 
   @override
   void initState() {
     super.initState();
     _checkFav();
-    final k = widget.media['kind']?.toString() ?? '1';
-    final s = widget.media['season']?.toString() ?? '0';
-    _isSeries = k != '1' || (s != '0' && s.isNotEmpty);
-
-    if (_isSeries) {
-      _loadEpisodesRecursively(0);
-    }
+    _isSeries = widget.media['first_air_date'] != null || widget.media['name'] != null;
+    _matchWithCeeBackend();
   }
 
   void _checkFav() async {
-    final nb = widget.media['nb']?.toString() ?? '';
-    final isFav = await FavoritesService.isFavorited(nb);
+    final id = widget.media['id'].toString();
+    final isFav = await FavoritesService.isFavorited(id);
     if (mounted) setState(() => _isFav = isFav);
   }
 
@@ -499,14 +538,44 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isFav = newState);
   }
 
-  // سحب تتابعي كامل لجميع الحلقات بدون توقف
-  Future<void> _loadEpisodesRecursively(int page) async {
-    if (page == 0) setState(() => _isLoadingEpisodes = true);
-    final nb = widget.media['nb'].toString();
+  // المطابقة الصامتة في الكواليس مع خادم سينمانا
+  Future<void> _matchWithCeeBackend() async {
+    final String queryEn = widget.media['original_title'] ??
+        widget.media['original_name'] ??
+        widget.media['title'] ??
+        widget.media['name'] ??
+        '';
 
     try {
+      final b64 = base64.encode(utf8.encode(queryEn)).replaceAll('=', '');
+      final res = await http.get(
+        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/10/video_title_search/$b64/itemsPerPage/10/pageNumber/0/level/0'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+      ).timeout(const Duration(seconds: 6));
+
+      if (res.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
+        List results = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+
+        if (results.isNotEmpty) {
+          _ceeData = results.first;
+          final ceeNb = _ceeData!['nb'].toString();
+
+          // إذا كان مسلسلاً، نسحب حلقاته من سينمانا في الخلفية
+          if (_isSeries) {
+            _loadCeeEpisodes(ceeNb, 0);
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) setState(() => _isLoadingCee = false);
+  }
+
+  Future<void> _loadCeeEpisodes(String ceeNb, int page) async {
+    try {
       final epRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$nb/itemsPerPage/50/pageNumber/$page/level/0'),
+        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$ceeNb/itemsPerPage/50/pageNumber/$page/level/0'),
         headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
       );
 
@@ -517,35 +586,35 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         if (mounted) {
           setState(() {
             if (page == 0) {
-              _episodes = eList;
+              _ceeEpisodes = eList;
             } else {
-              _episodes.addAll(eList);
+              _ceeEpisodes.addAll(eList);
             }
           });
 
-          // تكرار السحب للصفحات التالية إذا كانت الحلقات أكثر من 45
           if (eList.length >= 45) {
-            _loadEpisodesRecursively(page + 1);
-          } else {
-            setState(() => _isLoadingEpisodes = false);
+            _loadCeeEpisodes(ceeNb, page + 1);
           }
         }
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingEpisodes = false);
-    }
+    } catch (_) {}
   }
 
-  // تشغيل الفيديو مع جلب رابط الترجمة الموقّع الأصلي عبر allVideoInfo
   void _playStream({String? targetNb, String? epTitle}) async {
+    if (_ceeData == null && targetNb == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('جاري معالجة السيرفر البديل، يرجى المحاولة بعد ثوانٍ...')),
+      );
+      return;
+    }
+
     setState(() => _isLaunching = true);
 
-    final nb = targetNb ?? widget.media['nb'].toString();
-    final title = epTitle ?? widget.media['ar_title'] ?? widget.media['en_title'] ?? 'بث مباشر';
-    
-    String exactSubUrl = '';
+    final nb = targetNb ?? _ceeData!['nb'].toString();
+    final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
-    // استعلام مباشر عن تفاصيل الحلقة/الفيلم للحصول على رابط الترجمة الموقّع (Signed AWS URL)
+    // سحب الترجمة الموقعة من سينمانا
+    String exactSubUrl = '';
     try {
       final infoRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$nb'),
@@ -578,16 +647,20 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         ),
       );
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تشغيل هذا الرابط حالياً'), backgroundColor: Color(0xFFE50914)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر العثور على رابط المشاهدة المباشر لهذا العمل في سينمانا'), backgroundColor: Color(0xFFE50914)),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final poster = widget.media['imgObjUrl'] ?? widget.media['imgMediumThumbObjUrl'] ?? widget.media['imgThumbObjUrl'] ?? widget.media['img'] ?? '';
-    final stars = widget.media['stars']?.toString() ?? '8.0';
-    final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? 'لا يوجد وصف متاح.';
+    final title = widget.media['title'] ?? widget.media['name'] ?? '';
+    final poster = widget.media['poster_path'] != null
+        ? 'https://image.tmdb.org/t/p/w500${widget.media['poster_path']}'
+        : '';
+    final score = (widget.media['vote_average'] ?? 8.0).toStringAsFixed(1);
+    final story = widget.media['overview'] ?? 'لا يوجد وصف متاح.';
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -603,7 +676,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: poster.toString().isNotEmpty ? Image.network(poster.toString(), width: 110, height: 160, fit: BoxFit.cover) : Container(width: 110, height: 160, color: const Color(0xFF172033)),
+                    child: poster.isNotEmpty
+                        ? Image.network(poster, width: 110, height: 160, fit: BoxFit.cover)
+                        : Container(width: 110, height: 160, color: const Color(0xFF172033)),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -612,7 +687,23 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       children: [
                         Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
                         const SizedBox(height: 8),
-                        Text('⭐ $stars', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                        Text('⭐ $score (TMDB)', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _ceeData != null ? const Color(0xFF10B981) : Colors.orange,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _isLoadingCee ? 'جاري الفحص...' : (_ceeData != null ? 'متوفر بسيرفر سينمانا' : 'قيد المعالجة'),
+                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -636,29 +727,31 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                Text('الحلقات المتوفرة (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text('الحلقات المتوفرة في سينمانا (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                _isLoadingEpisodes && _episodes.isEmpty
+                _isLoadingCee
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
-                    : GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1.3),
-                        itemCount: _episodes.length,
-                        itemBuilder: (ctx, i) {
-                          final ep = _episodes[i];
-                          final epNum = ep['episode']?.toString() ?? '${i + 1}';
-                          final epNb = ep['nb']?.toString() ?? '';
+                    : _ceeEpisodes.isEmpty
+                        ? const Text('المسلسل متوفر برابط تشغيل مباشر.', style: TextStyle(color: Colors.white54, fontSize: 12))
+                        : GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1.3),
+                            itemCount: _ceeEpisodes.length,
+                            itemBuilder: (ctx, i) {
+                              final ep = _ceeEpisodes[i];
+                              final epNum = ep['episode']?.toString() ?? '${i + 1}';
+                              final epNb = ep['nb']?.toString() ?? '';
 
-                          return InkWell(
-                            onTap: () => _playStream(targetNb: epNb, epTitle: '$title - حلقة $epNum'),
-                            child: Container(
-                              decoration: BoxDecoration(color: const Color(0xFF172033), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
-                              child: Center(child: Text('حلقة $epNum', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-                            ),
-                          );
-                        },
-                      ),
+                              return InkWell(
+                                onTap: () => _playStream(targetNb: epNb, epTitle: '$title - حلقة $epNum'),
+                                child: Container(
+                                  decoration: BoxDecoration(color: const Color(0xFF172033), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
+                                  child: Center(child: Text('حلقة $epNum', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                                ),
+                              );
+                            },
+                          ),
               ],
             ],
           ),
@@ -669,7 +762,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل مع قراءة ملفات WebVTT و SRT الموقعة
+// المشغل مع دعم الترجمة واستئناف الدقيقة
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -710,7 +803,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _prepareAndPlay() async {
-    // جلب ملف الترجمة بالرابط الموقّع الأصلي دون أي تعديل يكسر تصريح الوصول
     if (widget.signedSubtitleUrl.isNotEmpty) {
       try {
         final res = await http.get(Uri.parse(widget.signedSubtitleUrl), headers: {
@@ -893,64 +985,4 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 15)), backgroundColor: const Color(0xFF0F1422)),
-      body: Center(child: _isReady && _chewieController != null ? Chewie(controller: _chewieController!) : const CircularProgressIndicator(color: Color(0xFF00F0FF))),
-    );
-  }
-}
-
-// -------------------------------------------------------------
-// المفضلة
-// -------------------------------------------------------------
-class FavoritesScreen extends StatefulWidget {
-  const FavoritesScreen({super.key});
-
-  @override
-  State<FavoritesScreen> createState() => _FavoritesScreenState();
-}
-
-class _FavoritesScreenState extends State<FavoritesScreen> {
-  List<Map<String, dynamic>> _favorites = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  void _load() async {
-    final list = await FavoritesService.getFavorites();
-    if (mounted) setState(() { _favorites = list; _isLoading = false; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: const Text('⭐ قائمة المفضلة'), backgroundColor: const Color(0xFF0F1422)),
-        body: _isLoading ? const Center(child: CircularProgressIndicator()) : _favorites.isEmpty ? const Center(child: Text('لا يوجد مفضلة')) : GridView.builder(
-          padding: const EdgeInsets.all(12),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.58),
-          itemCount: _favorites.length,
-          itemBuilder: (ctx, i) {
-            final item = _favorites[i];
-            final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
-            return InkWell(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
-              child: Container(
-                decoration: BoxDecoration(color: const Color(0xFF0F1422), borderRadius: BorderRadius.circular(8)),
-                child: Column(
-                  children: [
-                    Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: poster.toString().isNotEmpty ? Image.network(poster.toString(), fit: BoxFit.cover) : Container())),
-                    Padding(padding: const EdgeInsets.all(5), child: Text(item['ar_title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10))),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
+      body: Center(child: _isReady && _chewieController != null ? Chewie(controller: _chewieController!) :
