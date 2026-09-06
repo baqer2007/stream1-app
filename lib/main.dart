@@ -36,13 +36,8 @@ class OnebrTvApp extends StatelessWidget {
   }
 }
 
-// -------------------------------------------------------------
-// محرك الأمان وحماية المفاتيح المعتمد 100%
-// -------------------------------------------------------------
 class SecurityEngine {
-  // المفتاح مشفر بقاعدة Base64 آمنة دون كسر أي بايت
-  static final String _encTmdb = 'YjdjZDMzNDBhNzk0ZTVhMmYzNWUzYWJiODIwYjQ5N2Y=';
-
+  static const String _encTmdb = 'YjdjZDMzNDBhNzk0ZTVhMmYzNWUzYWJiODIwYjQ5N2Y=';
   static String get tmdbKey {
     try {
       return utf8.decode(base64.decode(_encTmdb));
@@ -76,20 +71,19 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  bool _hasError = false;
   String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
   Map<String, dynamic>? _selectedGenre;
 
   final List<Map<String, dynamic>> _genres = [
-    {'id': 'all', 'name': 'الكل', 'type': 'all'},
-    {'id': 'anime', 'name': 'أنمي ياباني ورسوم', 'type': 'anime'},
-    {'id': '28', 'name': 'أكشن', 'type': 'movie'},
-    {'id': '12', 'name': 'مغامرة', 'type': 'movie'},
-    {'id': '35', 'name': 'كوميديا', 'type': 'movie'},
-    {'id': '80', 'name': 'جريمة', 'type': 'movie'},
-    {'id': '18', 'name': 'دراما', 'type': 'movie'},
-    {'id': '27', 'name': 'رعب', 'type': 'movie'},
-    {'id': '878', 'name': 'خيال علمي', 'type': 'movie'},
+    {'id': 'all', 'name': 'الكل'},
+    {'id': 'anime', 'name': 'أنمي ياباني ورسوم'},
+    {'id': '28', 'name': 'أكشن'},
+    {'id': '12', 'name': 'مغامرة'},
+    {'id': '35', 'name': 'كوميديا'},
+    {'id': '80', 'name': 'جريمة'},
+    {'id': '18', 'name': 'دراما'},
+    {'id': '27', 'name': 'رعب'},
+    {'id': '878', 'name': 'خيال علمي'},
   ];
 
   @override
@@ -100,7 +94,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 400) {
-        if (!_isLoadingMore && _hasMore && !_hasError) {
+        if (!_isLoadingMore && _hasMore) {
           if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
             _fetchMoreGenreData();
           } else {
@@ -122,10 +116,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     if (reset) {
       _page = 1;
       _hasMore = true;
-      setState(() {
-        _isLoadingInitial = true;
-        _hasError = false;
-      });
+      setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
     }
@@ -135,19 +126,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     try {
       if (reset) {
         final responses = await Future.wait([
-          http.get(Uri.parse('https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar')).timeout(const Duration(seconds: 8)),
-          http.get(Uri.parse('https://api.themoviedb.org/3/movie/popular?api_key=$key&language=ar&page=1')).timeout(const Duration(seconds: 8)),
-          http.get(Uri.parse('https://api.themoviedb.org/3/tv/popular?api_key=$key&language=ar&page=1')).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse('https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar')),
+          http.get(Uri.parse('https://api.themoviedb.org/3/movie/popular?api_key=$key&language=ar&page=1')),
+          http.get(Uri.parse('https://api.themoviedb.org/3/tv/popular?api_key=$key&language=ar&page=1')),
         ]);
 
-        final trendingRes = responses[0];
-        final moviesRes = responses[1];
-        final seriesRes = responses[2];
-
-        if (trendingRes.statusCode == 200 && mounted) {
-          final tList = jsonDecode(trendingRes.body)['results'] ?? [];
-          final mList = jsonDecode(moviesRes.body)['results'] ?? [];
-          final sList = jsonDecode(seriesRes.body)['results'] ?? [];
+        if (responses[0].statusCode == 200 && mounted) {
+          final tList = jsonDecode(responses[0].body)['results'] ?? [];
+          final mList = jsonDecode(responses[1].body)['results'] ?? [];
+          final sList = jsonDecode(responses[2].body)['results'] ?? [];
 
           setState(() {
             _trending = tList;
@@ -155,15 +142,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             _popularSeries = sList;
             _activeGrid = List.from(tList);
             _isLoadingInitial = false;
-            _hasError = false;
           });
-        } else {
-          if (mounted) setState(() { _isLoadingInitial = false; _hasError = true; });
         }
       } else {
         _page++;
         final moreRes = await http.get(Uri.parse(
-            'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar&page=$_page')).timeout(const Duration(seconds: 8));
+            'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar&page=$_page'));
         if (moreRes.statusCode == 200 && mounted) {
           final mList = jsonDecode(moreRes.body)['results'] ?? [];
           setState(() {
@@ -171,18 +155,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             if (mList.isEmpty) _hasMore = false;
             _isLoadingMore = false;
           });
-        } else {
-          if (mounted) setState(() => _isLoadingMore = false);
         }
       }
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isLoadingInitial = false;
-          _isLoadingMore = false;
-          if (reset && _activeGrid.isEmpty) _hasError = true;
-        });
-      }
+      if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
     }
   }
 
@@ -203,7 +179,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       _activeTitle = 'تصنيف: ${genre['name']}';
       _isLoadingInitial = true;
       _hasMore = true;
-      _hasError = false;
     });
 
     try {
@@ -211,15 +186,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           ? 'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=1'
           : 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=ar&with_genres=$gId&sort_by=popularity.desc&page=1';
 
-      final res = await http.get(Uri.parse(urlStr)).timeout(const Duration(seconds: 8));
+      final res = await http.get(Uri.parse(urlStr));
       if (res.statusCode == 200 && mounted) {
         final list = jsonDecode(res.body)['results'] ?? [];
         setState(() {
           _activeGrid = list;
           _isLoadingInitial = false;
         });
-      } else {
-        if (mounted) setState(() => _isLoadingInitial = false);
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingInitial = false);
@@ -239,7 +212,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         : 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=ar&with_genres=$gId&sort_by=popularity.desc&page=$_genrePage';
 
     try {
-      final res = await http.get(Uri.parse(urlStr)).timeout(const Duration(seconds: 8));
+      final res = await http.get(Uri.parse(urlStr));
       if (res.statusCode == 200 && mounted) {
         final list = jsonDecode(res.body)['results'] ?? [];
         setState(() {
@@ -250,8 +223,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           }
           _isLoadingMore = false;
         });
-      } else {
-        if (mounted) setState(() => _isLoadingMore = false);
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingMore = false);
@@ -272,7 +243,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
     try {
       final res = await http.get(Uri.parse(
-          'https://api.themoviedb.org/3/search/multi?api_key=$key&language=ar&query=${Uri.encodeComponent(clean)}')).timeout(const Duration(seconds: 8));
+          'https://api.themoviedb.org/3/search/multi?api_key=$key&language=ar&query=${Uri.encodeComponent(clean)}'));
       Navigator.pop(context);
 
       if (res.statusCode == 200 && mounted) {
@@ -314,7 +285,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   children: const [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
                     SizedBox(height: 4),
-                    Text('المكتبة الشاملة للأنمي والسينما', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('المكتبة السينمائية الشاملة', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
@@ -370,87 +341,69 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         ),
         body: _isLoadingInitial
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
-            : _hasError && _activeGrid.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.cloud_off_rounded, size: 55, color: Colors.white38),
-                        const SizedBox(height: 12),
-                        const Text('تعذر تحميل البيانات، يرجى التحقق من الاتصال', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE50914)),
-                          onPressed: () => _fetchTmdbData(reset: true),
-                          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                          label: const Text('إعادة المحاولة', style: TextStyle(color: Colors.white)),
-                        )
-                      ],
-                    ),
-                  )
-                : RefreshIndicator(
-                    color: const Color(0xFFE50914),
-                    onRefresh: () async {
-                      if (_selectedGenre != null) {
-                        _filterGenre(_selectedGenre!);
-                      } else {
-                        _fetchTmdbData(reset: true);
-                      }
-                    },
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            child: TextField(
-                              controller: _searchController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: _search,
-                              decoration: InputDecoration(
-                                hintText: 'ابحث بالاسم (عربي أو إنجليزي)...',
-                                hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
-                                prefixIcon: const Icon(Icons.search, color: Color(0xFF00F0FF)),
-                                suffixIcon: IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    _selectedGenre = null;
-                                    setState(() => _activeTitle = '🔥 الأكثر تداولاً وشهرة');
-                                    _fetchTmdbData(reset: true);
-                                  },
-                                ),
-                                filled: true,
-                                fillColor: const Color(0xFF0F1422),
-                                contentPadding: EdgeInsets.zero,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                              ),
+            : RefreshIndicator(
+                color: const Color(0xFFE50914),
+                onRefresh: () async {
+                  if (_selectedGenre != null) {
+                    _filterGenre(_selectedGenre!);
+                  } else {
+                    _fetchTmdbData(reset: true);
+                  }
+                },
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: _search,
+                          decoration: InputDecoration(
+                            hintText: 'ابحث بالاسم (عربي أو إنجليزي)...',
+                            hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
+                            prefixIcon: const Icon(Icons.search, color: Color(0xFF00F0FF)),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                _selectedGenre = null;
+                                setState(() => _activeTitle = '🔥 الأكثر تداولاً وشهرة');
+                                _fetchTmdbData(reset: true);
+                              },
                             ),
+                            filled: true,
+                            fillColor: const Color(0xFF0F1422),
+                            contentPadding: EdgeInsets.zero,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                           ),
-                          if (_trending.isNotEmpty && _selectedGenre == null && (_activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً'))) ...[
-                            _buildHeroBanner(_trending.first, screenWidth),
-                            if (_popularMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة وجديدة', _popularMovies),
-                            if (_popularSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _popularSeries),
-                          ],
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
-                            child: Text(
-                              _activeTitle,
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
-                            ),
-                          ),
-                          _buildGrid(_activeGrid),
-                          if (_isLoadingMore)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 20),
-                              child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
-                            ),
-                          const SizedBox(height: 30),
-                        ],
+                        ),
                       ),
-                    ),
+                      if (_trending.isNotEmpty && _selectedGenre == null && (_activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً'))) ...[
+                        _buildHeroBanner(_trending.first, screenWidth),
+                        if (_popularMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة وجديدة', _popularMovies),
+                        if (_popularSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _popularSeries),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
+                        child: Text(
+                          _activeTitle,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                        ),
+                      ),
+                      _buildGrid(_activeGrid),
+                      if (_isLoadingMore)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+                        ),
+                      const SizedBox(height: 30),
+                    ],
                   ),
+                ),
+              ),
       ),
     );
   }
@@ -613,7 +566,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (المطابقة في الكواليس مع منع التكرار)
+// شاشة التفاصيل (المواسم والحلقات وسحب البث الفوري)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -627,10 +580,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isLaunching = false;
   bool _isFav = false;
   bool _isLoadingCee = true;
+  bool _isLoadingEpisodes = false;
 
   Map<String, dynamic>? _ceeData;
-  final List<dynamic> _ceeEpisodes = [];
-  final Set<String> _recordedEpisodeNbs = {};
+  List<dynamic> _seasons = [];
+  List<dynamic> _episodes = [];
+  int _selectedSeasonIndex = 0;
   bool _isSeries = false;
 
   @override
@@ -652,6 +607,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isFav = newState);
   }
 
+  // مطابقة سريعة مع سينمانا في الخلفية
   Future<void> _matchWithCeeBackend() async {
     final String queryEn = widget.media['original_title'] ??
         widget.media['original_name'] ??
@@ -675,7 +631,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           final ceeNb = _ceeData!['nb'].toString();
 
           if (_isSeries) {
-            _loadCeeEpisodes(ceeNb, 0);
+            _loadSeasons(ceeNb);
           }
         }
       }
@@ -684,45 +640,63 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isLoadingCee = false);
   }
 
-  Future<void> _loadCeeEpisodes(String ceeNb, int page) async {
-    if (page > 15) return;
+  // جلب مواسم المسلسل الحقيقية من سينمانا (Level 1)
+  Future<void> _loadSeasons(String parentNb) async {
+    try {
+      final seasonRes = await http.get(
+        Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/1/sub_id/$parentNb'),
+        headers: StreamService.stealthHeaders,
+      ).timeout(const Duration(seconds: 4));
+
+      if (seasonRes.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(seasonRes.bodyBytes, allowMalformed: true));
+        List sList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+        if (sList.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _seasons = sList;
+              _selectedSeasonIndex = 0;
+            });
+            _loadEpisodesForSeason(_seasons[0]['nb'].toString());
+            return;
+          }
+        }
+      }
+
+      // إذا لم يكن مقسماً لمواسم، نجلب حلقاته مباشرة
+      _loadEpisodesForSeason(parentNb);
+    } catch (_) {
+      _loadEpisodesForSeason(parentNb);
+    }
+  }
+
+  // جلب حلقات الموسم المحدد (Level 2)
+  Future<void> _loadEpisodesForSeason(String seasonNb) async {
+    if (mounted) setState(() => _isLoadingEpisodes = true);
 
     try {
       final epRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$ceeNb/itemsPerPage/50/pageNumber/$page/level/0'),
+        Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/2/sub_id/$seasonNb'),
         headers: StreamService.stealthHeaders,
       ).timeout(const Duration(seconds: 5));
 
       if (epRes.statusCode == 200) {
         dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
         List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-
-        if (eList.isEmpty) return;
-
-        final List newItems = [];
-        for (var ep in eList) {
-          final epNb = ep['nb']?.toString() ?? ep['id']?.toString() ?? '';
-          if (epNb.isNotEmpty && !_recordedEpisodeNbs.contains(epNb)) {
-            _recordedEpisodeNbs.add(epNb);
-            newItems.add(ep);
-          }
-        }
-
-        if (newItems.isEmpty) return;
-
         if (mounted) {
           setState(() {
-            _ceeEpisodes.addAll(newItems);
+            _episodes = eList;
+            _isLoadingEpisodes = false;
           });
-
-          if (newItems.length >= 45) {
-            _loadCeeEpisodes(ceeNb, page + 1);
-          }
+          return;
         }
       }
     } catch (_) {}
+
+    if (mounted) setState(() => _isLoadingEpisodes = false);
   }
 
+  // تشغيل مباشر وسريع (0.5 ثانية)
   void _playStream({String? targetNb, String? epTitle}) async {
     if (_ceeData == null && targetNb == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -736,6 +710,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final nb = targetNb ?? _ceeData!['nb'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
+    // طلب رابط الفيديو المباشر فوراً دون أي انتظار
     final data = await StreamService.getVideoSource(nb);
     setState(() => _isLaunching = false);
 
@@ -839,21 +814,53 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               const SizedBox(height: 6),
               Text(story, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.4)),
 
+              // قسم المواسم والحلقات المنظم
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                Text('الحلقات المتوفرة في سينمانا (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                if (_seasons.isNotEmpty) ...[
+                  const Text('المواسم:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _seasons.length,
+                      itemBuilder: (ctx, i) {
+                        final isSelected = _selectedSeasonIndex == i;
+                        final sTitle = _seasons[i]['ar_title'] ?? _seasons[i]['en_title'] ?? 'موسم ${i + 1}';
+                        return InkWell(
+                          onTap: () {
+                            setState(() => _selectedSeasonIndex = i);
+                            _loadEpisodesForSeason(_seasons[i]['nb'].toString());
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFFE50914) : const Color(0xFF172033),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(sTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                Text('الحلقات (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                _isLoadingCee
+                _isLoadingEpisodes
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
-                    : _ceeEpisodes.isEmpty
+                    : _episodes.isEmpty
                         ? const Text('المسلسل متوفر برابط تشغيل مباشر.', style: TextStyle(color: Colors.white54, fontSize: 12))
                         : GridView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1.3),
-                            itemCount: _ceeEpisodes.length,
+                            itemCount: _episodes.length,
                             itemBuilder: (ctx, i) {
-                              final ep = _ceeEpisodes[i];
+                              final ep = _episodes[i];
                               final epNum = ep['episode']?.toString() ?? '${i + 1}';
                               final epNb = ep['nb']?.toString() ?? '';
 
@@ -876,7 +883,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل السريع مع إعدادات الترجمة وجودة العرض
+// المشغل السريع (يبدأ الفيديو فوراً ويجلب الترجمة بالخلفية)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -911,14 +918,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _currentUrl = widget.videoUrl;
-    _startInstantPlay();
+    _startPlayback();
   }
 
-  void _startInstantPlay() async {
+  void _startPlayback() async {
     final prefs = await SharedPreferences.getInstance();
     final savedSeconds = prefs.getInt('playback_pos_${widget.mediaId}') ?? 0;
 
+    // 1. فتح الفيديو فوراً
     _initPlayer(_currentUrl!, startAtSecond: savedSeconds);
+
+    // 2. سحب الترجمة في الخلفية دون تعطيل المشغل
     _fetchSubtitlesInBackground();
   }
 
@@ -942,14 +952,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             setState(() {
               _parsedSubtitles = _parseSubtitles(utf8.decode(subRes.bodyBytes, allowMalformed: true));
             });
-            _updateSubtitlesOnTheFly();
+            _applySubtitles();
           }
         }
       }
     } catch (_) {}
   }
 
-  void _updateSubtitlesOnTheFly() {
+  void _applySubtitles() {
     if (_chewieController != null && _parsedSubtitles.isNotEmpty && _subtitlesEnabled) {
       _chewieController = ChewieController(
         videoPlayerController: _videoPlayerController!,
@@ -1039,12 +1049,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Text(subtitle, style: TextStyle(color: Colors.white, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
       ),
       materialProgressColors: ChewieProgressColors(playedColor: const Color(0xFFE50914), handleColor: const Color(0xFF00F0FF)),
-      additionalOptions: (context) {
-        return [
-          OptionItem(onTap: (ctx) => _showQualitySheet(), iconData: Icons.hd_outlined, title: 'الجودة: $_selectedQualityName'),
-          OptionItem(onTap: (ctx) => _showSubtitlesSheet(), iconData: Icons.subtitles_rounded, title: 'إعدادات الترجمة'),
-        ];
-      },
+      additionalOptions: (context) => [
+        OptionItem(onTap: (ctx) => _showQualitySheet(), iconData: Icons.hd_outlined, title: 'الجودة: $_selectedQualityName'),
+        OptionItem(onTap: (ctx) => _showSubtitlesSheet(), iconData: Icons.subtitles_rounded, title: 'إعدادات الترجمة'),
+      ],
     );
 
     if (mounted) setState(() => _isReady = true);
