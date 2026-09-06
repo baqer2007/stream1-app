@@ -36,9 +36,6 @@ class OnebrTvApp extends StatelessWidget {
   }
 }
 
-// -------------------------------------------------------------
-// الصفحة الرئيسية
-// -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -57,21 +54,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   List<dynamic> _activeGrid = [];
 
   int _page = 1;
+  int _genrePage = 1;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
+  Map<String, dynamic>? _selectedGenre;
 
   final List<Map<String, dynamic>> _genres = [
-    {'id': 'all', 'name': 'الكل'},
-    {'id': '28', 'name': 'أكشن'},
-    {'id': '12', 'name': 'مغامرة'},
-    {'id': '16', 'name': 'أنمي ورسوم متحركة'},
-    {'id': '35', 'name': 'كوميديا'},
-    {'id': '80', 'name': 'جريمة'},
-    {'id': '18', 'name': 'دراما'},
-    {'id': '27', 'name': 'رعب'},
-    {'id': '878', 'name': 'خيال علمي'},
+    {'id': 'all', 'name': 'الكل', 'type': 'all'},
+    {'id': 'anime', 'name': 'أنمي ياباني ورسوم', 'type': 'anime'},
+    {'id': '28', 'name': 'أكشن', 'type': 'movie'},
+    {'id': '12', 'name': 'مغامرة', 'type': 'movie'},
+    {'id': '35', 'name': 'كوميديا', 'type': 'movie'},
+    {'id': '80', 'name': 'جريمة', 'type': 'movie'},
+    {'id': '18', 'name': 'دراما', 'type': 'movie'},
+    {'id': '27', 'name': 'رعب', 'type': 'movie'},
+    {'id': '878', 'name': 'خيال علمي', 'type': 'movie'},
   ];
 
   @override
@@ -83,7 +82,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
-          _fetchTmdbData(reset: false);
+          if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
+            _fetchMoreGenreData();
+          } else {
+            _fetchTmdbData(reset: false);
+          }
         }
       }
     });
@@ -145,31 +148,75 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
+  // فلترة الأنمي والتصنيفات بدقة مع دعم التمرير اللانهائي
   void _filterGenre(Map<String, dynamic> genre) async {
+    _selectedGenre = genre;
+    _genrePage = 1;
     final gId = genre['id'];
-    setState(() {
-      _activeTitle = 'تصنيف: ${genre['name']}';
-      _isLoadingInitial = true;
-    });
 
     if (gId == 'all') {
+      _selectedGenre = null;
+      setState(() => _activeTitle = '🔥 الأكثر تداولاً وشهرة');
       _fetchTmdbData(reset: true);
       return;
     }
 
+    setState(() {
+      _activeTitle = 'تصنيف: ${genre['name']}';
+      _isLoadingInitial = true;
+      _hasMore = true;
+    });
+
     try {
-      final res = await http.get(Uri.parse(
-          'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc'));
+      String urlStr;
+      if (gId == 'anime') {
+        // الرابط المخصص للأنمي الياباني الحقيقي (أفلام ومسلسلات الأنمي)
+        urlStr =
+            'https://api.themoviedb.org/3/discover/tv?api_key=$_tmdbApiKey&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=1';
+      } else {
+        urlStr =
+            'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc&page=1';
+      }
+
+      final res = await http.get(Uri.parse(urlStr));
       if (res.statusCode == 200 && mounted) {
         final list = jsonDecode(res.body)['results'] ?? [];
         setState(() {
           _activeGrid = list;
-          _hasMore = false;
           _isLoadingInitial = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingInitial = false);
+    }
+  }
+
+  // تحميل المزيد عند التمرير لأسفل في التصنيفات
+  Future<void> _fetchMoreGenreData() async {
+    if (_selectedGenre == null) return;
+    setState(() => _isLoadingMore = true);
+    _genrePage++;
+
+    final gId = _selectedGenre!['id'];
+    String urlStr = (gId == 'anime')
+        ? 'https://api.themoviedb.org/3/discover/tv?api_key=$_tmdbApiKey&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=$_genrePage'
+        : 'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc&page=$_genrePage';
+
+    try {
+      final res = await http.get(Uri.parse(urlStr));
+      if (res.statusCode == 200 && mounted) {
+        final list = jsonDecode(res.body)['results'] ?? [];
+        setState(() {
+          if (list.isEmpty) {
+            _hasMore = false;
+          } else {
+            _activeGrid.addAll(list);
+          }
+          _isLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -227,7 +274,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   children: const [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
                     SizedBox(height: 4),
-                    Text('المكتبة السينمائية الشاملة', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('المكتبة الشاملة للأنمي والسينما', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
@@ -236,6 +283,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 title: const Text('الرئيسية (الكل)'),
                 onTap: () {
                   Navigator.pop(context);
+                  _selectedGenre = null;
+                  setState(() => _activeTitle = '🔥 الأكثر تداولاً وشهرة');
                   _fetchTmdbData(reset: true);
                 },
               ),
@@ -244,7 +293,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 title: const Text('قائمة المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen()));
                 },
               ),
               const Divider(color: Colors.white12),
@@ -254,8 +303,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               ),
               ..._genres.map((g) => ListTile(
                     dense: true,
-                    leading: const Icon(Icons.movie_creation_outlined, size: 20, color: Colors.white70),
-                    title: Text(g['name']),
+                    leading: Icon(
+                      g['id'] == 'anime' ? Icons.animation_rounded : Icons.movie_creation_outlined,
+                      size: 20,
+                      color: g['id'] == 'anime' ? const Color(0xFF00F0FF) : Colors.white70,
+                    ),
+                    title: Text(g['name'], style: TextStyle(color: g['id'] == 'anime' ? const Color(0xFF00F0FF) : Colors.white)),
                     onTap: () {
                       Navigator.pop(context);
                       _filterGenre(g);
@@ -271,7 +324,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen())),
             ),
           ],
         ),
@@ -279,7 +332,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
             : RefreshIndicator(
                 color: const Color(0xFFE50914),
-                onRefresh: () => _fetchTmdbData(reset: true),
+                onRefresh: () async {
+                  if (_selectedGenre != null) {
+                    _filterGenre(_selectedGenre!);
+                  } else {
+                    _fetchTmdbData(reset: true);
+                  }
+                },
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   child: Column(
@@ -299,6 +358,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchController.clear();
+                                _selectedGenre = null;
+                                setState(() => _activeTitle = '🔥 الأكثر تداولاً وشهرة');
                                 _fetchTmdbData(reset: true);
                               },
                             ),
@@ -309,7 +370,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           ),
                         ),
                       ),
-                      if (_trending.isNotEmpty && (_activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً'))) ...[
+                      if (_trending.isNotEmpty && _selectedGenre == null && (_activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً'))) ...[
                         _buildHeroBanner(_trending.first, screenWidth),
                         if (_popularMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة وجديدة', _popularMovies),
                         if (_popularSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _popularSeries),
@@ -494,7 +555,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (المطابقة في الكواليس مع منع التكرار)
+// شاشة التفاصيل (سحب فوري للبث بدون تأخير)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -545,7 +606,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/10/video_title_search/$b64/itemsPerPage/10/pageNumber/0/level/0'),
         headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
@@ -565,15 +626,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isLoadingCee = false);
   }
 
-  // حل مشكلة الـ 5200 حلقة بحصر الحلقات الحقيقية التابعة للمسلسل فقط
   Future<void> _loadCeeEpisodes(String ceeNb, int page) async {
-    if (page > 15) return; // حماية ضد الحلقات اللانهائية
+    if (page > 15) return;
 
     try {
       final epRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$ceeNb/itemsPerPage/50/pageNumber/$page/level/0'),
         headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 5));
 
       if (epRes.statusCode == 200) {
         dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
@@ -590,7 +650,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           }
         }
 
-        if (newItems.isEmpty) return; // توقف فوراً إذا بدأت الحلقات تتكرر
+        if (newItems.isEmpty) return;
 
         if (mounted) {
           setState(() {
@@ -605,10 +665,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } catch (_) {}
   }
 
+  // تشغيل الفيديو الفوري بدون تأخير
   void _playStream({String? targetNb, String? epTitle}) async {
     if (_ceeData == null && targetNb == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('جاري معالجة السيرفر البديل، يرجى المحاولة بعد ثوانٍ...')),
+        const SnackBar(content: Text('جاري جلب السيرفر المباشر، يرجى المحاولة بعد لحظات...')),
       );
       return;
     }
@@ -618,23 +679,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final nb = targetNb ?? _ceeData!['nb'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
-    String exactSubUrl = '';
-    try {
-      final infoRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$nb'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      ).timeout(const Duration(seconds: 4));
+    // جلب رابط الفيديو فوراً بالتوازي
+    final videoDataFuture = StreamService.getVideoSource(nb);
 
-      if (infoRes.statusCode == 200) {
-        dynamic info = jsonDecode(utf8.decode(infoRes.bodyBytes, allowMalformed: true));
-        exactSubUrl = info['arTranslationFilePath']?.toString() ??
-            info['arTranslationFile']?.toString() ??
-            '';
-      }
-    } catch (_) {}
-
-    final data = await StreamService.getVideoSource(nb);
-
+    final data = await videoDataFuture;
     setState(() => _isLaunching = false);
 
     if (data != null && mounted) {
@@ -646,7 +694,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             title: title,
             videoUrl: data['video_url'],
             qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
-            signedSubtitleUrl: exactSubUrl,
           ),
         ),
       );
@@ -731,7 +778,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                Text('الحلقات المتوفرة (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text('الحلقات المتوفرة في سينمانا (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 _isLoadingCee
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
@@ -766,14 +813,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل (دعم البث عبر الـ VPN + الترجمة واستئناف الدقيقة)
+// المشغل السريع (تهيئة فورية مع جلب الترجمة في الخلفية)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
-  final String signedSubtitleUrl;
 
   const PlayerScreen({
     super.key,
@@ -781,7 +827,6 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.videoUrl,
     required this.qualities,
-    this.signedSubtitleUrl = '',
   });
 
   @override
@@ -803,26 +848,76 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _currentUrl = widget.videoUrl;
-    _prepareAndPlay();
+    _startInstantPlay();
   }
 
-  void _prepareAndPlay() async {
-    if (widget.signedSubtitleUrl.isNotEmpty) {
-      try {
-        final res = await http.get(Uri.parse(widget.signedSubtitleUrl), headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': 'https://cee.buzz/home'
-        }).timeout(const Duration(seconds: 5));
-
-        if (res.statusCode == 200 && res.body.isNotEmpty) {
-          _parsedSubtitles = _parseSubtitles(utf8.decode(res.bodyBytes, allowMalformed: true));
-        }
-      } catch (_) {}
-    }
-
+  // تشغيل فوري بدون انتظار تحميل الترجمة
+  void _startInstantPlay() async {
     final prefs = await SharedPreferences.getInstance();
     final savedSeconds = prefs.getInt('playback_pos_${widget.mediaId}') ?? 0;
+
+    // تشغيل الفيديو فوراً
     _initPlayer(_currentUrl!, startAtSecond: savedSeconds);
+
+    // جلب ملف الترجمة في الخلفية (Background Fetch) لعدم تأخير فتح الفيديو
+    _fetchSubtitlesInBackground();
+  }
+
+  void _fetchSubtitlesInBackground() async {
+    try {
+      final infoRes = await http.get(
+        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/${widget.mediaId}'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+      ).timeout(const Duration(seconds: 4));
+
+      if (infoRes.statusCode == 200) {
+        dynamic info = jsonDecode(utf8.decode(infoRes.bodyBytes, allowMalformed: true));
+        final subUrl = info['arTranslationFilePath']?.toString() ??
+            info['arTranslationFile']?.toString() ??
+            '';
+
+        if (subUrl.isNotEmpty) {
+          final subRes = await http.get(Uri.parse(subUrl), headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://cee.buzz/home'
+          }).timeout(const Duration(seconds: 4));
+
+          if (subRes.statusCode == 200 && subRes.body.isNotEmpty && mounted) {
+            setState(() {
+              _parsedSubtitles = _parseSubtitles(utf8.decode(subRes.bodyBytes, allowMalformed: true));
+            });
+            // تحديث المشغل بالترجمة فور وصولها
+            _updateSubtitlesOnTheFly();
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _updateSubtitlesOnTheFly() {
+    if (_chewieController != null && _parsedSubtitles.isNotEmpty && _subtitlesEnabled) {
+      _chewieController = ChewieController(
+        videoPlayerController: _videoPlayerController!,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: _videoPlayerController!.value.aspectRatio,
+        showControlsOnInitialize: true,
+        allowFullScreen: true,
+        subtitle: Subtitles(_parsedSubtitles),
+        subtitleBuilder: (context, subtitle) => Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(color: Colors.black.withOpacity(0.85), borderRadius: BorderRadius.circular(8)),
+          child: Text(subtitle, style: TextStyle(color: Colors.white, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+        ),
+        materialProgressColors: ChewieProgressColors(playedColor: const Color(0xFFE50914), handleColor: const Color(0xFF00F0FF)),
+        additionalOptions: (context) => [
+          OptionItem(onTap: (ctx) => _showQualitySheet(), iconData: Icons.hd_outlined, title: 'الجودة: $_selectedQualityName'),
+          OptionItem(onTap: (ctx) => _showSubtitlesSheet(), iconData: Icons.subtitles_rounded, title: 'إعدادات الترجمة'),
+        ],
+      );
+      if (mounted) setState(() {});
+    }
   }
 
   List<Subtitle> _parseSubtitles(String text) {
@@ -861,7 +956,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     setState(() => _isReady = false);
 
-    // تمرير ترويسات رسمية ليعمل الفيديو مع أو بدون VPN
     _videoPlayerController = VideoPlayerController.networkUrl(
       Uri.parse(streamUrl),
       httpHeaders: {
@@ -961,7 +1055,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (_) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: dynamic,
           children: widget.qualities.map((q) {
             final res = q['resolution'] ?? 'تلقائي';
             final url = q['url'];
