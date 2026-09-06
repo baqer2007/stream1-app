@@ -46,42 +46,41 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
-  List<dynamic> _items = [];
-  int _currentOffset = 0;
+  List<dynamic> _allLoaded = [];
+  List<dynamic> _movies = [];
+  List<dynamic> _series = [];
+  List<dynamic> _displayedGrid = [];
+
+  int _offset = 0;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
+  String _selectedCategoryName = 'الرئيسية';
 
-  final List<Map<String, dynamic>> _seedItems = [
-    {
-      "nb": "3130508",
-      "ar_title": "العداءة",
-      "en_title": "The Runner",
-      "stars": "7.5",
-      "arTranslationFile": "",
-      "imgThumbObjUrl": "https://cnth2.cee.buzz/vascin-poster-images/A8458904-274D-D582-F3A6-461CAC65829D_poster_thumb.jpg"
-    },
-    {
-      "nb": "1019141",
-      "ar_title": "ون بيس",
-      "en_title": "One Piece",
-      "stars": "8.3",
-      "arTranslationFile": "1EBC4A1A-2492-1090-C04A-D9D42558BE9A_ar_transfile.srt",
-      "imgThumbObjUrl": "https://cnth2.cee.buzz/vascin-poster-images/0E7DC761-D8D0-5792-520C-F5D0C922410C_poster.jpg"
-    }
+  final List<Map<String, dynamic>> _genres = [
+    {'id': 'all', 'title': 'الكل'},
+    {'id': 'action', 'title': 'أكشن'},
+    {'id': 'adventure', 'title': 'مغامرة'},
+    {'id': 'animation', 'title': 'أنمي ورسوم متحركة'},
+    {'id': 'comedy', 'title': 'كوميديا'},
+    {'id': 'crime', 'title': 'جريمة'},
+    {'id': 'drama', 'title': 'دراما'},
+    {'id': 'horror', 'title': 'رعب'},
+    {'id': 'sci-fi', 'title': 'خيال علمي'},
+    {'id': 'romance', 'title': 'رومانسي'},
   ];
 
   @override
   void initState() {
     super.initState();
     StreamService.startRelayWorker();
-    _fetchCeeFeed(isRefresh: true);
+    _fetchFeed(reset: true);
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 350) {
+          _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
-          _fetchCeeFeed(isRefresh: false);
+          _fetchFeed(reset: false);
         }
       }
     });
@@ -94,38 +93,39 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchCeeFeed({bool isRefresh = false}) async {
-    if (isRefresh) {
-      _currentOffset = 0;
+  Future<void> _fetchFeed({bool reset = false}) async {
+    if (reset) {
+      _offset = 0;
       _hasMore = true;
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
     }
 
-    List<dynamic> fetchedList = [];
+    List<dynamic> fetched = [];
     final endpoints = [
-      'https://cee.buzz/api/android/newlyVideosItems/level/0/offset/$_currentOffset/',
-      'https://cee.buzz/api/android/allVideo/page/${(_currentOffset ~/ 12) + 1}/level/0',
+      'https://cee.buzz/api/android/newlyVideosItems/level/0/offset/$_offset/',
+      'https://cee.buzz/api/android/allVideo/page/${(_offset ~/ 12) + 1}/level/0',
     ];
 
     for (var ep in endpoints) {
       try {
         final res = await http.get(Uri.parse(ep), headers: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-          'Referer': 'https://cee.buzz/',
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+          'Referer': 'https://cee.buzz/home',
           'Accept': 'application/json, text/plain, */*',
-        }).timeout(const Duration(seconds: 5));
+        }).timeout(const Duration(seconds: 8));
 
-        if (res.statusCode == 200 && res.body.isNotEmpty && res.body != 'null') {
+        if (res.statusCode == 200 && res.body.isNotEmpty) {
           dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes));
-          if (decoded is List && decoded.isNotEmpty) {
-            fetchedList = decoded;
+          if (decoded is List) {
+            fetched = decoded;
             break;
           } else if (decoded is Map) {
             final l = decoded['articles'] ?? decoded['data'] ?? decoded['videos'];
             if (l is List && l.isNotEmpty) {
-              fetchedList = l;
+              fetched = l;
               break;
             }
           }
@@ -135,31 +135,45 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
     if (mounted) {
       setState(() {
-        if (isRefresh) {
-          _items = fetchedList.isNotEmpty ? fetchedList : _seedItems;
+        if (reset) {
+          _allLoaded = fetched;
         } else {
-          _items.addAll(fetchedList);
+          _allLoaded.addAll(fetched);
         }
 
-        if (fetchedList.isEmpty) {
+        if (fetched.length < 8) {
           _hasMore = false;
         } else {
-          _currentOffset += 12;
+          _offset += 12;
         }
+
+        // فصل الأفلام والمسلسلات اعتماداً على kind و season
+        _movies = _allLoaded.where((it) {
+          final k = it['kind']?.toString() ?? '1';
+          return k == '1' && (it['season'] == null || it['season'] == '0');
+        }).toList();
+
+        _series = _allLoaded.where((it) {
+          final k = it['kind']?.toString() ?? '1';
+          return k != '1' || (it['season'] != null && it['season'] != '0');
+        }).toList();
+
+        _applyCategoryFilter(_selectedCategoryName);
 
         _isLoadingInitial = false;
         _isLoadingMore = false;
       });
 
-      if (_items.isNotEmpty) {
-        _preCacheFirstBatch(_items);
+      // حفظ استباقي في Firebase للأشخاص خارج العراق
+      if (_allLoaded.isNotEmpty) {
+        _syncToFirebaseRelay(_allLoaded.take(20).toList());
       }
     }
   }
 
-  void _preCacheFirstBatch(List rawList) {
+  void _syncToFirebaseRelay(List items) {
     final List<Map<String, String>> batch = [];
-    for (var it in rawList.take(20)) {
+    for (var it in items) {
       final nb = it['nb']?.toString();
       final title = it['en_title'] ?? it['ar_title'] ?? '';
       if (nb != null) {
@@ -169,6 +183,25 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     StreamService.preCacheMovieTitles(batch);
   }
 
+  void _applyCategoryFilter(String genreTitle) {
+    setState(() {
+      _selectedCategoryName = genreTitle;
+      if (genreTitle == 'الرئيسية' || genreTitle == 'الكل') {
+        _displayedGrid = List.from(_allLoaded);
+      } else {
+        _displayedGrid = _allLoaded.where((it) {
+          final cats = it['categories'];
+          if (cats is List) {
+            return cats.any((c) =>
+                (c['ar_title']?.toString().contains(genreTitle) ?? false) ||
+                (c['en_title']?.toString().toLowerCase().contains(genreTitle.toLowerCase()) ?? false));
+          }
+          return false;
+        }).toList();
+      }
+    });
+  }
+
   void _performSearch(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return;
@@ -176,37 +209,33 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF00F0FF)),
-      ),
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
     );
 
     List results = [];
     try {
       final b64 = base64.encode(utf8.encode(clean)).replaceAll('=', '');
-      final searchUrls = [
+      final urls = [
         'https://cee.buzz/api/android/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/0',
         'https://cee.buzz/api/android/AdvancedSearch?videoTitle=${Uri.encodeComponent(clean)}',
-        'https://cee.buzz/api/android/allVideo/page/1/level/0?title=${Uri.encodeComponent(clean)}'
       ];
 
-      for (var u in searchUrls) {
+      for (var u in urls) {
         try {
           final res = await http.get(Uri.parse(u), headers: {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0',
             'Referer': 'https://cee.buzz/',
-            'Accept': 'application/json, text/plain, */*',
-          }).timeout(const Duration(seconds: 5));
+          }).timeout(const Duration(seconds: 6));
 
-          if (res.statusCode == 200 && res.body.isNotEmpty) {
+          if (res.statusCode == 200) {
             dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes));
             if (decoded is List && decoded.isNotEmpty) {
               results = decoded;
               break;
             } else if (decoded is Map) {
-              final list = decoded['articles'] ?? decoded['data'] ?? [];
-              if (list is List && list.isNotEmpty) {
-                results = list;
+              final l = decoded['articles'] ?? decoded['data'];
+              if (l is List && l.isNotEmpty) {
+                results = l;
                 break;
               }
             }
@@ -219,7 +248,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       Navigator.pop(context);
       if (results.isNotEmpty) {
         setState(() {
-          _items = results;
+          _displayedGrid = results;
           _hasMore = false;
         });
       } else {
@@ -236,9 +265,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   void _openDetails(Map<String, dynamic> item) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => MediaDetailScreen(media: item),
-      ),
+      MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item)),
     );
   }
 
@@ -249,6 +276,61 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        // القائمة الجانبية (Drawer)
+        drawer: Drawer(
+          backgroundColor: const Color(0xFF0F1422),
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              DrawerHeader(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFE50914), Color(0xFF0F1422)]),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: const [
+                    Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                    SizedBox(height: 4),
+                    Text('مكتبة الأفلام والمسلسلات الشاملة', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.home_rounded, color: Color(0xFF00F0FF)),
+                title: const Text('الصفحة الرئيسية'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _applyCategoryFilter('الرئيسية');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
+                title: const Text('قائمة المفضلة'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
+                },
+              ),
+              const Divider(color: Colors.white12),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('التصنيفات والأنواع', style: TextStyle(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.bold)),
+              ),
+              ..._genres.map((g) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.movie_creation_outlined, size: 20, color: Colors.white60),
+                    title: Text(g['title']),
+                    selected: _selectedCategoryName == g['title'],
+                    selectedColor: const Color(0xFF00F0FF),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _applyCategoryFilter(g['title']);
+                    },
+                  )),
+            ],
+          ),
+        ),
         appBar: AppBar(
           backgroundColor: const Color(0xFF0F1422),
           elevation: 0,
@@ -268,19 +350,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 shaderCallback: (bounds) => const LinearGradient(
                   colors: [Color(0xFFFF3344), Color(0xFF00F0FF)],
                 ).createShader(bounds),
-                child: const Text(
-                  'ONEBR TV',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
-                ),
+                child: const Text('ONEBR TV', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
               ),
             ],
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
-              },
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
             ),
           ],
         ),
@@ -288,12 +365,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
             : RefreshIndicator(
                 color: const Color(0xFFE50914),
-                onRefresh: () => _fetchCeeFeed(isRefresh: true),
+                onRefresh: () => _fetchFeed(reset: true),
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // شريط البحث
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         child: TextField(
@@ -301,35 +379,42 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           textInputAction: TextInputAction.search,
                           onSubmitted: _performSearch,
                           decoration: InputDecoration(
-                            hintText: 'بحث في سينمانا (اسم الفيلم أو المسلسل)...',
+                            hintText: 'ابحث عن أي فيلم، مسلسل أو أنمي...',
                             hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
                             prefixIcon: const Icon(Icons.search, color: Color(0xFF00F0FF)),
                             suffixIcon: IconButton(
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchController.clear();
-                                _fetchCeeFeed(isRefresh: true);
+                                _fetchFeed(reset: true);
                               },
                             ),
                             filled: true,
                             fillColor: const Color(0xFF0F1422),
                             contentPadding: EdgeInsets.zero,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide.none,
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                           ),
                         ),
                       ),
-                      if (_items.isNotEmpty) _buildHeroBanner(_items.first, screenWidth),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+
+                      if (_displayedGrid.isNotEmpty && _selectedCategoryName == 'الرئيسية')
+                        _buildHeroBanner(_displayedGrid.first, screenWidth),
+
+                      if (_selectedCategoryName == 'الرئيسية') ...[
+                        if (_movies.isNotEmpty) _buildMediaShelf('🎬 أحدث الأفلام المتوفرة', _movies),
+                        if (_series.isNotEmpty) _buildMediaShelf('📺 المسلسلات والدراما المتجددة', _series),
+                      ],
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
                         child: Text(
-                          '🔥 الأعمال المتوفرة في سينمانا',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                          _selectedCategoryName == 'الرئيسية' ? '🌐 جميع العروض المتوفرة' : '📂 تصنيف: $_selectedCategoryName',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                       ),
-                      _buildCeeGrid(),
+
+                      _buildMediaGrid(_displayedGrid),
+
                       if (_isLoadingMore)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 20),
@@ -376,27 +461,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
-              ),
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
               const SizedBox(height: 8),
-              ElevatedButton(
+              ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE50914),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
                 onPressed: () => _openDetails(item),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_arrow_rounded, size: 20, color: Colors.white),
-                    SizedBox(width: 6),
-                    Text('مشاهدة العمل الآن', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
-                  ],
-                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 22, color: Colors.white),
+                label: const Text('مشاهدة وتفاصيل', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
               ),
             ],
           ),
@@ -405,7 +480,73 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
   }
 
-  Widget _buildCeeGrid() {
+  Widget _buildMediaShelf(String title, List<dynamic> list) {
+    final cardWidth = (MediaQuery.of(context).size.width * 0.31).clamp(105.0, 140.0);
+    final cardHeight = cardWidth * 1.5;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 6.0),
+          child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+        ),
+        SizedBox(
+          height: cardHeight + 50,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: list.length,
+            itemBuilder: (ctx, i) {
+              final item = list[i];
+              final mTitle = item['ar_title'] ?? item['en_title'] ?? '';
+              final poster = item['imgThumbObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['img'] ?? '';
+              final score = item['stars']?.toString() ?? '8.0';
+
+              return InkWell(
+                onTap: () => _openDetails(item),
+                child: Container(
+                  width: cardWidth,
+                  margin: const EdgeInsets.symmetric(horizontal: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F1422),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                        child: poster.toString().isNotEmpty
+                            ? Image.network(poster.toString(), height: cardHeight, width: double.infinity, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(height: cardHeight, color: const Color(0xFF172033)))
+                            : Container(height: cardHeight, color: const Color(0xFF172033)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(5.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(mTitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                            const SizedBox(height: 2),
+                            Text('⭐ $score', style: const TextStyle(fontSize: 10, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMediaGrid(List<dynamic> list) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10.0),
       child: GridView.builder(
@@ -417,9 +558,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           mainAxisSpacing: 8,
           childAspectRatio: 0.58,
         ),
-        itemCount: _items.length,
+        itemCount: list.length,
         itemBuilder: (ctx, i) {
-          final item = _items[i];
+          final item = list[i];
           final title = item['ar_title'] ?? item['en_title'] ?? '';
           final poster = item['imgThumbObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['img'] ?? '';
           final stars = item['stars']?.toString() ?? '8';
@@ -439,12 +580,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                       child: poster.toString().isNotEmpty
-                          ? Image.network(
-                              poster.toString(),
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(color: const Color(0xFF172033)),
-                            )
+                          ? Image.network(poster.toString(), width: double.infinity, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: const Color(0xFF172033)))
                           : Container(color: const Color(0xFF172033)),
                     ),
                   ),
@@ -453,12 +590,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white),
-                        ),
+                        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white)),
                         const SizedBox(height: 2),
                         Text('⭐ $stars', style: const TextStyle(fontSize: 9.5, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
                       ],
@@ -475,7 +608,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة تفاصيل العمل
+// شاشة التفاصيل (المواسم، الحلقات، القصة والتصنيفات)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -486,13 +619,19 @@ class MediaDetailScreen extends StatefulWidget {
 }
 
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
-  bool _isLaunchingStream = false;
+  bool _isLaunching = false;
   bool _isFav = false;
+  bool _isLoadingEpisodes = false;
+  List<dynamic> _episodes = [];
+  bool _isTv = false;
 
   @override
   void initState() {
     super.initState();
     _checkFav();
+    final k = widget.media['kind']?.toString() ?? '1';
+    _isTv = k != '1' || (widget.media['season'] != null && widget.media['season'] != '0');
+    if (_isTv) _fetchSeriesEpisodes();
   }
 
   void _checkFav() async {
@@ -502,7 +641,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 
   void _toggleFav() async {
-    final newState = await FavoritesService.toggleFavorite(widget.media, 'video');
+    final newState = await FavoritesService.toggleFavorite(widget.media, _isTv ? 'tv' : 'movie');
     if (mounted) {
       setState(() => _isFav = newState);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -515,16 +654,35 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _playVideo() async {
-    setState(() => _isLaunchingStream = true);
-
+  Future<void> _fetchSeriesEpisodes() async {
+    setState(() => _isLoadingEpisodes = true);
     final nb = widget.media['nb'].toString();
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? 'فيديو سينمانا';
+
+    try {
+      final res = await http.get(
+        Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/2/sub_id/$nb'),
+        headers: {'User-Agent': 'Mozilla/5.0'},
+      );
+      if (res.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        final list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+        if (mounted && list.isNotEmpty) setState(() => _episodes = list);
+      }
+    } catch (_) {}
+
+    if (mounted) setState(() => _isLoadingEpisodes = false);
+  }
+
+  void _playStream({String? targetNb, String? subTitle}) async {
+    setState(() => _isLaunching = true);
+
+    final nb = targetNb ?? widget.media['nb'].toString();
+    final title = subTitle ?? widget.media['ar_title'] ?? widget.media['en_title'] ?? 'بث مباشر';
     final subFile = widget.media['arTranslationFile']?.toString() ?? '';
 
     final data = await StreamService.getVideoSource(nb);
 
-    setState(() => _isLaunchingStream = false);
+    setState(() => _isLaunching = false);
 
     if (data != null && mounted) {
       Navigator.push(
@@ -540,10 +698,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر جلب سيرفر المشاهدة لهذا العمل حالياً'),
-          backgroundColor: Color(0xFFE50914),
-        ),
+        const SnackBar(content: Text('تعذر فتح السيرفر، جاري المعالجة عبر الريلاي...'), backgroundColor: Color(0xFFE50914)),
       );
     }
   }
@@ -553,8 +708,18 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
     final enTitle = widget.media['en_title'] ?? '';
     final poster = widget.media['imgThumbObjUrl'] ?? widget.media['imgMediumThumbObjUrl'] ?? widget.media['img'] ?? '';
-    final nb = widget.media['nb']?.toString() ?? '';
-    final stars = widget.media['stars']?.toString() ?? '8';
+    final stars = widget.media['stars']?.toString() ?? '8.0';
+    final year = widget.media['year']?.toString() ?? '2026';
+    final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? 'لا يوجد وصف متاح لهذا العمل حالياً.';
+
+    // استخراج التصنيفات
+    String genresText = '';
+    if (widget.media['categories'] is List) {
+      genresText = (widget.media['categories'] as List)
+          .map((c) => c['ar_title'] ?? c['en_title'] ?? '')
+          .where((s) => s.toString().isNotEmpty)
+          .join(' • ');
+    }
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -584,27 +749,32 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       children: [
                         Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
                         if (enTitle.isNotEmpty && enTitle != title) ...[
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Text(enTitle, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
                         ],
-                        const SizedBox(height: 8),
-                        Text('⭐ $stars', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F1422),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Text('معرف سينمانا الحقيقي: $nb', style: const TextStyle(fontSize: 11, color: Color(0xFF00F0FF))),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: const Color(0xFFF59E0B), borderRadius: BorderRadius.circular(4)),
+                              child: Text('⭐ $stars', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(year, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                          ],
                         ),
+                        if (genresText.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(genresText, style: const TextStyle(fontSize: 11.5, color: Color(0xFF00F0FF), fontWeight: FontWeight.w600)),
+                        ],
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
+
               Row(
                 children: [
                   Expanded(
@@ -615,11 +785,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                           backgroundColor: const Color(0xFFE50914),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: _isLaunchingStream ? null : _playVideo,
-                        icon: _isLaunchingStream
+                        onPressed: _isLaunching ? null : () => _playStream(),
+                        icon: _isLaunching
                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                             : const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.white),
-                        label: const Text('مشاهدة العمل الآن', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.white)),
+                        label: Text(_isTv ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن',
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.white)),
                       ),
                     ),
                   ),
@@ -632,15 +803,59 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       border: Border.all(color: _isFav ? const Color(0xFFF59E0B) : Colors.white24),
                     ),
                     child: IconButton(
-                      icon: Icon(
-                        _isFav ? Icons.bookmark_added_rounded : Icons.bookmark_border_rounded,
-                        color: _isFav ? const Color(0xFFF59E0B) : Colors.white70,
-                      ),
+                      icon: Icon(_isFav ? Icons.bookmark_added_rounded : Icons.bookmark_border_rounded,
+                          color: _isFav ? const Color(0xFFF59E0B) : Colors.white70),
                       onPressed: _toggleFav,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
+
+              const Text('قصة العمل:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Text(story, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.4)),
+
+              // شبكة الحلقات للمسلسلات
+              if (_isTv) ...[
+                const SizedBox(height: 24),
+                const Text('حلقات المسلسل المتوفرة:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 10),
+                _isLoadingEpisodes
+                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
+                    : _episodes.isEmpty
+                        ? const Text('المسلسل متوفر بحلقة مجمعة أو يتم تجهيز الحلقات...', style: TextStyle(color: Colors.white54, fontSize: 12))
+                        : GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 1.3,
+                            ),
+                            itemCount: _episodes.length,
+                            itemBuilder: (ctx, i) {
+                              final ep = _episodes[i];
+                              final epTitle = ep['ar_title'] ?? ep['title'] ?? 'حلقة ${i + 1}';
+                              final epNb = ep['nb']?.toString() ?? ep['id']?.toString() ?? '';
+
+                              return InkWell(
+                                onTap: () => _playStream(targetNb: epNb, subTitle: '$title - $epTitle'),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF172033),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.white12),
+                                  ),
+                                  child: Center(
+                                    child: Text(epTitle, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ],
             ],
           ),
         ),
@@ -650,7 +865,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل مع جلب وتفعيل الترجمة العربية الأصلية من سينمانا
+// المشغل مع تخطي شارة البداية وإعدادات الترجمة المخصصة
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String title;
@@ -678,32 +893,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isReady = false;
   bool _showSkipIntroBtn = false;
 
+  // إعدادات الترجمة
+  bool _subtitlesEnabled = true;
+  double _subtitleFontSize = 16.0;
+  List<Subtitle> _parsedSubtitles = [];
+
   @override
   void initState() {
     super.initState();
     _currentUrl = widget.videoUrl;
-    _startPlayerWithSubtitles();
+    _loadSubtitlesAndInitPlayer();
   }
 
-  void _startPlayerWithSubtitles() async {
-    List<Subtitle>? parsedSubs;
-
-    // جلب ملف الترجمة العربي الأصلي من خوادم cee
+  void _loadSubtitlesAndInitPlayer() async {
     if (widget.subtitleFileName.isNotEmpty) {
       try {
         final subUrl = 'https://cnth2.cee.buzz/vascin-subtitles-files/${widget.subtitleFileName}';
-        final res = await http.get(Uri.parse(subUrl), headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': 'https://cee.buzz/',
-        }).timeout(const Duration(seconds: 4));
-
+        final res = await http.get(Uri.parse(subUrl), headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
         if (res.statusCode == 200 && res.body.isNotEmpty) {
-          parsedSubs = _parseSrt(utf8.decode(res.bodyBytes));
+          _parsedSubtitles = _parseSrt(utf8.decode(res.bodyBytes));
         }
       } catch (_) {}
     }
 
-    _initFastPlayer(_currentUrl!, subs: parsedSubs);
+    _initFastPlayer(_currentUrl!);
   }
 
   List<Subtitle> _parseSrt(String srtText) {
@@ -717,7 +930,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final start = _parseDuration(m.group(2)!);
       final end = _parseDuration(m.group(3)!);
       final text = m.group(4)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-
       if (text.isNotEmpty) {
         list.add(Subtitle(index: idx++, start: start, end: end, text: text));
       }
@@ -735,7 +947,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return Duration(hours: hours, minutes: minutes, seconds: seconds, milliseconds: millis);
   }
 
-  void _initFastPlayer(String streamUrl, {List<Subtitle>? subs}) async {
+  void _initFastPlayer(String streamUrl) async {
     _chewieController?.dispose();
     _videoPlayerController?.removeListener(_checkIntro);
     await _videoPlayerController?.dispose();
@@ -761,8 +973,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       showControlsOnInitialize: true,
       allowFullScreen: true,
       deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
-      // تفعيل الترجمة المدمجة من سينمانا
-      subtitle: (subs != null && subs.isNotEmpty) ? Subtitles(subs) : null,
+      subtitle: (_subtitlesEnabled && _parsedSubtitles.isNotEmpty) ? Subtitles(_parsedSubtitles) : null,
       subtitleBuilder: (context, subtitle) => Container(
         margin: const EdgeInsets.only(bottom: 24),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -773,14 +984,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
         child: Text(
           subtitle,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 16.5,
+            fontSize: _subtitleFontSize,
             fontWeight: FontWeight.bold,
             height: 1.3,
-            shadows: [
-              Shadow(offset: Offset(1, 1), blurRadius: 4, color: Colors.black),
-            ],
+            shadows: const [Shadow(offset: Offset(1, 1), blurRadius: 4, color: Colors.black)],
           ),
           textAlign: TextAlign.center,
         ),
@@ -797,6 +1006,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onTap: (ctx) => _showQualitySheet(),
             iconData: Icons.hd_outlined,
             title: 'الجودة: $_selectedQualityName',
+          ),
+          OptionItem(
+            onTap: (ctx) => _showSubtitleSettingsSheet(),
+            iconData: Icons.subtitles_rounded,
+            title: 'إعدادات الترجمة',
           ),
         ];
       },
@@ -816,9 +1030,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _skipIntro() {
     if (_videoPlayerController == null) return;
-    _videoPlayerController!.seekTo(
-        _videoPlayerController!.value.position + const Duration(seconds: 85));
+    _videoPlayerController!.seekTo(_videoPlayerController!.value.position + const Duration(seconds: 85));
     setState(() => _showSkipIntroBtn = false);
+  }
+
+  void _showSubtitleSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F1422),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('إعدادات الترجمة', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Divider(color: Colors.white12),
+              SwitchListTile(
+                title: const Text('تفعيل الترجمة'),
+                value: _subtitlesEnabled,
+                activeColor: const Color(0xFF00F0FF),
+                onChanged: (val) {
+                  setSheetState(() => _subtitlesEnabled = val);
+                  setState(() => _subtitlesEnabled = val);
+                  _initFastPlayer(_currentUrl!);
+                },
+              ),
+              const SizedBox(height: 8),
+              const Text('حجم خط الترجمة:', style: TextStyle(fontSize: 13, color: Colors.white70)),
+              Slider(
+                value: _subtitleFontSize,
+                min: 12.0,
+                max: 26.0,
+                divisions: 7,
+                activeColor: const Color(0xFFE50914),
+                label: _subtitleFontSize.round().toString(),
+                onChanged: (val) {
+                  setSheetState(() => _subtitleFontSize = val);
+                  setState(() => _subtitleFontSize = val);
+                  _initFastPlayer(_currentUrl!);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showQualitySheet() {
@@ -834,9 +1093,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             final url = q['url'];
             final isSelected = url == _currentUrl;
             return ListTile(
-              title: Text(res,
-                  style: TextStyle(
-                      color: isSelected ? const Color(0xFF00F0FF) : Colors.white)),
+              title: Text(res, style: TextStyle(color: isSelected ? const Color(0xFF00F0FF) : Colors.white)),
               trailing: isSelected ? const Icon(Icons.check_circle, color: Color(0xFF00F0FF)) : null,
               onTap: () {
                 Navigator.pop(context);
@@ -911,7 +1168,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // -------------------------------------------------------------
-// المفضلة
+// قائمة المفضلة
 // -------------------------------------------------------------
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -932,12 +1189,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   void _load() async {
     final list = await FavoritesService.getFavorites();
-    if (mounted) {
-      setState(() {
-        _favorites = list;
-        _isLoading = false;
-      });
-    }
+    if (mounted) setState(() { _favorites = list; _isLoading = false; });
   }
 
   @override
@@ -968,9 +1220,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => MediaDetailScreen(media: item),
-                            ),
+                            MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item)),
                           ).then((_) => _load());
                         },
                         child: Container(
