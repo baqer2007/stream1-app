@@ -4,6 +4,7 @@ import 'package:chewie/chewie.dart';
 import 'stream_service.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const CinemanaApp());
 }
 
@@ -15,7 +16,13 @@ class CinemanaApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Cinemana Player',
-      theme: ThemeData.dark(),
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFFE11D48),
+          secondary: Color(0xFFE11D48),
+        ),
+      ),
       home: const HomeScreen(),
     );
   }
@@ -32,12 +39,20 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _controller = TextEditingController(text: '3130508');
   bool _isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // تفعيل عامل المعالجة الصامت في الخلفية لجلب المهام المعلقة تلقائياً
+    StreamService.startRelayWorker();
+  }
+
   void _loadAndPlay() async {
     final videoId = _controller.text.trim();
     if (videoId.isEmpty) return;
 
     setState(() => _isLoading = true);
 
+    // محاولة جلب الفيديو (من الكاش السحابي أو الشبكة)
     final data = await StreamService.getVideoSource(videoId);
 
     setState(() => _isLoading = false);
@@ -54,7 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تحميل رابط الفيديو أو غير متوفر')),
+        const SnackBar(
+          content: Text('تعذر جلب رابط الفيديو حالياً، يرجى المحاولة لاحقاً'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }
@@ -62,32 +80,67 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cinemana Stream Player')),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                labelText: 'معرف الفيديو (ID)',
-                border: OutlineInputBorder(),
+      appBar: AppBar(
+        title: const Text('Cinemana Relay Player'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF1E293B),
+        elevation: 0,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.play_circle_fill_rounded,
+                size: 80,
+                color: Color(0xFFE11D48),
               ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 20),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                    onPressed: _loadAndPlay,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('تشغيل الفيديو ومزامنة الرابط'),
+              const SizedBox(height: 24),
+              TextField(
+                controller: _controller,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                  labelText: 'معرف الفيلم أو الحلقة (Video ID)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-          ],
+                  filled: true,
+                  fillColor: const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _isLoading
+                  ? const Column(
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFFE11D48)),
+                        SizedBox(height: 12),
+                        Text('جاري الاتصال وجلب الرابط المباشر...'),
+                      ],
+                    )
+                  : SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE11D48),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _loadAndPlay,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                        label: const Text(
+                          'تشغيل الفيديو',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+            ],
+          ),
         ),
       ),
     );
@@ -98,7 +151,11 @@ class PlayerScreen extends StatefulWidget {
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
 
-  const PlayerScreen({super.key, required this.videoUrl, required this.qualities});
+  const PlayerScreen({
+    super.key,
+    required this.videoUrl,
+    required this.qualities,
+  });
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -107,6 +164,7 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
+  bool _isPlayerReady = false;
 
   @override
   void initState() {
@@ -118,6 +176,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _chewieController?.dispose();
     _videoPlayerController?.dispose();
 
+    setState(() => _isPlayerReady = false);
+
     _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(url));
     await _videoPlayerController!.initialize();
 
@@ -127,13 +187,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       looping: false,
       aspectRatio: _videoPlayerController!.value.aspectRatio,
       materialProgressColors: ChewieProgressColors(
-        playedColor: Colors.red,
-        handleColor: Colors.redAccent,
+        playedColor: const Color(0xFFE11D48),
+        handleColor: const Color(0xFFE11D48),
         backgroundColor: Colors.grey,
         bufferedColor: Colors.white24,
       ),
     );
-    setState(() {});
+
+    if (mounted) {
+      setState(() => _isPlayerReady = true);
+    }
   }
 
   @override
@@ -146,11 +209,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('مشغل الفيديو')),
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('مشغل الفيديو'),
+        backgroundColor: Colors.black,
+      ),
       body: Center(
-        child: _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
+        child: _isPlayerReady && _chewieController != null
             ? Chewie(controller: _chewieController!)
-            : const CircularProgressIndicator(),
+            : const CircularProgressIndicator(color: Color(0xFFE11D48)),
       ),
     );
   }
