@@ -54,7 +54,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   List<dynamic> _movies = [];
   List<dynamic> _series = [];
 
-  int _page = 1;
+  int _offset = 0;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -87,7 +87,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
   Future<void> _fetchMainContent({bool reset = false}) async {
     if (reset) {
-      _page = 1;
+      _offset = 0;
       _hasMore = true;
       setState(() => _isLoadingInitial = true);
     } else {
@@ -95,14 +95,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
 
     try {
-      final url = Uri.parse('https://cee.buzz/api/android/newlyVideosItems/level/0/offset/${(_page - 1) * 24}/');
+      final url = Uri.parse('https://cee.buzz/api/android/newlyVideosItems/level/0/offset/$_offset/');
       final res = await http.get(url, headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile)',
-        'Referer': 'https://cee.buzz/home',
+        'User-Agent': 'okhttp/3.12.1',
+        'Host': 'cee.buzz'
       }).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200 && res.body.isNotEmpty) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
         List list = (decoded is List) ? decoded : (decoded['articles'] ?? decoded['data'] ?? []);
 
         if (mounted) {
@@ -116,7 +116,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             if (list.length < 10) {
               _hasMore = false;
             } else {
-              _page++;
+              _offset += 12;
             }
 
             _movies = _items.where((it) => (it['kind']?.toString() ?? '1') == '1' && (it['season'] == null || it['season'] == '0')).toList();
@@ -126,8 +126,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             _isLoadingMore = false;
           });
 
-          // المزامنة السحابية
-          StreamService.preCacheMovieTitles(list.take(15).map((e) => {
+          StreamService.preCacheMovieTitles(list.take(10).map((e) => {
             'id': e['nb']?.toString() ?? '',
             'title': e['en_title']?.toString() ?? e['ar_title']?.toString() ?? ''
           }).toList());
@@ -161,13 +160,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       final b64 = base64.encode(utf8.encode(clean)).replaceAll('=', '');
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/0'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/'},
+        headers: {'User-Agent': 'okhttp/3.12.1', 'Host': 'cee.buzz'},
       ).timeout(const Duration(seconds: 8));
 
       Navigator.pop(context);
 
       if (res.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
         List results = (decoded is List) ? decoded : (decoded['articles'] ?? []);
         if (mounted && results.isNotEmpty) {
           setState(() {
@@ -305,7 +304,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
   Widget _buildHeroBanner(Map<String, dynamic> item, double width) {
     final title = item['ar_title'] ?? item['en_title'] ?? '';
-    final poster = item['imgThumbObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['img'] ?? '';
+    // استخدام imgObjUrl لجلب البوستر عالي الدقة
+    final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
@@ -348,7 +348,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             itemBuilder: (ctx, i) {
               final item = list[i];
               final mTitle = item['ar_title'] ?? item['en_title'] ?? '';
-              final poster = item['imgThumbObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['img'] ?? '';
+              // استخدام imgObjUrl لجلب البوستر عالي الدقة
+              final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
               final score = item['stars']?.toString() ?? '8.0';
               return InkWell(
                 onTap: () => _openDetails(item),
@@ -393,7 +394,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         itemBuilder: (ctx, i) {
           final item = list[i];
           final title = item['ar_title'] ?? item['en_title'] ?? '';
-          final poster = item['imgThumbObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['img'] ?? '';
+          // استخدام imgObjUrl لجلب البوستر عالي الدقة
+          final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
           final stars = item['stars']?.toString() ?? '8.0';
           return InkWell(
             onTap: () => _openDetails(item),
@@ -427,7 +429,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (نظام المواسم والحلقات المضمون)
+// شاشة التفاصيل (الحلقات والمواسم)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -471,39 +473,30 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isFav = newState);
   }
 
-  // الجلب الدقيق للمواسم (level/1) ثم الحلقات (level/2) لمنع التداخل مع أفلام أخرى
   Future<void> _loadSeasonsAndEpisodes() async {
     setState(() => _isLoadingEpisodes = true);
     final nb = widget.media['nb'].toString();
 
     try {
-      // 1. فحص المواسم أولاً
-      final seasonRes = await http.get(Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/1/sub_id/$nb'));
-      if (seasonRes.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(seasonRes.bodyBytes));
-        List sList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-        if (sList.isNotEmpty) {
-          _seasons = sList;
-          await _loadEpisodesForSeason(_seasons[0]['nb'].toString());
+      final epRes = await http.get(Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/series_episodes_list/$nb/level/0'), headers: {'User-Agent': 'okhttp/3.12.1', 'Host': 'cee.buzz'});
+      
+      if (epRes.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
+        List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+        
+        if (eList.isNotEmpty) {
+          if (mounted) setState(() { _episodes = eList; _isLoadingEpisodes = false; });
           return;
         }
       }
 
-      // 2. إذا لم توجد مواسم، جلب الحلقات مباشرة
-      await _loadEpisodesForSeason(nb);
-    } catch (_) {}
-
-    if (mounted) setState(() => _isLoadingEpisodes = false);
-  }
-
-  Future<void> _loadEpisodesForSeason(String parentNb) async {
-    try {
-      final epRes = await http.get(Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/2/sub_id/$parentNb'));
-      if (epRes.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes));
+      final oldRes = await http.get(Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/2/sub_id/$nb'), headers: {'User-Agent': 'okhttp/3.12.1'});
+      if (oldRes.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(oldRes.bodyBytes, allowMalformed: true));
         List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
         if (mounted) setState(() { _episodes = eList; _isLoadingEpisodes = false; });
       }
+
     } catch (_) {
       if (mounted) setState(() => _isLoadingEpisodes = false);
     }
@@ -541,7 +534,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final poster = widget.media['imgThumbObjUrl'] ?? widget.media['img'] ?? '';
+    // استخدام imgObjUrl لجلب البوستر عالي الدقة في شاشة التفاصيل
+    final poster = widget.media['imgObjUrl'] ?? widget.media['imgMediumThumbObjUrl'] ?? widget.media['imgThumbObjUrl'] ?? widget.media['img'] ?? '';
     final stars = widget.media['stars']?.toString() ?? '8.0';
     final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? 'لا يوجد وصف متاح.';
 
@@ -592,39 +586,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                if (_seasons.isNotEmpty) ...[
-                  const Text('المواسم:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 40,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _seasons.length,
-                      itemBuilder: (ctx, i) {
-                        final isSelected = _selectedSeasonIndex == i;
-                        return InkWell(
-                          onTap: () {
-                            setState(() { _selectedSeasonIndex = i; _isLoadingEpisodes = true; });
-                            _loadEpisodesForSeason(_seasons[i]['nb'].toString());
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.only(left: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(color: isSelected ? const Color(0xFFE50914) : const Color(0xFF172033), borderRadius: BorderRadius.circular(8)),
-                            child: Text(_seasons[i]['ar_title'] ?? 'موسم ${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                const Text('الحلقات:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                const Text('الحلقات المتوفرة:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 _isLoadingEpisodes
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
                     : _episodes.isEmpty
-                        ? const Text('تم توفير هذا المسلسل برابط تشغيل مباشر.', style: TextStyle(color: Colors.white54, fontSize: 12))
+                        ? const Text('المسلسل متوفر برابط تشغيل مباشر.', style: TextStyle(color: Colors.white54, fontSize: 12))
                         : GridView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
@@ -632,7 +599,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             itemCount: _episodes.length,
                             itemBuilder: (ctx, i) {
                               final ep = _episodes[i];
-                              final epNum = ep['episode'] ?? '${i + 1}';
+                              final epNum = ep['episode']?.toString() ?? '${i + 1}';
                               final epNb = ep['nb']?.toString() ?? '';
                               final epSub = ep['arTranslationFile']?.toString();
                               return InkWell(
@@ -654,7 +621,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل (الترجمة تسبق التشغيل + العودة لنفس الدقيقة)
+// المشغل (الترجمة والمزامنة)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -694,14 +661,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _prepareAndPlay();
   }
 
-  // المعالجة الدقيقة لملف الترجمة قبل فتح المشغل نهائياً
   void _prepareAndPlay() async {
     if (widget.subtitleFileName.isNotEmpty) {
       try {
         final subUrl = 'https://cnth2.cee.buzz/vascin-subtitles-files/${widget.subtitleFileName}';
-        final res = await http.get(Uri.parse(subUrl), headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
+        final res = await http.get(Uri.parse(subUrl), headers: {'User-Agent': 'okhttp/3.12.1'}).timeout(const Duration(seconds: 4));
         if (res.statusCode == 200 && res.body.isNotEmpty) {
-          _parsedSubtitles = _parseSrt(utf8.decode(res.bodyBytes));
+          _parsedSubtitles = _parseSrt(utf8.decode(res.bodyBytes, allowMalformed: true));
         }
       } catch (_) {}
     }
@@ -913,13 +879,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           itemCount: _favorites.length,
           itemBuilder: (ctx, i) {
             final item = _favorites[i];
+            // استخدام imgObjUrl للمفضلة أيضاً
+            final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
             return InkWell(
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
               child: Container(
                 decoration: BoxDecoration(color: const Color(0xFF0F1422), borderRadius: BorderRadius.circular(8)),
                 child: Column(
                   children: [
-                    Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: Image.network(item['imgThumbObjUrl'] ?? '', fit: BoxFit.cover))),
+                    Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: poster.toString().isNotEmpty ? Image.network(poster.toString(), fit: BoxFit.cover) : Container())),
                     Padding(padding: const EdgeInsets.all(5), child: Text(item['ar_title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10))),
                   ],
                 ),
