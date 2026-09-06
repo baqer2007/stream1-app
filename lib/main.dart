@@ -37,7 +37,7 @@ class OnebrTvApp extends StatelessWidget {
 }
 
 // -------------------------------------------------------------
-// الواجهة الرئيسية
+// الصفحة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -53,26 +53,25 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   List<dynamic> _items = [];
   List<dynamic> _movies = [];
   List<dynamic> _series = [];
+  List<dynamic> _categories = [];
 
-  int _offset = 0;
+  int _currentPage = 0;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  String _activeCategory = 'الكل';
-
-  final List<String> _categories = [
-    'الكل', 'أكشن', 'مغامرة', 'أنمي', 'كوميديا', 'جريمة', 'دراما', 'رعب', 'خيال علمي'
-  ];
+  String _activeCategoryTitle = 'الكل';
 
   @override
   void initState() {
     super.initState();
-    _fetchMainContent(reset: true);
+    _loadCategories();
+    _loadCeeContent(reset: true);
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
-          _fetchMainContent(reset: false);
+          _loadCeeContent(reset: false);
         }
       }
     });
@@ -85,9 +84,26 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchMainContent({bool reset = false}) async {
+  // جلب التصنيفات الحقيقية من API سينمانا DevTools
+  Future<void> _loadCategories() async {
+    try {
+      final res = await http.get(
+        Uri.parse('https://cee.buzz/api/android/mainCategories?lang=en'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+      );
+      if (res.statusCode == 200) {
+        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
+        if (decoded is List && mounted) {
+          setState(() => _categories = decoded);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // جلب المحتوى المباشر عبر AdvancedSearch
+  Future<void> _loadCeeContent({bool reset = false, String? categoryId}) async {
     if (reset) {
-      _offset = 0;
+      _currentPage = 0;
       _hasMore = true;
       setState(() => _isLoadingInitial = true);
     } else {
@@ -95,10 +111,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
 
     try {
-      final url = Uri.parse('https://cee.buzz/api/android/newlyVideosItems/level/0/offset/$_offset/');
-      final res = await http.get(url, headers: {
-        'User-Agent': 'okhttp/3.12.1',
-        'Host': 'cee.buzz'
+      String urlStr = 'https://cee.buzz/api/android/AdvancedSearch?level=0&page=$_currentPage&year=1900,2026';
+      if (categoryId != null && categoryId != 'all') {
+        urlStr += '&category=$categoryId';
+      }
+
+      final res = await http.get(Uri.parse(urlStr), headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'Referer': 'https://cee.buzz/home',
+        'Accept': 'application/json, text/plain, */*',
       }).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200 && res.body.isNotEmpty) {
@@ -113,10 +134,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               _items.addAll(list);
             }
 
-            if (list.length < 10) {
+            if (list.length < 8) {
               _hasMore = false;
             } else {
-              _offset += 12;
+              _currentPage++;
             }
 
             _movies = _items.where((it) => (it['kind']?.toString() ?? '1') == '1' && (it['season'] == null || it['season'] == '0')).toList();
@@ -131,36 +152,28 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             'title': e['en_title']?.toString() ?? e['ar_title']?.toString() ?? ''
           }).toList());
         }
+      } else {
+        if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
       }
     } catch (_) {
       if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
     }
   }
 
-  List<dynamic> get _filteredList {
-    if (_activeCategory == 'الكل') return _items;
-    return _items.where((item) {
-      final cats = item['categories'];
-      if (cats is List) {
-        return cats.any((c) =>
-            (c['ar_title']?.toString().contains(_activeCategory) ?? false) ||
-            (c['en_title']?.toString().toLowerCase().contains(_activeCategory.toLowerCase()) ?? false));
-      }
-      return false;
-    }).toList();
-  }
-
   void _search(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return;
 
-    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))));
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+    );
 
     try {
-      final b64 = base64.encode(utf8.encode(clean)).replaceAll('=', '');
       final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/0'),
-        headers: {'User-Agent': 'okhttp/3.12.1', 'Host': 'cee.buzz'},
+        Uri.parse('https://cee.buzz/api/android/AdvancedSearch?videoTitle=${Uri.encodeComponent(clean)}&level=0&page=0&year=1900,2026'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
       ).timeout(const Duration(seconds: 8));
 
       Navigator.pop(context);
@@ -171,7 +184,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         if (mounted && results.isNotEmpty) {
           setState(() {
             _items = results;
-            _activeCategory = 'الكل';
+            _hasMore = false;
+            _activeCategoryTitle = 'نتائج البحث: $clean';
           });
         }
       }
@@ -187,7 +201,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final displayItems = _filteredList;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -205,13 +218,22 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   children: const [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
                     SizedBox(height: 4),
-                    Text('مكتبة الأفلام والمسلسلات الكاملة', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('أقسام وتصنيفات سينمانا الحقيقية', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
               ListTile(
+                leading: const Icon(Icons.home_rounded, color: Color(0xFF00F0FF)),
+                title: const Text('الرئيسية'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() => _activeCategoryTitle = 'الكل');
+                  _loadCeeContent(reset: true);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-                title: const Text('قائمة المفضلة'),
+                title: const Text('المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
@@ -219,19 +241,25 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               ),
               const Divider(color: Colors.white12),
               const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('التصنيفات والأنواع:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('الأقسام والتصنيفات:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
               ),
-              ..._categories.map((c) => ListTile(
-                    dense: true,
-                    title: Text(c),
-                    selected: _activeCategory == c,
-                    selectedColor: const Color(0xFF00F0FF),
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() => _activeCategory = c);
-                    },
-                  )),
+              ..._categories.map((c) {
+                final cId = c['nb']?.toString() ?? '';
+                final cTitle = c['title']?.toString() ?? '';
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.movie_creation_outlined, size: 20, color: Colors.white60),
+                  title: Text(cTitle),
+                  selected: _activeCategoryTitle == cTitle,
+                  selectedColor: const Color(0xFF00F0FF),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _activeCategoryTitle = cTitle);
+                    _loadCeeContent(reset: true, categoryId: cId);
+                  },
+                );
+              }),
             ],
           ),
         ),
@@ -239,12 +267,18 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           backgroundColor: const Color(0xFF0F1422),
           elevation: 0,
           title: const Text('ONEBR TV', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
+            ),
+          ],
         ),
         body: _isLoadingInitial
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
             : RefreshIndicator(
                 color: const Color(0xFFE50914),
-                onRefresh: () => _fetchMainContent(reset: true),
+                onRefresh: () => _loadCeeContent(reset: true),
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   child: Column(
@@ -257,14 +291,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           textInputAction: TextInputAction.search,
                           onSubmitted: _search,
                           decoration: InputDecoration(
-                            hintText: 'ابحث بالاسم (عربي أو إنجليزي)...',
+                            hintText: 'ابحث عن أي فيلم، مسلسل أو أنمي...',
                             hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
                             prefixIcon: const Icon(Icons.search, color: Color(0xFF00F0FF)),
                             suffixIcon: IconButton(
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchController.clear();
-                                _fetchMainContent(reset: true);
+                                _loadCeeContent(reset: true);
                               },
                             ),
                             filled: true,
@@ -274,25 +308,22 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           ),
                         ),
                       ),
-                      if (_activeCategory == 'الكل' && _items.isNotEmpty) _buildHeroBanner(_items.first, screenWidth),
-                      if (_activeCategory == 'الكل') ...[
-                        if (_movies.isNotEmpty) _buildSectionShelf('🎬 أحدث الأفلام المتوفرة', _movies),
-                        if (_series.isNotEmpty) _buildSectionShelf('📺 المسلسلات والأنمي', _series),
-                      ],
+                      if (_items.isNotEmpty) _buildHeroBanner(_items.first, screenWidth),
+                      if (_movies.isNotEmpty) _buildSectionShelf('🎬 أحدث الأفلام المتوفرة', _movies),
+                      if (_series.isNotEmpty) _buildSectionShelf('📺 المسلسلات والأنمي المتجددة', _series),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
                         child: Text(
-                          _activeCategory == 'الكل' ? '🌐 جميع العروض' : '📂 تصنيف: $_activeCategory',
+                          _activeCategoryTitle == 'الكل' ? '🌐 جميع العروض' : '📂 $_activeCategoryTitle',
                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                       ),
-                      displayItems.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(40),
-                              child: Center(child: Text('لا توجد أعمال مطابقة.', style: TextStyle(color: Colors.white54))),
-                            )
-                          : _buildGrid(displayItems),
-                      if (_isLoadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))),
+                      _buildGrid(_items),
+                      if (_isLoadingMore)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+                        ),
                       const SizedBox(height: 30),
                     ],
                   ),
@@ -304,7 +335,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
   Widget _buildHeroBanner(Map<String, dynamic> item, double width) {
     final title = item['ar_title'] ?? item['en_title'] ?? '';
-    // استخدام imgObjUrl لجلب البوستر عالي الدقة
     final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
     return Stack(
       alignment: Alignment.bottomRight,
@@ -348,7 +378,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             itemBuilder: (ctx, i) {
               final item = list[i];
               final mTitle = item['ar_title'] ?? item['en_title'] ?? '';
-              // استخدام imgObjUrl لجلب البوستر عالي الدقة
               final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
               final score = item['stars']?.toString() ?? '8.0';
               return InkWell(
@@ -394,7 +423,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         itemBuilder: (ctx, i) {
           final item = list[i];
           final title = item['ar_title'] ?? item['en_title'] ?? '';
-          // استخدام imgObjUrl لجلب البوستر عالي الدقة
           final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
           final stars = item['stars']?.toString() ?? '8.0';
           return InkWell(
@@ -429,7 +457,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (الحلقات والمواسم)
+// شاشة التفاصيل (الحلقات وسحب الرابط الموقع الأصلي للترجمة)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -444,9 +472,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isFav = false;
   bool _isLoadingEpisodes = false;
 
-  List<dynamic> _seasons = [];
   List<dynamic> _episodes = [];
-  int _selectedSeasonIndex = 0;
   bool _isSeries = false;
 
   @override
@@ -458,7 +484,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _isSeries = k != '1' || (s != '0' && s.isNotEmpty);
 
     if (_isSeries) {
-      _loadSeasonsAndEpisodes();
+      _loadEpisodesRecursively(0);
     }
   }
 
@@ -473,41 +499,66 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isFav = newState);
   }
 
-  Future<void> _loadSeasonsAndEpisodes() async {
-    setState(() => _isLoadingEpisodes = true);
+  // سحب تتابعي كامل لجميع الحلقات بدون توقف
+  Future<void> _loadEpisodesRecursively(int page) async {
+    if (page == 0) setState(() => _isLoadingEpisodes = true);
     final nb = widget.media['nb'].toString();
 
     try {
-      final epRes = await http.get(Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/series_episodes_list/$nb/level/0'), headers: {'User-Agent': 'okhttp/3.12.1', 'Host': 'cee.buzz'});
-      
+      final epRes = await http.get(
+        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$nb/itemsPerPage/50/pageNumber/$page/level/0'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+      );
+
       if (epRes.statusCode == 200) {
         dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
         List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-        
-        if (eList.isNotEmpty) {
-          if (mounted) setState(() { _episodes = eList; _isLoadingEpisodes = false; });
-          return;
+
+        if (mounted) {
+          setState(() {
+            if (page == 0) {
+              _episodes = eList;
+            } else {
+              _episodes.addAll(eList);
+            }
+          });
+
+          // تكرار السحب للصفحات التالية إذا كانت الحلقات أكثر من 45
+          if (eList.length >= 45) {
+            _loadEpisodesRecursively(page + 1);
+          } else {
+            setState(() => _isLoadingEpisodes = false);
+          }
         }
       }
-
-      final oldRes = await http.get(Uri.parse('https://cee.buzz/api/android/allVideo/page/1/level/2/sub_id/$nb'), headers: {'User-Agent': 'okhttp/3.12.1'});
-      if (oldRes.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(oldRes.bodyBytes, allowMalformed: true));
-        List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-        if (mounted) setState(() { _episodes = eList; _isLoadingEpisodes = false; });
-      }
-
     } catch (_) {
       if (mounted) setState(() => _isLoadingEpisodes = false);
     }
   }
 
-  void _playStream({String? targetNb, String? epTitle, String? customSub}) async {
+  // تشغيل الفيديو مع جلب رابط الترجمة الموقّع الأصلي عبر allVideoInfo
+  void _playStream({String? targetNb, String? epTitle}) async {
     setState(() => _isLaunching = true);
 
     final nb = targetNb ?? widget.media['nb'].toString();
     final title = epTitle ?? widget.media['ar_title'] ?? widget.media['en_title'] ?? 'بث مباشر';
-    final subFile = customSub ?? widget.media['arTranslationFile']?.toString() ?? '';
+    
+    String exactSubUrl = '';
+
+    // استعلام مباشر عن تفاصيل الحلقة/الفيلم للحصول على رابط الترجمة الموقّع (Signed AWS URL)
+    try {
+      final infoRes = await http.get(
+        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$nb'),
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+      ).timeout(const Duration(seconds: 4));
+
+      if (infoRes.statusCode == 200) {
+        dynamic info = jsonDecode(utf8.decode(infoRes.bodyBytes, allowMalformed: true));
+        exactSubUrl = info['arTranslationFilePath']?.toString() ??
+            info['arTranslationFile']?.toString() ??
+            '';
+      }
+    } catch (_) {}
 
     final data = await StreamService.getVideoSource(nb);
 
@@ -522,7 +573,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             title: title,
             videoUrl: data['video_url'],
             qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
-            subtitleFileName: subFile,
+            signedSubtitleUrl: exactSubUrl,
           ),
         ),
       );
@@ -534,7 +585,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    // استخدام imgObjUrl لجلب البوستر عالي الدقة في شاشة التفاصيل
     final poster = widget.media['imgObjUrl'] ?? widget.media['imgMediumThumbObjUrl'] ?? widget.media['imgThumbObjUrl'] ?? widget.media['img'] ?? '';
     final stars = widget.media['stars']?.toString() ?? '8.0';
     final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? 'لا يوجد وصف متاح.';
@@ -586,31 +636,29 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                const Text('الحلقات المتوفرة:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text('الحلقات المتوفرة (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                _isLoadingEpisodes
+                _isLoadingEpisodes && _episodes.isEmpty
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
-                    : _episodes.isEmpty
-                        ? const Text('المسلسل متوفر برابط تشغيل مباشر.', style: TextStyle(color: Colors.white54, fontSize: 12))
-                        : GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1.3),
-                            itemCount: _episodes.length,
-                            itemBuilder: (ctx, i) {
-                              final ep = _episodes[i];
-                              final epNum = ep['episode']?.toString() ?? '${i + 1}';
-                              final epNb = ep['nb']?.toString() ?? '';
-                              final epSub = ep['arTranslationFile']?.toString();
-                              return InkWell(
-                                onTap: () => _playStream(targetNb: epNb, epTitle: '$title - حلقة $epNum', customSub: epSub),
-                                child: Container(
-                                  decoration: BoxDecoration(color: const Color(0xFF172033), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
-                                  child: Center(child: Text('حلقة $epNum', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-                                ),
-                              );
-                            },
-                          ),
+                    : GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1.3),
+                        itemCount: _episodes.length,
+                        itemBuilder: (ctx, i) {
+                          final ep = _episodes[i];
+                          final epNum = ep['episode']?.toString() ?? '${i + 1}';
+                          final epNb = ep['nb']?.toString() ?? '';
+
+                          return InkWell(
+                            onTap: () => _playStream(targetNb: epNb, epTitle: '$title - حلقة $epNum'),
+                            child: Container(
+                              decoration: BoxDecoration(color: const Color(0xFF172033), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
+                              child: Center(child: Text('حلقة $epNum', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                            ),
+                          );
+                        },
+                      ),
               ],
             ],
           ),
@@ -621,14 +669,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل (الترجمة والمزامنة)
+// المشغل مع قراءة ملفات WebVTT و SRT الموقعة
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
-  final String subtitleFileName;
+  final String signedSubtitleUrl;
 
   const PlayerScreen({
     super.key,
@@ -636,7 +684,7 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.videoUrl,
     required this.qualities,
-    this.subtitleFileName = '',
+    this.signedSubtitleUrl = '',
   });
 
   @override
@@ -662,12 +710,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _prepareAndPlay() async {
-    if (widget.subtitleFileName.isNotEmpty) {
+    // جلب ملف الترجمة بالرابط الموقّع الأصلي دون أي تعديل يكسر تصريح الوصول
+    if (widget.signedSubtitleUrl.isNotEmpty) {
       try {
-        final subUrl = 'https://cnth2.cee.buzz/vascin-subtitles-files/${widget.subtitleFileName}';
-        final res = await http.get(Uri.parse(subUrl), headers: {'User-Agent': 'okhttp/3.12.1'}).timeout(const Duration(seconds: 4));
+        final res = await http.get(Uri.parse(widget.signedSubtitleUrl), headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Referer': 'https://cee.buzz/home'
+        }).timeout(const Duration(seconds: 5));
+
         if (res.statusCode == 200 && res.body.isNotEmpty) {
-          _parsedSubtitles = _parseSrt(utf8.decode(res.bodyBytes, allowMalformed: true));
+          _parsedSubtitles = _parseSubtitles(utf8.decode(res.bodyBytes, allowMalformed: true));
         }
       } catch (_) {}
     }
@@ -677,16 +729,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _initPlayer(_currentUrl!, startAtSecond: savedSeconds);
   }
 
-  List<Subtitle> _parseSrt(String srtText) {
+  List<Subtitle> _parseSubtitles(String text) {
     final List<Subtitle> list = [];
-    final pattern = RegExp(r'(\d+)\r?\n(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n([\s\S]*?)(?=\n\n|\r\n\r\n|$)');
-    final matches = pattern.allMatches(srtText);
+    final pattern = RegExp(
+        r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n([\s\S]*?)(?=\n\n|\r\n\r\n|$)');
+    final matches = pattern.allMatches(text);
+
     int idx = 0;
     for (var m in matches) {
-      final start = _parseDuration(m.group(2)!);
-      final end = _parseDuration(m.group(3)!);
-      final text = m.group(4)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-      if (text.isNotEmpty) list.add(Subtitle(index: idx++, start: start, end: end, text: text));
+      final start = _parseDuration(m.group(1)!);
+      final end = _parseDuration(m.group(2)!);
+      final subText = m.group(3)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      if (subText.isNotEmpty) {
+        list.add(Subtitle(index: idx++, start: start, end: end, text: subText));
+      }
     }
     return list;
   }
@@ -879,7 +935,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           itemCount: _favorites.length,
           itemBuilder: (ctx, i) {
             final item = _favorites[i];
-            // استخدام imgObjUrl للمفضلة أيضاً
             final poster = item['imgObjUrl'] ?? item['imgMediumThumbObjUrl'] ?? item['imgThumbObjUrl'] ?? item['img'] ?? '';
             return InkWell(
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
