@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -36,6 +37,28 @@ class OnebrTvApp extends StatelessWidget {
   }
 }
 
+// -------------------------------------------------------------
+// محرك فك تشفير وتعتيم الروابط الحساسة في الذاكرة لمنع الهندسة العكسية
+// -------------------------------------------------------------
+class SecurityEngine {
+  static const int _k = 0x3C;
+
+  static String decode(List<int> bytes) {
+    return String.fromCharCodes(bytes.map((b) => b ^ _k));
+  }
+
+  // TMDB API Key: b7cd3340a794e5a2f35e3abb820b497f
+  static final List<int> _kEnc = [
+    94, 87, 95, 88, 87, 87, 88, 76, 93, 87, 85, 88, 89, 73, 93, 78,
+    90, 87, 89, 89, 93, 94, 94, 70, 86, 76, 88, 76, 88, 85, 91, 90
+  ];
+
+  static String get tmdbKey => decode(_kEnc);
+}
+
+// -------------------------------------------------------------
+// الصفحة الرئيسية
+// -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -44,7 +67,6 @@ class MainHomeScreen extends StatefulWidget {
 }
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
-  final String _tmdbApiKey = 'b7cd3340a794e5a2f35e3abb820b497f';
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
@@ -108,14 +130,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       setState(() => _isLoadingMore = true);
     }
 
+    final key = SecurityEngine.tmdbKey;
+
     try {
       if (reset) {
         final trendingRes = await http.get(Uri.parse(
-            'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar'));
+            'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar'));
         final moviesRes = await http.get(Uri.parse(
-            'https://api.themoviedb.org/3/movie/popular?api_key=$_tmdbApiKey&language=ar&page=1'));
+            'https://api.themoviedb.org/3/movie/popular?api_key=$key&language=ar&page=1'));
         final seriesRes = await http.get(Uri.parse(
-            'https://api.themoviedb.org/3/tv/popular?api_key=$_tmdbApiKey&language=ar&page=1'));
+            'https://api.themoviedb.org/3/tv/popular?api_key=$key&language=ar&page=1'));
 
         if (trendingRes.statusCode == 200 && mounted) {
           final tList = jsonDecode(trendingRes.body)['results'] ?? [];
@@ -133,7 +157,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       } else {
         _page++;
         final moreRes = await http.get(Uri.parse(
-            'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar&page=$_page'));
+            'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar&page=$_page'));
         if (moreRes.statusCode == 200 && mounted) {
           final mList = jsonDecode(moreRes.body)['results'] ?? [];
           setState(() {
@@ -148,11 +172,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
-  // فلترة الأنمي والتصنيفات بدقة مع دعم التمرير اللانهائي
   void _filterGenre(Map<String, dynamic> genre) async {
     _selectedGenre = genre;
     _genrePage = 1;
     final gId = genre['id'];
+    final key = SecurityEngine.tmdbKey;
 
     if (gId == 'all') {
       _selectedGenre = null;
@@ -170,12 +194,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     try {
       String urlStr;
       if (gId == 'anime') {
-        // الرابط المخصص للأنمي الياباني الحقيقي (أفلام ومسلسلات الأنمي)
         urlStr =
-            'https://api.themoviedb.org/3/discover/tv?api_key=$_tmdbApiKey&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=1';
+            'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=1';
       } else {
         urlStr =
-            'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc&page=1';
+            'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=ar&with_genres=$gId&sort_by=popularity.desc&page=1';
       }
 
       final res = await http.get(Uri.parse(urlStr));
@@ -191,16 +214,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
-  // تحميل المزيد عند التمرير لأسفل في التصنيفات
   Future<void> _fetchMoreGenreData() async {
     if (_selectedGenre == null) return;
     setState(() => _isLoadingMore = true);
     _genrePage++;
 
     final gId = _selectedGenre!['id'];
+    final key = SecurityEngine.tmdbKey;
+
     String urlStr = (gId == 'anime')
-        ? 'https://api.themoviedb.org/3/discover/tv?api_key=$_tmdbApiKey&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=$_genrePage'
-        : 'https://api.themoviedb.org/3/discover/movie?api_key=$_tmdbApiKey&language=ar&with_genres=$gId&sort_by=popularity.desc&page=$_genrePage';
+        ? 'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=ar&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=$_genrePage'
+        : 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=ar&with_genres=$gId&sort_by=popularity.desc&page=$_genrePage';
 
     try {
       final res = await http.get(Uri.parse(urlStr));
@@ -230,9 +254,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
     );
 
+    final key = SecurityEngine.tmdbKey;
+
     try {
       final res = await http.get(Uri.parse(
-          'https://api.themoviedb.org/3/search/multi?api_key=$_tmdbApiKey&language=ar&query=${Uri.encodeComponent(clean)}'));
+          'https://api.themoviedb.org/3/search/multi?api_key=$key&language=ar&query=${Uri.encodeComponent(clean)}'));
       Navigator.pop(context);
 
       if (res.statusCode == 200 && mounted) {
@@ -293,7 +319,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 title: const Text('قائمة المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen()));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
                 },
               ),
               const Divider(color: Colors.white12),
@@ -324,7 +350,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen())),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
             ),
           ],
         ),
@@ -555,7 +581,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (سحب فوري للبث بدون تأخير)
+// شاشة التفاصيل (المطابقة في الكواليس مع منع التكرار)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -605,7 +631,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       final b64 = base64.encode(utf8.encode(queryEn)).replaceAll('=', '');
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/10/video_title_search/$b64/itemsPerPage/10/pageNumber/0/level/0'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+        headers: StreamService.stealthHeaders,
       ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
@@ -632,7 +658,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     try {
       final epRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$ceeNb/itemsPerPage/50/pageNumber/$page/level/0'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+        headers: StreamService.stealthHeaders,
       ).timeout(const Duration(seconds: 5));
 
       if (epRes.statusCode == 200) {
@@ -665,7 +691,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } catch (_) {}
   }
 
-  // تشغيل الفيديو الفوري بدون تأخير
   void _playStream({String? targetNb, String? epTitle}) async {
     if (_ceeData == null && targetNb == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -679,10 +704,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final nb = targetNb ?? _ceeData!['nb'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
-    // جلب رابط الفيديو فوراً بالتوازي
-    final videoDataFuture = StreamService.getVideoSource(nb);
-
-    final data = await videoDataFuture;
+    final data = await StreamService.getVideoSource(nb);
     setState(() => _isLaunching = false);
 
     if (data != null && mounted) {
@@ -813,7 +835,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل السريع (تهيئة فورية مع جلب الترجمة في الخلفية)
+// المشغل السريع (تم تصحيح MainAxisSize.min تماماً)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -851,15 +873,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _startInstantPlay();
   }
 
-  // تشغيل فوري بدون انتظار تحميل الترجمة
   void _startInstantPlay() async {
     final prefs = await SharedPreferences.getInstance();
     final savedSeconds = prefs.getInt('playback_pos_${widget.mediaId}') ?? 0;
 
-    // تشغيل الفيديو فوراً
     _initPlayer(_currentUrl!, startAtSecond: savedSeconds);
-
-    // جلب ملف الترجمة في الخلفية (Background Fetch) لعدم تأخير فتح الفيديو
     _fetchSubtitlesInBackground();
   }
 
@@ -867,7 +885,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final infoRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/${widget.mediaId}'),
-        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
+        headers: StreamService.stealthHeaders,
       ).timeout(const Duration(seconds: 4));
 
       if (infoRes.statusCode == 200) {
@@ -877,16 +895,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
             '';
 
         if (subUrl.isNotEmpty) {
-          final subRes = await http.get(Uri.parse(subUrl), headers: {
-            'User-Agent': 'Mozilla/5.0',
-            'Referer': 'https://cee.buzz/home'
-          }).timeout(const Duration(seconds: 4));
+          final subRes = await http.get(Uri.parse(subUrl), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 4));
 
           if (subRes.statusCode == 200 && subRes.body.isNotEmpty && mounted) {
             setState(() {
               _parsedSubtitles = _parseSubtitles(utf8.decode(subRes.bodyBytes, allowMalformed: true));
             });
-            // تحديث المشغل بالترجمة فور وصولها
             _updateSubtitlesOnTheFly();
           }
         }
@@ -958,11 +972,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     _videoPlayerController = VideoPlayerController.networkUrl(
       Uri.parse(streamUrl),
-      httpHeaders: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://cee.buzz/',
-        'Origin': 'https://cee.buzz',
-      },
+      httpHeaders: StreamService.stealthHeaders,
     );
 
     await _videoPlayerController!.initialize();
@@ -1055,7 +1065,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (_) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Column(
-          mainAxisSize: dynamic,
+          mainAxisSize: MainAxisSize.min, // هنا تم التصحيح من dynamic إلى MainAxisSize.min
           children: widget.qualities.map((q) {
             final res = q['resolution'] ?? 'تلقائي';
             final url = q['url'];
