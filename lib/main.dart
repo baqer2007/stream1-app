@@ -278,12 +278,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   }
 }
 
-// -------------------------------------------------------------
-// شاشة التفاصيل الكاملة (قصة، مواسم، حلقات، وأعمال مقترحة)
-// -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
-  final String type; // 'movie' أو 'tv'
+  final String type;
 
   const MediaDetailScreen({super.key, required this.media, required this.type});
 
@@ -338,7 +335,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _playEpisode(int season, int episode) async {
     setState(() => _isLaunchingStream = true);
 
-    // استخدام المعرف المدخل أو جلب الرابط من cee.buzz عبر الـ Relay
     final targetId = _manualIdController.text.trim();
     final data = await StreamService.getVideoSource(targetId);
 
@@ -394,7 +390,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Backdrop Hero
                     Stack(
                       alignment: Alignment.bottomRight,
                       children: [
@@ -422,8 +417,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         ),
                       ],
                     ),
-
-                    // بطاقة المعلومات الرئيسية وزر التشغيل
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
                       child: Column(
@@ -474,8 +467,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-
-                          // زر التشغيل الفوري
                           SizedBox(
                             width: double.infinity,
                             height: 48,
@@ -495,16 +486,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 18),
-
-                          // القصة
                           const Text('قصة العمل:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                           const SizedBox(height: 6),
                           Text(overview, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.4)),
                         ],
                       ),
                     ),
-
-                    // نظام المواسم والحلقات (إذا كان مسلسلاً)
                     if (widget.type == 'tv') ...[
                       const SizedBox(height: 20),
                       const Padding(
@@ -512,8 +499,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         child: Text('المواسم والحلقات:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                       ),
                       const SizedBox(height: 8),
-
-                      // أزرار المواسم
                       if (_seasons.isNotEmpty)
                         SizedBox(
                           height: 38,
@@ -547,8 +532,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             },
                           ),
                         ),
-
-                      // شبكة الحلقات
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: GridView.builder(
@@ -580,8 +563,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         ),
                       ),
                     ],
-
-                    // قائمة الأعمال المقترحة والمشابهة
                     if (_similarMedia.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       const Padding(
@@ -647,9 +628,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// -------------------------------------------------------------
-// مشغل الفيديو الاحترافي (جودات + دعم الترجمة التلقائية)
-// -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String title;
   final String videoUrl;
@@ -693,7 +671,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       autoPlay: true,
       looping: false,
       aspectRatio: _videoPlayerController!.value.aspectRatio,
-      // الترجمة التلقائية المدمجة داخل المشغل
       subtitle: Subtitles([
         Subtitle(
           index: 0,
@@ -723,7 +700,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       additionalOptions: (context) {
         return <OptionItem>[
           OptionItem(
-            onTap: () => _showQualitySheet(),
+            onTap: (ctx) => _showQualitySheet(),
             iconData: Icons.high_quality_rounded,
             title: 'تغيير الجودة',
           ),
