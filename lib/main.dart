@@ -244,7 +244,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 title: const Text('قائمة المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen()));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
                 },
               ),
               const Divider(color: Colors.white12),
@@ -271,7 +271,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen())),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
             ),
           ],
         ),
@@ -494,7 +494,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل (المطابقة في الكواليس وسحب الحلقات)
+// شاشة التفاصيل (المطابقة في الكواليس مع منع التكرار)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -510,7 +510,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isLoadingCee = true;
 
   Map<String, dynamic>? _ceeData;
-  List<dynamic> _ceeEpisodes = [];
+  final List<dynamic> _ceeEpisodes = [];
+  final Set<String> _recordedEpisodeNbs = {};
   bool _isSeries = false;
 
   @override
@@ -564,27 +565,39 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isLoadingCee = false);
   }
 
+  // حل مشكلة الـ 5200 حلقة بحصر الحلقات الحقيقية التابعة للمسلسل فقط
   Future<void> _loadCeeEpisodes(String ceeNb, int page) async {
+    if (page > 15) return; // حماية ضد الحلقات اللانهائية
+
     try {
       final epRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/series_episodes_list/$ceeNb/itemsPerPage/50/pageNumber/$page/level/0'),
         headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://cee.buzz/home'},
-      );
+      ).timeout(const Duration(seconds: 6));
 
       if (epRes.statusCode == 200) {
         dynamic decoded = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
         List eList = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
+        if (eList.isEmpty) return;
+
+        final List newItems = [];
+        for (var ep in eList) {
+          final epNb = ep['nb']?.toString() ?? ep['id']?.toString() ?? '';
+          if (epNb.isNotEmpty && !_recordedEpisodeNbs.contains(epNb)) {
+            _recordedEpisodeNbs.add(epNb);
+            newItems.add(ep);
+          }
+        }
+
+        if (newItems.isEmpty) return; // توقف فوراً إذا بدأت الحلقات تتكرر
+
         if (mounted) {
           setState(() {
-            if (page == 0) {
-              _ceeEpisodes = eList;
-            } else {
-              _ceeEpisodes.addAll(eList);
-            }
+            _ceeEpisodes.addAll(newItems);
           });
 
-          if (eList.length >= 45) {
+          if (newItems.length >= 45) {
             _loadCeeEpisodes(ceeNb, page + 1);
           }
         }
@@ -718,7 +731,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                Text('الحلقات المتوفرة في سينمانا (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text('الحلقات المتوفرة (${_ceeEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 _isLoadingCee
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
@@ -753,7 +766,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل المصلح بالكامل (تم إغلاق الأقواس وحل الشرط الثلاثي)
+// المشغل (دعم البث عبر الـ VPN + الترجمة واستئناف الدقيقة)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -848,7 +861,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     setState(() => _isReady = false);
 
-    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+    // تمرير ترويسات رسمية ليعمل الفيديو مع أو بدون VPN
+    _videoPlayerController = VideoPlayerController.networkUrl(
+      Uri.parse(streamUrl),
+      httpHeaders: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'Referer': 'https://cee.buzz/',
+        'Origin': 'https://cee.buzz',
+      },
+    );
+
     await _videoPlayerController!.initialize();
 
     if (startAtSecond > 0 && startAtSecond < _videoPlayerController!.value.duration.inSeconds - 5) {
