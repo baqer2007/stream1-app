@@ -37,7 +37,7 @@ class OnebrTvApp extends StatelessWidget {
 }
 
 // -------------------------------------------------------------
-// الصفحة الرئيسية (تعتمد على TMDB للعرض فائق السرعة)
+// الصفحة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -47,7 +47,6 @@ class MainHomeScreen extends StatefulWidget {
 }
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
-  // مفتاح TMDB الرسمي العام
   final String _tmdbApiKey = 'b7cd3340a794e5a2f35e3abb820b497f';
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -64,15 +63,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
 
   final List<Map<String, dynamic>> _genres = [
-    {'id': 'all', 'name': 'الكل', 'type': 'all'},
-    {'id': '28', 'name': 'أكشن', 'type': 'movie'},
-    {'id': '12', 'name': 'مغامرة', 'type': 'movie'},
-    {'id': '16', 'name': 'أنمي ورسوم متحركة', 'type': 'both'},
-    {'id': '35', 'name': 'كوميديا', 'type': 'both'},
-    {'id': '80', 'name': 'جريمة', 'type': 'both'},
-    {'id': '18', 'name': 'دراما', 'type': 'both'},
-    {'id': '27', 'name': 'رعب', 'type': 'movie'},
-    {'id': '878', 'name': 'خيال علمي', 'type': 'both'},
+    {'id': 'all', 'name': 'الكل'},
+    {'id': '28', 'name': 'أكشن'},
+    {'id': '12', 'name': 'مغامرة'},
+    {'id': '16', 'name': 'أنمي ورسوم متحركة'},
+    {'id': '35', 'name': 'كوميديا'},
+    {'id': '80', 'name': 'جريمة'},
+    {'id': '18', 'name': 'دراما'},
+    {'id': '27', 'name': 'رعب'},
+    {'id': '878', 'name': 'خيال علمي'},
   ];
 
   @override
@@ -108,7 +107,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
     try {
       if (reset) {
-        // جلب التريند، الأفلام الشائعة، والمسلسلات
         final trendingRes = await http.get(Uri.parse(
             'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar'));
         final moviesRes = await http.get(Uri.parse(
@@ -130,7 +128,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           });
         }
       } else {
-        // تحميل المزيد من الصفحات
         _page++;
         final moreRes = await http.get(Uri.parse(
             'https://api.themoviedb.org/3/trending/all/week?api_key=$_tmdbApiKey&language=ar&page=$_page'));
@@ -148,7 +145,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
-  // فلترة التصنيفات عبر TMDB
   void _filterGenre(Map<String, dynamic> genre) async {
     final gId = genre['id'];
     setState(() {
@@ -177,7 +173,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
-  // البحث الشامل في TMDB
   void _search(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return;
@@ -249,7 +244,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 title: const Text('قائمة المفضلة'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen()));
                 },
               ),
               const Divider(color: Colors.white12),
@@ -276,7 +271,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FavoritesScreen())),
             ),
           ],
         ),
@@ -314,7 +309,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           ),
                         ),
                       ),
-                      if (_trending.isNotEmpty && _activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً')) ...[
+                      if (_trending.isNotEmpty && (_activeTitle.contains('الرئيسية') || _activeTitle.contains('تداولاً'))) ...[
                         _buildHeroBanner(_trending.first, screenWidth),
                         if (_popularMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة وجديدة', _popularMovies),
                         if (_popularSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _popularSeries),
@@ -499,7 +494,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل: تبحث في سينمانا خلف الكواليس وتستخرج البث
+// شاشة التفاصيل (المطابقة في الكواليس وسحب الحلقات)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -514,7 +509,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isFav = false;
   bool _isLoadingCee = true;
 
-  // البيانات المستخرجة من سينمانا في الكواليس
   Map<String, dynamic>? _ceeData;
   List<dynamic> _ceeEpisodes = [];
   bool _isSeries = false;
@@ -538,7 +532,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     if (mounted) setState(() => _isFav = newState);
   }
 
-  // المطابقة الصامتة في الكواليس مع خادم سينمانا
   Future<void> _matchWithCeeBackend() async {
     final String queryEn = widget.media['original_title'] ??
         widget.media['original_name'] ??
@@ -561,7 +554,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           _ceeData = results.first;
           final ceeNb = _ceeData!['nb'].toString();
 
-          // إذا كان مسلسلاً، نسحب حلقاته من سينمانا في الخلفية
           if (_isSeries) {
             _loadCeeEpisodes(ceeNb, 0);
           }
@@ -613,7 +605,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final nb = targetNb ?? _ceeData!['nb'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
-    // سحب الترجمة الموقعة من سينمانا
     String exactSubUrl = '';
     try {
       final infoRes = await http.get(
@@ -762,7 +753,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل مع دعم الترجمة واستئناف الدقيقة
+// المشغل المصلح بالكامل (تم إغلاق الأقواس وحل الشرط الثلاثي)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -985,4 +976,68 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 15)), backgroundColor: const Color(0xFF0F1422)),
-      body: Center(child: _isReady && _chewieController != null ? Chewie(controller: _chewieController!) :
+      body: Center(
+        child: (_isReady && _chewieController != null)
+            ? Chewie(controller: _chewieController!)
+            : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// المفضلة
+// -------------------------------------------------------------
+class FavoritesScreen extends StatefulWidget {
+  const FavoritesScreen({super.key});
+
+  @override
+  State<FavoritesScreen> createState() => _FavoritesScreenState();
+}
+
+class _FavoritesScreenState extends State<FavoritesScreen> {
+  List<Map<String, dynamic>> _favorites = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() async {
+    final list = await FavoritesService.getFavorites();
+    if (mounted) setState(() { _favorites = list; _isLoading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('⭐ قائمة المفضلة'), backgroundColor: const Color(0xFF0F1422)),
+        body: _isLoading ? const Center(child: CircularProgressIndicator()) : _favorites.isEmpty ? const Center(child: Text('لا يوجد مفضلة')) : GridView.builder(
+          padding: const EdgeInsets.all(12),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.58),
+          itemCount: _favorites.length,
+          itemBuilder: (ctx, i) {
+            final item = _favorites[i];
+            final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+            return InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
+              child: Container(
+                decoration: BoxDecoration(color: const Color(0xFF0F1422), borderRadius: BorderRadius.circular(8)),
+                child: Column(
+                  children: [
+                    Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container())),
+                    Padding(padding: const EdgeInsets.all(5), child: Text(item['title'] ?? item['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10))),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
