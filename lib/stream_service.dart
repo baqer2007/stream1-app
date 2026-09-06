@@ -4,13 +4,12 @@ import 'package:http/http.dart' as http;
 
 class StreamService {
   static const String _firebaseBase = 'https://cee-stream-default-rtdb.firebaseio.com';
-  // تم تغيير المسار لـ v2 لإجبار التطبيق على تجاهل كل الروابط الخاطئة القديمة المحفوظة
-  static const String _cacheNode = 'stream_cache_v2'; 
+  static const String _cacheNode = 'stream_cache_v3';
 
-  /// ترويسات تطبيق سينمانا الرسمي على أندرويد (تمنع حجب السيرفر وتلغي الشاشة السوداء)
-  static Map<String, String> get _appHeaders => {
-        'User-Agent': 'okhttp/3.12.1',
-        'Host': 'cee.buzz',
+  static Map<String, String> get stealthHeaders => {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'Referer': 'https://cee.buzz/home',
+        'Origin': 'https://cee.buzz',
       };
 
   static void startRelayWorker() {}
@@ -18,9 +17,11 @@ class StreamService {
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     if (videoId.isEmpty) return null;
 
+    // 1. قراءة الكاش أولاً (يعمل حتى لو الـ VPN مشغل)
     final cached = await _fetchFromFirebase(videoId);
     if (cached != null) return cached;
 
+    // 2. إذا لم يكن محفوظاً، نسحبه مباشرة
     final fresh = await _fetchFromCeeDirectly(videoId);
     if (fresh != null) {
       _saveToFirebase(videoId, fresh);
@@ -38,29 +39,13 @@ class StreamService {
         body: jsonEncode({'t': DateTime.now().millisecondsSinceEpoch}),
       );
 
-      for (int i = 0; i < 7; i++) {
+      for (int i = 0; i < 6; i++) {
         await Future.delayed(const Duration(seconds: 1));
         final result = await _fetchFromFirebase(videoId);
         if (result != null) return result;
       }
     } catch (_) {}
     return null;
-  }
-
-  static void preCacheMovieTitles(List<Map<String, String>> items) async {
-    for (var item in items) {
-      final id = item['id'];
-      if (id == null || id.isEmpty) continue;
-
-      final cached = await _fetchFromFirebase(id);
-      if (cached == null) {
-        await Future.delayed(const Duration(seconds: 3));
-        final fresh = await _fetchFromCeeDirectly(id);
-        if (fresh != null) {
-          await _saveToFirebase(id, fresh);
-        }
-      }
-    }
   }
 
   static Future<Map<String, dynamic>?> _fetchFromFirebase(String id) async {
@@ -86,8 +71,8 @@ class StreamService {
   static Future<Map<String, dynamic>?> _fetchFromCeeDirectly(String id) async {
     try {
       final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/transcoddedFiles/id/$id'), 
-        headers: _appHeaders
+        Uri.parse('https://cee.buzz/api/android/transcoddedFiles/id/$id'),
+        headers: stealthHeaders,
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200 && res.body.isNotEmpty) {
