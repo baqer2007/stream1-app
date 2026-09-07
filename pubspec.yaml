@@ -1,24 +1,27 @@
-name: stream1_app
-description: "ONEBR TV - Next Gen Streaming Platform"
-publish_to: 'none'
-version: 1.0.0+2
-
-environment:
-  sdk: '>=3.0.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
-  video_player: ^2.8.0
-  chewie: ^1.7.0
-  http: ^1.2.0
-  cupertino_icons: ^1.0.8
-  shared_preferences: ^2.2.2
+
+  # 1. محرك الوسائط المتقدم بديل Chewie و video_player
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+
+  # 2. قاعدة بيانات فائقة السرعة للمفضلة وسجل المشاهدة
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+  path_provider: ^2.1.2
+
+  # 3. التنزيل بالخلفية كخدمة مستمرة
+  flutter_foreground_task: ^6.1.1
+
+  # 4. التخزين المؤقت للبوسترات والواجهات التفاعلية
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+
+  # 5. طلبات الشبكة وحل DoH وتفادي حجب DNS
+  dio: ^5.4.1
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^3.0.0
-
-flutter:
-  uses-material-design: true
+  # أدوات توليد كود Isar
+  isar_generator: ^3.1.0+1
+  build_runner: ^2.4.8
