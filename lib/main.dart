@@ -8,12 +8,128 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
 // -------------------------------------------------------------
-// 1. طبقة التخزين الموحدة (LocalStorageService)
+// 1. محرك كاش الروابط الفائق (Link Extraction Cache)
+// -------------------------------------------------------------
+class StreamLinkCache {
+  static final Map<String, Map<String, dynamic>> _memoryCache = {};
+
+  static Future<Map<String, dynamic>?> getValidSource(String id) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_memoryCache.containsKey(id)) {
+      final item = _memoryCache[id]!;
+      if (now - (item['timestamp'] as int) < 4 * 3600 * 1000) {
+        return item['data'] as Map<String, dynamic>;
+      } else {
+        _memoryCache.remove(id);
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('cache_src_$id');
+    if (raw != null) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (now - (decoded['timestamp'] as int) < 4 * 3600 * 1000) {
+          _memoryCache[id] = decoded;
+          return decoded['data'] as Map<String, dynamic>;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static Future<void> saveSource(String id, Map<String, dynamic> data) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final payload = {'timestamp': now, 'data': data};
+    _memoryCache[id] = payload;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cache_src_$id', jsonEncode(payload));
+  }
+}
+
+// -------------------------------------------------------------
+// 2. محرك الترحيل العراقي والبدائل VidLink (Zero-Ads Fallback)
+// -------------------------------------------------------------
+class UniversalStreamResolver {
+  static Future<Map<String, dynamic>?> resolveVidLink({
+    required String tmdbId,
+    required bool isSeries,
+    int season = 1,
+    int episode = 1,
+  }) async {
+    try {
+      final endpoint = isSeries
+          ? 'https://vidlink.pro/api/b/tv/$tmdbId/$season/$episode'
+          : 'https://vidlink.pro/api/b/movie/$tmdbId';
+
+      final res = await http.get(
+        Uri.parse(endpoint),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://vidlink.pro/',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final streamUrl = data['stream']?['playlist'] ?? data['stream']?['qualities']?['auto']?['url'];
+        if (streamUrl != null && streamUrl.toString().isNotEmpty) {
+          final List<Map<String, dynamic>> parsedQualities = [];
+          if (data['stream']?['qualities'] != null) {
+            final qMap = data['stream']['qualities'] as Map<String, dynamic>;
+            qMap.forEach((k, v) {
+              if (v is Map && v['url'] != null) {
+                parsedQualities.add({'resolution': k, 'url': v['url']});
+              }
+            });
+          }
+          if (parsedQualities.isEmpty) {
+            parsedQualities.add({'resolution': 'تلقائي (Auto)', 'url': streamUrl});
+          }
+
+          return {
+            'video_url': streamUrl,
+            'qualities': parsedQualities,
+            'source_name': 'VidLink High-Speed (No Ads)',
+          };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> resolveCinemanaOrRelay(String targetId) async {
+    final cached = await StreamLinkCache.getValidSource(targetId);
+    if (cached != null) return cached;
+
+    try {
+      final directData = await StreamService.getVideoSource(targetId);
+      if (directData != null && directData['video_url'] != null) {
+        directData['source_name'] = 'Cinemana Fast-Edge';
+        await StreamLinkCache.saveSource(targetId, directData);
+        return directData;
+      }
+    } catch (_) {}
+
+    try {
+      final relayRes = await StreamService.requestRelayedStream(targetId);
+      if (relayRes != null && relayRes['video_url'] != null) {
+        relayRes['source_name'] = 'شبكة الترحيل العراقية (Iraqi Mesh Node)';
+        await StreamLinkCache.saveSource(targetId, relayRes);
+        return relayRes;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+}
+
+// -------------------------------------------------------------
+// 3. طبقة التخزين الموحدة (LocalStorageService)
 // -------------------------------------------------------------
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
@@ -48,7 +164,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 2. مدير التنزيل الداخلي مع دعم الاستئناف والتخزين الحديث
+// 4. مدير التنزيل الداخلي مع التخزين الآمن
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -75,16 +191,17 @@ class DownloadManager extends ChangeNotifier {
   final Map<String, ActiveDownload> activeDownloads = {};
 
   Future<String> _getAppStoragePath() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final saveDir = Directory('${dir.path}/ONEBR_Downloads');
-      if (!saveDir.existsSync()) {
-        saveDir.createSync(recursive: true);
-      }
-      return saveDir.path;
-    } catch (_) {
-      return Directory.systemTemp.path;
+    final paths = ['/storage/emulated/0/Download', '/sdcard/Download'];
+    for (var p in paths) {
+      final d = Directory('$p/ONEBR_Downloads');
+      try {
+        if (!d.existsSync()) d.createSync(recursive: true);
+        return d.path;
+      } catch (_) {}
     }
+    final fallback = Directory('${Directory.systemTemp.path}/ONEBR_Downloads');
+    if (!fallback.existsSync()) fallback.createSync(recursive: true);
+    return fallback.path;
   }
 
   Future<void> startDownload({
@@ -132,7 +249,7 @@ class DownloadManager extends ChangeNotifier {
         downloadedBytes += chunk.length;
         sink.add(chunk);
 
-        if (totalBytes > 0 && (downloadedBytes - lastNotifiedBytes > 250 * 1024 || downloadedBytes == totalBytes)) {
+        if (totalBytes > 0 && (downloadedBytes - lastNotifiedBytes > 300 * 1024 || downloadedBytes == totalBytes)) {
           lastNotifiedBytes = downloadedBytes;
           download.progress = (downloadedBytes / totalBytes).clamp(0.0, 1.0);
           notifyListeners();
@@ -168,7 +285,7 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // -------------------------------------------------------------
-// 3. مدير الحالة والتطبيقات العامة (AppState)
+// 5. مدير الحالة العامة (AppState)
 // -------------------------------------------------------------
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
@@ -313,7 +430,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// 4. الشاشة الرئيسية
+// 6. الشاشة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -404,11 +521,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 
       for (var word in blockedTerms) {
         if (title.contains(word) || originalTitle.contains(word) || overview.contains(word)) return false;
-      }
-
-      final genreIds = List<int>.from(item['genre_ids'] ?? []);
-      if (genreIds.contains(10749) && (overview.contains('جسد') || overview.contains('شهوة'))) {
-        return false;
       }
       return true;
     }).toList();
@@ -1175,7 +1287,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 5. محرك المطابقة المطور وحل معضلة عدم العثور والتشغيل الخاطئ
+// 7. شاشة التفاصيل مع محرك المطابقة الفائق وFallback VidLink
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1253,7 +1365,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     await LocalStorageService.appendItem('continue_watching_list_$p', widget.media);
   }
 
-  // تنظيف العناوين وإزالة الكلمات المشوشة
   String _clean(String s) {
     return s.toLowerCase()
         .replaceAll(RegExp(r'[:\-_–—!?.()\[\]\/\\#&,"]'), ' ')
@@ -1261,7 +1372,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         .trim();
   }
 
-  // قياس التشابه النصي بدقة لمنع تشغيل أفلام مختلفة
   double _calculateSimilarity(String s1, String s2) {
     if (s1 == s2) return 1.0;
     if (s1.isEmpty || s2.isEmpty) return 0.0;
@@ -1277,7 +1387,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final union = w1.union(w2);
     final jaccard = intersection.length / union.length;
 
-    // فحص التطابق اللفظي التسلسلي
     bool substringMatch = s1.contains(s2) || s2.contains(s1);
     if (substringMatch && (s1.length > 6 && s2.length > 6)) {
       return max(jaccard, 0.75);
@@ -1365,7 +1474,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         if (cleanQ.length < 2) continue;
 
         try {
-          // استخدام URL-Safe Base64 لتفادي أخطاء خوادم CEE
           final b64 = base64Url.encode(utf8.encode(query)).replaceAll('=', '');
           final res = await http.get(
             Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$lvl'),
@@ -1381,22 +1489,20 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               final arTitle = _clean((item['title'] ?? '').toString());
               final int? itemY = int.tryParse((item['year'] ?? '').toString().trim());
 
-              // حساب درجات التطابق لكل لغة
               final scoreEn = _calculateSimilarity(cleanQ, enTitle);
               final scoreAr = _calculateSimilarity(cleanQ, arTitle);
               double itemScore = max(scoreEn, scoreAr);
 
               if (itemScore < 0.55) continue;
 
-              // مطابقة السنة مع التسامح لسنة واحدة لتفادي الفوارق التقويمية
               if (tYear != null && itemY != null && itemY > 1900) {
                 final diff = (itemY - tYear).abs();
                 if (diff == 0) {
-                  itemScore += 0.20; // تطابق تام في السنة
+                  itemScore += 0.20;
                 } else if (diff == 1) {
-                  itemScore += 0.05; // فارق مقبول
+                  itemScore += 0.05;
                 } else if (diff > 2) {
-                  itemScore -= 0.35; // عقوبة الفارق الزمني لتجنب الريميك والأجزاء القديمة
+                  itemScore -= 0.35;
                 }
               }
 
@@ -1507,63 +1613,48 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 
   void _play(int epNum) async {
-    if (_matchedCee == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('هذا العمل غير متوفر بسيرفر سينمانا حالياً، جاري محاولة إضافته'),
-          backgroundColor: Colors.orange.shade900,
-        ),
-      );
-      return;
-    }
-
     setState(() => _isLaunching = true);
-    String targetId = _matchedCee!['nb'].toString();
 
-    if (_isSeries) {
-      if (_ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
+    Map<String, dynamic>? playData;
+    String targetId = '';
+
+    if (_matchedCee != null) {
+      targetId = _matchedCee!['nb'].toString();
+      if (_isSeries && _ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
         targetId = _ceeEpisodesList[epNum - 1]['nb'].toString();
-      } else {
-        try {
-          final epRes = await http.get(
-            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/parent_id/$targetId/itemsPerPage/100/pageNumber/0/level/2'),
-            headers: StreamService.stealthHeaders,
-          ).timeout(const Duration(seconds: 4));
-          if (epRes.statusCode == 200) {
-            dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
-            List list = (epData is List) ? epData : (epData['articles'] ?? []);
-            if (list.isNotEmpty && epNum <= list.length) {
-              targetId = list[epNum - 1]['nb'].toString();
-            }
-          }
-        } catch (_) {}
       }
+      playData = await UniversalStreamResolver.resolveCinemanaOrRelay(targetId);
     }
 
-    StreamService.recordWatchEvent(targetId, widget.media['title'] ?? widget.media['name'] ?? '');
+    if (playData == null) {
+      playData = await UniversalStreamResolver.resolveVidLink(
+        tmdbId: widget.media['id'].toString(),
+        isSeries: _isSeries,
+        season: _selectedSeasonNumber,
+        episode: epNum,
+      );
+    }
 
-    final data = await StreamService.getVideoSource(targetId);
     setState(() => _isLaunching = false);
 
-    if (data != null && mounted) {
+    if (playData != null && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
-            mediaId: targetId,
+            mediaId: targetId.isNotEmpty ? targetId : widget.media['id'].toString(),
             title: '${widget.media['title'] ?? widget.media['name'] ?? ''} - حلقة $epNum',
-            videoUrl: data['video_url'],
-            qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
+            videoUrl: playData!['video_url'],
+            qualities: List<Map<String, dynamic>>.from(playData['qualities'] ?? []),
+            serverSourceName: playData['source_name'] ?? 'Ultra VIP Edge',
             onNextEpisode: epNum < _episodes.length ? () => _play(epNum + 1) : null,
           ),
         ),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('تعذر تجهيز الرابط المباشر، تحقق من اتصالك أو السيرفر'),
+        const SnackBar(
+          content: Text('تعذر فك تشفير سيرفرات العرض، تحقق من اتصالك بالإنترنت'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -1691,13 +1782,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-                                  child: const Text('متوفر بالسيرفر ✅', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 10)),
+                                  child: const Text('متوفر بسينمانا ✅', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 10)),
                                 )
                               else
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(color: Colors.redAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-                                  child: const Text('غير متاح ❌', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10)),
+                                  decoration: BoxDecoration(color: const Color(0xFF00F0FF).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                                  child: const Text('متوفر بسيرفر VidLink ⚡', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, fontSize: 10)),
                                 ),
                             ],
                           ),
@@ -1724,9 +1815,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 height: 48,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: (_isMatching || _matchedCee == null) ? Colors.grey.shade800 : const Color(0xFFE50914),
+                    backgroundColor: _isMatching ? Colors.grey.shade800 : const Color(0xFFE50914),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    elevation: (_matchedCee != null) ? 6 : 0,
+                    elevation: 6,
                     shadowColor: const Color(0xFFE50914).withOpacity(0.5),
                   ),
                   onPressed: (_isMatching || _isLaunching) ? null : () => _play(1),
@@ -1735,10 +1826,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       : const Icon(Icons.play_arrow_rounded, color: Colors.white),
                   label: Text(
                     _isMatching
-                        ? 'جاري فحص السيرفر...'
-                        : (_matchedCee == null
-                            ? 'العمل غير متوفر بالسيرفر'
-                            : (_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن')),
+                        ? 'جاري فحص السيرفرات...'
+                        : (_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن'),
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                   ),
                 ),
@@ -1811,7 +1900,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         itemBuilder: (ctx, i) {
                           final epNum = i + 1;
                           return InkWell(
-                            onTap: (_isMatching || _matchedCee == null) ? null : () => _play(epNum),
+                            onTap: _isMatching ? null : () => _play(epNum),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: Theme.of(context).cardColor,
@@ -1819,7 +1908,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 border: Border.all(color: Colors.white12),
                               ),
                               child: Center(
-                                child: Text('$epNum', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: (_matchedCee == null) ? Colors.grey : Colors.white)),
+                                child: Text('$epNum', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white)),
                               ),
                             ),
                           );
@@ -1863,13 +1952,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 6. المشغل المطور مع التخلص السليم من الموارد
+// 8. المشغل العالمي (Gesture Controls, Fast Seek, Anti-Ad)
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
+  final String serverSourceName;
   final VoidCallback? onNextEpisode;
   final bool isLocalFile;
 
@@ -1879,6 +1969,7 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.videoUrl,
     required this.qualities,
+    this.serverSourceName = 'High-Speed Edge',
     this.onNextEpisode,
     this.isLocalFile = false,
   });
@@ -1896,6 +1987,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   String _currentStreamUrl = '';
   String _activeQualityName = 'تلقائي (Auto)';
   bool _isAutoBitrate = true;
+
+  double _volumeIndicator = 0.5;
+  bool _showVolumeIndicator = false;
+  Timer? _indicatorTimer;
 
   bool _subtitlesEnabled = true;
   double _subtitleFontSize = 18.0;
@@ -2045,6 +2140,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
+  void _onVerticalDragUpdate(DragUpdateDetails details, BoxConstraints constraints) {
+    final delta = details.primaryDelta ?? 0;
+    _volumeIndicator = (_volumeIndicator - (delta / constraints.maxHeight)).clamp(0.0, 1.0);
+    _videoPlayerController?.setVolume(_volumeIndicator);
+
+    setState(() => _showVolumeIndicator = true);
+    _indicatorTimer?.cancel();
+    _indicatorTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _showVolumeIndicator = false);
+    });
+  }
+
   void _showQualitySheet() {
     showModalBottomSheet(
       context: context,
@@ -2191,6 +2298,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveCurrentPosition();
+    _indicatorTimer?.cancel();
     _videoPlayerController?.removeListener(_updateSubsAndProgress);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
@@ -2202,104 +2310,150 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Stack(
-          children: [
-            Center(
-              child: (_isReady && _chewieController != null)
-                  ? Chewie(controller: _chewieController!)
-                  : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
-            ),
-
-            if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
-              Positioned(
-                bottom: _subtitleBottomPadding,
-                left: 16,
-                right: 16,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _subtitleBgColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 6)],
-                    ),
-                    child: Text(_activeSubtitleText, style: TextStyle(color: _subtitleTextColor, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+        child: LayoutBuilder(
+          builder: (ctx, constraints) {
+            return GestureDetector(
+              onVerticalDragUpdate: _isLocked ? null : (d) => _onVerticalDragUpdate(d, constraints),
+              child: Stack(
+                children: [
+                  Center(
+                    child: (_isReady && _chewieController != null)
+                        ? Chewie(controller: _chewieController!)
+                        : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
                   ),
-                ),
-              ),
 
-            if (!_isLocked)
-              Positioned(
-                top: 14,
-                left: 16,
-                right: 16,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.high_quality_rounded, color: Color(0xFF00F0FF), size: 22),
-                            tooltip: 'الجودة: $_activeQualityName',
-                            onPressed: _showQualitySheet,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.subtitles_rounded, color: Colors.white, size: 20),
-                            tooltip: 'الترجمة',
-                            onPressed: _openSubtitleSettings,
-                          ),
-                        ),
-                      ],
+                  Positioned(
+                    top: 16,
+                    left: 70,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.5)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.bolt_rounded, color: Color(0xFF10B981), size: 16),
+                          const SizedBox(width: 4),
+                          Text(widget.serverSourceName, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
-                    Row(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
-                            tooltip: 'قفل الشاشة',
-                            onPressed: () => setState(() => _isLocked = true),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
-                            tooltip: 'إغلاق المشغل',
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                  ),
 
-            if (_isLocked)
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE50914),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: const Color(0xFFE50914).withOpacity(0.5), blurRadius: 10)],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
-                    tooltip: 'إلغاء قفل الشاشة',
-                    onPressed: () => setState(() => _isLocked = false),
-                  ),
-                ),
+                  if (_showVolumeIndicator)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.black87.withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.volume_up_rounded, color: Color(0xFF00F0FF), size: 30),
+                            const SizedBox(height: 8),
+                            Text('${(_volumeIndicator * 100).round()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
+                    Positioned(
+                      bottom: _subtitleBottomPadding,
+                      left: 16,
+                      right: 16,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _subtitleBgColor,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 6)],
+                          ),
+                          child: Text(_activeSubtitleText, style: TextStyle(color: _subtitleTextColor, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                        ),
+                      ),
+                    ),
+
+                  if (!_isLocked)
+                    Positioned(
+                      top: 14,
+                      left: 16,
+                      right: 16,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
+                                child: IconButton(
+                                  icon: const Icon(Icons.high_quality_rounded, color: Color(0xFF00F0FF), size: 22),
+                                  tooltip: 'الجودة: $_activeQualityName',
+                                  onPressed: _showQualitySheet,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
+                                child: IconButton(
+                                  icon: const Icon(Icons.subtitles_rounded, color: Colors.white, size: 20),
+                                  tooltip: 'الترجمة',
+                                  onPressed: _openSubtitleSettings,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
+                                child: IconButton(
+                                  icon: const Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
+                                  tooltip: 'قفل الشاشة',
+                                  onPressed: () => setState(() => _isLocked = true),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
+                                child: IconButton(
+                                  icon: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
+                                  tooltip: 'إغلاق المشغل',
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  if (_isLocked)
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE50914),
+                          shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(color: const Color(0xFFE50914).withOpacity(0.5), blurRadius: 10)],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
+                          tooltip: 'إلغاء قفل الشاشة',
+                          onPressed: () => setState(() => _isLocked = false),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -2307,7 +2461,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
 // -------------------------------------------------------------
-// 7. شاشة مدير التنزيلات
+// 9. شاشة مدير التنزيلات
 // -------------------------------------------------------------
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -2413,7 +2567,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 }
 
 // -------------------------------------------------------------
-// 8. شاشة المشاهدة لاحقاً
+// 10. شاشة المشاهدة لاحقاً
 // -------------------------------------------------------------
 class WatchLaterScreen extends StatefulWidget {
   const WatchLaterScreen({super.key});
@@ -2471,7 +2625,7 @@ class _WatchLaterScreenState extends State<WatchLaterScreen> {
 }
 
 // -------------------------------------------------------------
-// 9. شاشة المفضلة
+// 11. شاشة المفضلة
 // -------------------------------------------------------------
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -2523,7 +2677,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 }
 
 // -------------------------------------------------------------
-// 10. لوحة المشرف الشاملة
+// 12. لوحة تحكم المشرف (Admin Dashboard)
 // -------------------------------------------------------------
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
