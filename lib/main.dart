@@ -81,7 +81,7 @@ class UniversalStreamResolver {
       try {
         final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 3));
         if (res.statusCode == 200) {
-          final reg = RegExp(r'(https?://[^\s"\'<>]+\.(?:m3u8|mp4)[^\s"\'<>]*)');
+          final reg = RegExp(r"""(https?://[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*)""");
           final match = reg.firstMatch(res.body);
 
           if (match != null) {
@@ -131,13 +131,11 @@ class UniversalStreamResolver {
   }) async {
     final cacheKey = targetId.isNotEmpty ? targetId : tmdbId;
 
-    // 1. فحص الكاش الفوري (0 ثانية)
     final cached = await StreamLinkCache.getValidSource(cacheKey);
     if (cached != null) return cached;
 
     final bool isLocal = AppState.instance.isInsideIraq;
 
-    // 2. إذا كان الاتصال من داخل العراق: التوجه فوراً لسينمانا
     if (isLocal && targetId.isNotEmpty) {
       try {
         final cinemanaData = await StreamService.getVideoSource(targetId).timeout(const Duration(seconds: 2));
@@ -149,7 +147,6 @@ class UniversalStreamResolver {
       } catch (_) {}
     }
 
-    // 3. إذا كان خارج العراق أو فشلت سينمانا: التوجه فوراً للسيرفر الدولي الخالي من الإعلانات
     final directData = await resolveDirectExtraction(
       tmdbId: tmdbId,
       isSeries: isSeries,
@@ -340,7 +337,6 @@ class AppState extends ChangeNotifier {
   List<String> profiles = ['الرئيسي', 'أنمي', 'أطفال'];
   String currentProfile = 'الرئيسي';
 
-  // معايير الفحص الجغرافي والشبكي
   bool isInsideIraq = true;
   String detectedCountry = 'IQ';
   bool isNetworkChecking = true;
@@ -2167,7 +2163,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     oldChewie?.dispose();
     await oldVideo?.dispose();
 
-    // إرسال ترويسات سينمانا فقط إذا كان الرابط تابعاً لسينمانا لمنع حظر السيرفرات البديلة
     final Map<String, String> resolvedHeaders = _currentStreamUrl.contains('cee.buzz')
         ? StreamService.stealthHeaders
         : {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'};
