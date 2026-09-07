@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
@@ -46,7 +48,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 2. مدير التنزيل الداخلي مع دعم الاستئناف (Resumable Download)
+// 2. مدير التنزيل الداخلي مع دعم الاستئناف والتخزين الحديث
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -73,18 +75,16 @@ class DownloadManager extends ChangeNotifier {
   final Map<String, ActiveDownload> activeDownloads = {};
 
   Future<String> _getAppStoragePath() async {
-    final paths = [
-      '/storage/emulated/0/Download/ONEBR_TV',
-      '/sdcard/Download/ONEBR_TV',
-    ];
-    for (var p in paths) {
-      final d = Directory(p);
-      try {
-        if (!d.existsSync()) d.createSync(recursive: true);
-        return d.path;
-      } catch (_) {}
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final saveDir = Directory('${dir.path}/ONEBR_Downloads');
+      if (!saveDir.existsSync()) {
+        saveDir.createSync(recursive: true);
+      }
+      return saveDir.path;
+    } catch (_) {
+      return Directory.systemTemp.path;
     }
-    return Directory.systemTemp.path;
   }
 
   Future<void> startDownload({
@@ -122,6 +122,7 @@ class DownloadManager extends ChangeNotifier {
       final totalBytes = (response.contentLength ?? 0) + downloadedBytes;
 
       final sink = file.openWrite(mode: FileMode.append);
+      int lastNotifiedBytes = downloadedBytes;
 
       await response.stream.listen((chunk) {
         if (download.isCancelled) {
@@ -130,7 +131,9 @@ class DownloadManager extends ChangeNotifier {
         }
         downloadedBytes += chunk.length;
         sink.add(chunk);
-        if (totalBytes > 0) {
+
+        if (totalBytes > 0 && (downloadedBytes - lastNotifiedBytes > 250 * 1024 || downloadedBytes == totalBytes)) {
+          lastNotifiedBytes = downloadedBytes;
           download.progress = (downloadedBytes / totalBytes).clamp(0.0, 1.0);
           notifyListeners();
         }
@@ -310,7 +313,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// 4. الشاشة الرئيسية بتصميم انسيابي ناعم بدون حواف حادة
+// 4. الشاشة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -1172,7 +1175,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 5. محرك المطابقة الصارم وحل مشكلة العناوين الحرفية
+// 5. محرك المطابقة المطور وحل معضلة عدم العثور والتشغيل الخاطئ
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1250,11 +1253,37 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     await LocalStorageService.appendItem('continue_watching_list_$p', widget.media);
   }
 
+  // تنظيف العناوين وإزالة الكلمات المشوشة
   String _clean(String s) {
     return s.toLowerCase()
-        .replaceAll(RegExp(r'[:\-_–—!?.()\[\]]'), ' ')
+        .replaceAll(RegExp(r'[:\-_–—!?.()\[\]\/\\#&,"]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  // قياس التشابه النصي بدقة لمنع تشغيل أفلام مختلفة
+  double _calculateSimilarity(String s1, String s2) {
+    if (s1 == s2) return 1.0;
+    if (s1.isEmpty || s2.isEmpty) return 0.0;
+
+    final w1 = s1.split(' ').where((w) => w.length > 1).toSet();
+    final w2 = s2.split(' ').where((w) => w.length > 1).toSet();
+
+    if (w1.isEmpty || w2.isEmpty) {
+      return s1.contains(s2) || s2.contains(s1) ? 0.8 : 0.0;
+    }
+
+    final intersection = w1.intersection(w2);
+    final union = w1.union(w2);
+    final jaccard = intersection.length / union.length;
+
+    // فحص التطابق اللفظي التسلسلي
+    bool substringMatch = s1.contains(s2) || s2.contains(s1);
+    if (substringMatch && (s1.length > 6 && s2.length > 6)) {
+      return max(jaccard, 0.75);
+    }
+
+    return jaccard;
   }
 
   Future<void> _resolveRealTitlesAndMatch() async {
@@ -1264,47 +1293,82 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final key = SecurityEngine.tmdbKey;
     final type = _isSeries ? 'tv' : 'movie';
 
-    List<String> searchQueries = [];
+    final Set<String> searchQueries = {};
 
     final origName = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
     final transName = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
 
-    if (origName.isNotEmpty) searchQueries.add(origName);
+    if (origName.isNotEmpty) {
+      searchQueries.add(origName);
+      if (origName.contains(':')) searchQueries.add(origName.split(':').last.trim());
+      if (origName.contains('-')) searchQueries.add(origName.split('-').first.trim());
+    }
+    if (transName.isNotEmpty) {
+      searchQueries.add(transName);
+      if (transName.contains(':')) searchQueries.add(transName.split(':').last.trim());
+    }
 
     try {
-      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/$type/$tmdbId?api_key=$key&language=en-US')).timeout(const Duration(seconds: 4));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+      final endpoints = [
+        'https://api.themoviedb.org/3/$type/$tmdbId?api_key=$key&language=en-US',
+        'https://api.themoviedb.org/3/$type/$tmdbId/alternative_titles?api_key=$key',
+      ];
+
+      final responses = await Future.wait(
+        endpoints.map((u) => http.get(Uri.parse(u)).timeout(const Duration(seconds: 4))),
+      );
+
+      if (responses[0].statusCode == 200) {
+        final data = jsonDecode(responses[0].body);
         final enTitle = (data['name'] ?? data['title'] ?? '').toString().trim();
-        if (enTitle.isNotEmpty && !searchQueries.contains(enTitle)) {
-          searchQueries.insert(0, enTitle);
+        if (enTitle.isNotEmpty) {
           _displayEnglishTitle = enTitle;
+          searchQueries.add(enTitle);
+          if (enTitle.contains(':')) searchQueries.add(enTitle.split(':').last.trim());
+          if (enTitle.contains('-')) searchQueries.add(enTitle.split('-').first.trim());
+        }
+      }
+
+      if (responses[1].statusCode == 200) {
+        final altData = jsonDecode(responses[1].body);
+        final list = (altData['titles'] ?? altData['results'] ?? []) as List;
+        for (var t in list) {
+          final tName = (t['title'] ?? '').toString().trim();
+          if (tName.isNotEmpty) {
+            searchQueries.add(tName);
+            if (tName.contains(':')) searchQueries.add(tName.split(':').last.trim());
+          }
         }
       }
     } catch (_) {}
 
-    if (transName.isNotEmpty && !searchQueries.contains(transName)) {
-      searchQueries.add(transName);
-    }
-
     final date = (widget.media['first_air_date'] ?? widget.media['release_date'] ?? '').toString();
     final targetYear = date.split('-').first.trim();
 
-    await _searchCeeBuzz(searchQueries, targetYear);
+    await _searchCeeBuzz(searchQueries.toList(), targetYear);
 
     if (mounted) setState(() => _isMatching = false);
   }
 
   Future<void> _searchCeeBuzz(List<String> queries, String targetYear) async {
     final levels = _isSeries ? ['1', '0'] : ['0', '1'];
+    final int? tYear = int.tryParse(targetYear);
+
+    Map<String, dynamic>? bestMatch;
+    double highestScore = 0.0;
 
     for (var lvl in levels) {
+      if (bestMatch != null && highestScore >= 0.85) break;
+
       for (var query in queries) {
-        if (query.isEmpty) continue;
+        final cleanQ = _clean(query);
+        if (cleanQ.length < 2) continue;
+
         try {
-          final b64 = base64.encode(utf8.encode(query));
+          // استخدام URL-Safe Base64 لتفادي أخطاء خوادم CEE
+          final b64 = base64Url.encode(utf8.encode(query)).replaceAll('=', '');
           final res = await http.get(
-            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
+            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$lvl'),
             headers: StreamService.stealthHeaders,
           ).timeout(const Duration(seconds: 4));
 
@@ -1312,34 +1376,47 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
             List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
-            final cleanQuery = _clean(query);
-
             for (var item in list) {
               final enTitle = _clean((item['en_title'] ?? '').toString());
               final arTitle = _clean((item['title'] ?? '').toString());
-              final itemYear = (item['year'] ?? '').toString().trim();
+              final int? itemY = int.tryParse((item['year'] ?? '').toString().trim());
 
-              bool isNameMatched = false;
-              if (enTitle.isNotEmpty && (enTitle.contains(cleanQuery) || cleanQuery.contains(enTitle))) {
-                isNameMatched = true;
-              } else if (arTitle.isNotEmpty && (arTitle.contains(cleanQuery) || cleanQuery.contains(arTitle))) {
-                isNameMatched = true;
+              // حساب درجات التطابق لكل لغة
+              final scoreEn = _calculateSimilarity(cleanQ, enTitle);
+              final scoreAr = _calculateSimilarity(cleanQ, arTitle);
+              double itemScore = max(scoreEn, scoreAr);
+
+              if (itemScore < 0.55) continue;
+
+              // مطابقة السنة مع التسامح لسنة واحدة لتفادي الفوارق التقويمية
+              if (tYear != null && itemY != null && itemY > 1900) {
+                final diff = (itemY - tYear).abs();
+                if (diff == 0) {
+                  itemScore += 0.20; // تطابق تام في السنة
+                } else if (diff == 1) {
+                  itemScore += 0.05; // فارق مقبول
+                } else if (diff > 2) {
+                  itemScore -= 0.35; // عقوبة الفارق الزمني لتجنب الريميك والأجزاء القديمة
+                }
               }
 
-              if (!isNameMatched) continue;
-
-              bool isYearClose = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
-
-              if (isYearClose) {
-                _matchedCee = item;
-                if (_isSeries) {
-                  await _loadCeeEpisodes(item['nb'].toString());
-                }
-                return;
+              if (itemScore > highestScore && itemScore >= 0.65) {
+                highestScore = itemScore;
+                bestMatch = item;
+                if (highestScore >= 0.95) break;
               }
             }
           }
         } catch (_) {}
+
+        if (bestMatch != null && highestScore >= 0.95) break;
+      }
+    }
+
+    if (bestMatch != null && highestScore >= 0.65) {
+      _matchedCee = bestMatch;
+      if (_isSeries) {
+        await _loadCeeEpisodes(bestMatch['nb'].toString());
       }
     }
   }
@@ -1786,7 +1863,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 6. المشغل المطور: فصل الأزرار تماماً مع خيارات الجودة التكيفية
+// 6. المشغل المطور مع التخلص السليم من الموارد
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1898,11 +1975,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _init({int startAtSecond = 0}) async {
-    _chewieController?.dispose();
-    _videoPlayerController?.removeListener(_updateSubsAndProgress);
-    await _videoPlayerController?.dispose();
+    final oldVideo = _videoPlayerController;
+    final oldChewie = _chewieController;
 
     setState(() => _isReady = false);
+
+    oldVideo?.removeListener(_updateSubsAndProgress);
+    oldChewie?.dispose();
+    await oldVideo?.dispose();
 
     _videoPlayerController = widget.isLocalFile
         ? VideoPlayerController.file(File(_currentStreamUrl))
