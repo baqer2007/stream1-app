@@ -52,10 +52,10 @@ class StreamLinkCache {
 }
 
 // -------------------------------------------------------------
-// 2. محرك الترحيل العراقي والبدائل VidLink (Zero-Ads Fallback)
+// 2. محرك الاستخراج الهجين الفائق (Universal Stream Resolver)
 // -------------------------------------------------------------
 class UniversalStreamResolver {
-  static Future<Map<String, dynamic>?> resolveVidLink({
+  static Future<Map<String, dynamic>?> resolveDirectExtraction({
     required String tmdbId,
     required bool isSeries,
     int season = 1,
@@ -72,11 +72,12 @@ class UniversalStreamResolver {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Referer': 'https://vidlink.pro/',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final streamUrl = data['stream']?['playlist'] ?? data['stream']?['qualities']?['auto']?['url'];
+
         if (streamUrl != null && streamUrl.toString().isNotEmpty) {
           final List<Map<String, dynamic>> parsedQualities = [];
           if (data['stream']?['qualities'] != null) {
@@ -94,35 +95,68 @@ class UniversalStreamResolver {
           return {
             'video_url': streamUrl,
             'qualities': parsedQualities,
-            'source_name': 'VidLink High-Speed (No Ads)',
+            'source_name': 'Global Fast Edge (Zero Ads)',
           };
         }
       }
     } catch (_) {}
+
+    try {
+      final altEndpoint = isSeries
+          ? 'https://vidsrc.me/embed/tv?tmdb=$tmdbId&season=$season&episode=$episode'
+          : 'https://vidsrc.me/embed/movie?tmdb=$tmdbId';
+
+      final altRes = await http.get(Uri.parse(altEndpoint), headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      }).timeout(const Duration(seconds: 4));
+
+      if (altRes.statusCode == 200) {
+        final match = RegExp(r'file:\s*"([^"]+\.m3u8[^"]*)"').firstMatch(altRes.body);
+        if (match != null && match.group(1) != null) {
+          final m3u8Url = match.group(1)!;
+          return {
+            'video_url': m3u8Url,
+            'qualities': [{'resolution': 'تلقائي (HLS)', 'url': m3u8Url}],
+            'source_name': 'Cloud Stream (Direct)',
+          };
+        }
+      }
+    } catch (_) {}
+
     return null;
   }
 
-  static Future<Map<String, dynamic>?> resolveCinemanaOrRelay(String targetId) async {
-    final cached = await StreamLinkCache.getValidSource(targetId);
+  static Future<Map<String, dynamic>?> resolveSmartStream({
+    required String targetId,
+    required String tmdbId,
+    required bool isSeries,
+    int season = 1,
+    int episode = 1,
+  }) async {
+    final cacheKey = targetId.isNotEmpty ? targetId : tmdbId;
+    final cached = await StreamLinkCache.getValidSource(cacheKey);
     if (cached != null) return cached;
 
-    try {
-      final directData = await StreamService.getVideoSource(targetId);
-      if (directData != null && directData['video_url'] != null) {
-        directData['source_name'] = 'Cinemana Fast-Edge';
-        await StreamLinkCache.saveSource(targetId, directData);
-        return directData;
+    if (targetId.isNotEmpty) {
+      final cinemanaData = await StreamService.getVideoSource(targetId);
+      if (cinemanaData != null && cinemanaData['video_url'] != null) {
+        cinemanaData['source_name'] = 'سيرفر سينمانا السريع ⚡';
+        await StreamLinkCache.saveSource(cacheKey, cinemanaData);
+        return cinemanaData;
       }
-    } catch (_) {}
+    }
 
-    try {
-      final relayRes = await StreamService.requestRelayedStream(targetId);
-      if (relayRes != null && relayRes['video_url'] != null) {
-        relayRes['source_name'] = 'شبكة الترحيل العراقية (Iraqi Mesh Node)';
-        await StreamLinkCache.saveSource(targetId, relayRes);
-        return relayRes;
-      }
-    } catch (_) {}
+    final directData = await resolveDirectExtraction(
+      tmdbId: tmdbId,
+      isSeries: isSeries,
+      season: season,
+      episode: episode,
+    );
+
+    if (directData != null) {
+      await StreamLinkCache.saveSource(cacheKey, directData);
+      return directData;
+    }
 
     return null;
   }
@@ -1287,7 +1321,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 7. شاشة التفاصيل مع محرك المطابقة الفائق وFallback VidLink
+// 7. شاشة التفاصيل مع محرك المطابقة المطور
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1615,25 +1649,21 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _play(int epNum) async {
     setState(() => _isLaunching = true);
 
-    Map<String, dynamic>? playData;
     String targetId = '';
-
     if (_matchedCee != null) {
       targetId = _matchedCee!['nb'].toString();
       if (_isSeries && _ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
         targetId = _ceeEpisodesList[epNum - 1]['nb'].toString();
       }
-      playData = await UniversalStreamResolver.resolveCinemanaOrRelay(targetId);
     }
 
-    if (playData == null) {
-      playData = await UniversalStreamResolver.resolveVidLink(
-        tmdbId: widget.media['id'].toString(),
-        isSeries: _isSeries,
-        season: _selectedSeasonNumber,
-        episode: epNum,
-      );
-    }
+    final playData = await UniversalStreamResolver.resolveSmartStream(
+      targetId: targetId,
+      tmdbId: widget.media['id'].toString(),
+      isSeries: _isSeries,
+      season: _selectedSeasonNumber,
+      episode: epNum,
+    );
 
     setState(() => _isLaunching = false);
 
@@ -1644,7 +1674,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           builder: (_) => PlayerScreen(
             mediaId: targetId.isNotEmpty ? targetId : widget.media['id'].toString(),
             title: '${widget.media['title'] ?? widget.media['name'] ?? ''} - حلقة $epNum',
-            videoUrl: playData!['video_url'],
+            videoUrl: playData['video_url'],
             qualities: List<Map<String, dynamic>>.from(playData['qualities'] ?? []),
             serverSourceName: playData['source_name'] ?? 'Ultra VIP Edge',
             onNextEpisode: epNum < _episodes.length ? () => _play(epNum + 1) : null,
@@ -1654,7 +1684,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تعذر فك تشفير سيرفرات العرض، تحقق من اتصالك بالإنترنت'),
+          content: Text('تعذر جلب رابط الفيديو من جميع المصادر، يرجى المحاولة لاحقاً'),
           backgroundColor: Colors.redAccent,
         ),
       );
