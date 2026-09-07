@@ -1,7 +1,7 @@
 name: stream1_app
-description: "Cinemana streaming player application"
+description: "ONEBR TV - Next Gen Streaming Platform"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -14,7 +14,6 @@ dependencies:
   http: ^1.2.0
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.2.2
-  path_provider: ^2.1.2
 
 dev_dependencies:
   flutter_test:
