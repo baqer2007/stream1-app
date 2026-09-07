@@ -46,7 +46,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 2. مدير التنزيلات مع دعم الاستئناف (Resumable Download)
+// 2. مدير التنزيل الداخلي مع دعم الاستئناف (Resumable Download)
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -310,7 +310,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// 4. الشاشة الرئيسية بتصميم انسيابي خالي من الحواف الحادة
+// 4. الشاشة الرئيسية بتصميم انسيابي ناعم بدون حواف حادة
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -1172,7 +1172,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 5. محرك المطابقة الصارم الحاسم (Definitive Deterministic Matcher)
+// 5. محرك المطابقة الصارم وحل مشكلة العناوين الحرفية
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1183,6 +1183,7 @@ class MediaDetailScreen extends StatefulWidget {
 }
 
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
+  bool _isMatching = true;
   bool _isLaunching = false;
   bool _isLoadingEpisodes = true;
   bool _isFav = false;
@@ -1191,10 +1192,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   Map<String, dynamic>? _matchedCee;
   List<dynamic> _ceeEpisodesList = [];
   List<dynamic> _episodes = [];
-  List<dynamic> _seasons = []; // الحقل المضاف لحل خطأ الـ Build
+  List<dynamic> _seasons = [];
   List<dynamic> _similarMedia = [];
   int _selectedSeasonNumber = 1;
   bool _isSeries = false;
+
+  String _displayEnglishTitle = '';
 
   @override
   void initState() {
@@ -1202,7 +1205,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _isSeries = widget.media['first_air_date'] != null || widget.media['name'] != null;
     _checkSavedStates();
     _saveHistory();
-    _executeDeterministicMatch();
+    _resolveRealTitlesAndMatch();
     _loadSimilar();
     if (_isSeries) _loadSeasons();
   }
@@ -1247,27 +1250,59 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     await LocalStorageService.appendItem('continue_watching_list_$p', widget.media);
   }
 
-  String _cleanString(String s) {
-    return s.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9\u0621-\u064A\s]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  String _clean(String s) {
+    return s.toLowerCase()
+        .replaceAll(RegExp(r'[:\-_–—!?.()\[\]]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
-  // خوارزمية التطابق الصارم لحل الخطأ تماماً
-  Future<void> _executeDeterministicMatch() async {
-    final orig = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
-    final title = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
+  Future<void> _resolveRealTitlesAndMatch() async {
+    setState(() => _isMatching = true);
+
+    final tmdbId = widget.media['id'];
+    final key = SecurityEngine.tmdbKey;
+    final type = _isSeries ? 'tv' : 'movie';
+
+    List<String> searchQueries = [];
+
+    final origName = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
+    final transName = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
+
+    if (origName.isNotEmpty) searchQueries.add(origName);
+
+    try {
+      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/$type/$tmdbId?api_key=$key&language=en-US')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final enTitle = (data['name'] ?? data['title'] ?? '').toString().trim();
+        if (enTitle.isNotEmpty && !searchQueries.contains(enTitle)) {
+          searchQueries.insert(0, enTitle);
+          _displayEnglishTitle = enTitle;
+        }
+      }
+    } catch (_) {}
+
+    if (transName.isNotEmpty && !searchQueries.contains(transName)) {
+      searchQueries.add(transName);
+    }
+
     final date = (widget.media['first_air_date'] ?? widget.media['release_date'] ?? '').toString();
     final targetYear = date.split('-').first.trim();
 
-    final queries = <String>[];
-    if (orig.isNotEmpty) queries.add(orig);
-    if (title.isNotEmpty && title != orig) queries.add(title);
+    await _searchCeeBuzz(searchQueries, targetYear);
 
+    if (mounted) setState(() => _isMatching = false);
+  }
+
+  Future<void> _searchCeeBuzz(List<String> queries, String targetYear) async {
     final levels = _isSeries ? ['1', '0'] : ['0', '1'];
 
     for (var lvl in levels) {
-      for (var q in queries) {
+      for (var query in queries) {
+        if (query.isEmpty) continue;
         try {
-          final b64 = base64.encode(utf8.encode(q));
+          final b64 = base64.encode(utf8.encode(query));
           final res = await http.get(
             Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
             headers: StreamService.stealthHeaders,
@@ -1277,30 +1312,28 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
             List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
-            final cleanTarget = _cleanString(q);
+            final cleanQuery = _clean(query);
 
             for (var item in list) {
-              final enTitle = _cleanString((item['en_title'] ?? '').toString());
-              final arTitle = _cleanString((item['title'] ?? '').toString());
+              final enTitle = _clean((item['en_title'] ?? '').toString());
+              final arTitle = _clean((item['title'] ?? '').toString());
               final itemYear = (item['year'] ?? '').toString().trim();
 
-              bool nameMatched = false;
-              if (enTitle.isNotEmpty && (enTitle.contains(cleanTarget) || cleanTarget.contains(enTitle))) {
-                nameMatched = true;
-              } else if (arTitle.isNotEmpty && (arTitle.contains(cleanTarget) || cleanTarget.contains(arTitle))) {
-                nameMatched = true;
+              bool isNameMatched = false;
+              if (enTitle.isNotEmpty && (enTitle.contains(cleanQuery) || cleanQuery.contains(enTitle))) {
+                isNameMatched = true;
+              } else if (arTitle.isNotEmpty && (arTitle.contains(cleanQuery) || cleanQuery.contains(arTitle))) {
+                isNameMatched = true;
               }
 
-              if (!nameMatched) continue;
+              if (!isNameMatched) continue;
 
-              bool yearMatched = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
+              bool isYearClose = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
 
-              if (yearMatched) {
-                if (mounted) {
-                  setState(() => _matchedCee = item);
-                  if (_isSeries) {
-                    _loadCeeEpisodes(item['nb'].toString());
-                  }
+              if (isYearClose) {
+                _matchedCee = item;
+                if (_isSeries) {
+                  await _loadCeeEpisodes(item['nb'].toString());
                 }
                 return;
               }
@@ -1401,8 +1434,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('هذا العمل غير متاح في السيرفر حالياً لتجنب تشغيل عمل عشوائي خاطئ 🛡️'),
-          backgroundColor: Colors.orange.shade800,
+          content: const Text('هذا العمل غير متوفر بسيرفر سينمانا حالياً، جاري محاولة إضافته'),
+          backgroundColor: Colors.orange.shade900,
         ),
       );
       return;
@@ -1453,7 +1486,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('جاري معالجة سيرفر هذا الفيديو، يرجى المحاولة بعد لحظات'),
+          content: const Text('تعذر تجهيز الرابط المباشر، تحقق من اتصالك أو السيرفر'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -1466,7 +1499,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         SnackBar(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: const Text('العمل غير متوفر للتنزيل حالياً في السيرفر'),
-          backgroundColor: Colors.orange.shade800,
+          backgroundColor: Colors.orange.shade900,
         ),
       );
       return;
@@ -1490,7 +1523,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Text('بدأ تنزيل $title في قائمة التنزيلات!'),
+          content: Text('بدأ تنزيل $title بنجاح!'),
           backgroundColor: const Color(0xFF10B981),
         ),
       );
@@ -1499,7 +1532,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.media['title'] ?? widget.media['name'] ?? '';
+    final originalName = widget.media['original_name'] ?? widget.media['original_title'] ?? '';
+    final arabicTitle = widget.media['title'] ?? widget.media['name'] ?? '';
+    final title = _displayEnglishTitle.isNotEmpty ? _displayEnglishTitle : (originalName.isNotEmpty ? originalName : arabicTitle);
+    
     final poster = widget.media['poster_path'] != null ? 'https://image.tmdb.org/t/p/w500${widget.media['poster_path']}' : '';
     final score = (widget.media['vote_average'] ?? 8.0).toStringAsFixed(1);
     final story = widget.media['overview'] ?? 'لا يوجد وصف متاح حالياً.';
@@ -1559,22 +1595,45 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                          if (arabicTitle != title) ...[
+                            const SizedBox(height: 2),
+                            Text(arabicTitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
                           const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-                            child: Text('⭐ $score (TMDB)', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, fontSize: 12)),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                                child: Text('⭐ $score', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, fontSize: 11)),
+                              ),
+                              const SizedBox(width: 8),
+                              if (_isMatching)
+                                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00F0FF)))
+                              else if (_matchedCee != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                                  child: const Text('متوفر بالسيرفر ✅', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 10)),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: Colors.redAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                                  child: const Text('غير متاح ❌', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10)),
+                                ),
+                            ],
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Color(0xFF10B981)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             ),
-                            onPressed: _triggerDownload,
-                            icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 18),
-                            label: const Text('تنزيل في التطبيق', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 12)),
+                            onPressed: (_isMatching || _matchedCee == null) ? null : _triggerDownload,
+                            icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 16),
+                            label: const Text('تنزيل في التطبيق', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
                           ),
                         ],
                       ),
@@ -1588,14 +1647,23 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 height: 48,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE50914),
+                    backgroundColor: (_isMatching || _matchedCee == null) ? Colors.grey.shade800 : const Color(0xFFE50914),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    elevation: 6,
+                    elevation: (_matchedCee != null) ? 6 : 0,
                     shadowColor: const Color(0xFFE50914).withOpacity(0.5),
                   ),
-                  onPressed: _isLaunching ? null : () => _play(1),
-                  icon: _isLaunching ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.play_arrow_rounded, color: Colors.white),
-                  label: Text(_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                  onPressed: (_isMatching || _isLaunching) ? null : () => _play(1),
+                  icon: (_isMatching || _isLaunching)
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                  label: Text(
+                    _isMatching
+                        ? 'جاري فحص السيرفر...'
+                        : (_matchedCee == null
+                            ? 'العمل غير متوفر بالسيرفر'
+                            : (_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن')),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -1666,14 +1734,16 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         itemBuilder: (ctx, i) {
                           final epNum = i + 1;
                           return InkWell(
-                            onTap: () => _play(epNum),
+                            onTap: (_isMatching || _matchedCee == null) ? null : () => _play(epNum),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(color: Colors.white12),
                               ),
-                              child: Center(child: Text('$epNum', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12))),
+                              child: Center(
+                                child: Text('$epNum', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: (_matchedCee == null) ? Colors.grey : Colors.white)),
+                              ),
                             ),
                           );
                         },
@@ -1699,7 +1769,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                           margin: const EdgeInsets.only(left: 8),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16),
-                            child: pPath != null ? Image.network('https://image.tmdb.org/t/p/w200$pPath', fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
+                            child: pPath != null ? Image.network(pPath.startsWith('http') ? pPath : 'https://image.tmdb.org/t/p/w200$pPath', fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
                           ),
                         ),
                       );
@@ -1716,7 +1786,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 6. المشغل المطور: أزرار منفصلة لمنع التضارب والجودة التلقائية
+// 6. المشغل المطور: فصل الأزرار تماماً مع خيارات الجودة التكيفية
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -2078,7 +2148,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
 
-            // شريط علوي منفصل تماماً ومستدير لمنع تضارب أزرار الخروج مع الإعدادات
             if (!_isLocked)
               Positioned(
                 top: 14,
@@ -2311,7 +2380,7 @@ class _WatchLaterScreenState extends State<WatchLaterScreen> {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
+                      child: poster.isNotEmpty ? Image.network(poster.startsWith('http') ? poster : 'https://image.tmdb.org/t/p/w342$poster', fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
                     ),
                   );
                 },
@@ -2363,7 +2432,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
+                      child: poster.isNotEmpty ? Image.network(poster.startsWith('http') ? poster : 'https://image.tmdb.org/t/p/w342$poster', fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
                     ),
                   );
                 },
@@ -2438,7 +2507,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           children: [
-                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12))),
+                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
                             Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (e.value / 10).clamp(0.1, 1.0), color: const Color(0xFFE50914), minHeight: 6))),
                             const SizedBox(width: 10),
                             Text('${e.value}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
