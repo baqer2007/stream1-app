@@ -12,7 +12,7 @@ import 'stream_service.dart';
 import 'favorites_service.dart';
 
 // -------------------------------------------------------------
-// 1. محرك سينمانا الحصري الصافي (CEE Pure Engine)
+// 1. محرك سينمانا الصافي (CEE Pure Engine)
 // -------------------------------------------------------------
 class CinemanaPureEngine {
   static const String _apiBase = 'https://cee.buzz/api/android';
@@ -98,7 +98,6 @@ class CinemanaPureEngine {
         }
         if (qualities.isEmpty) return null;
 
-        // اختيار تلقائي للإنترنت الضعيف
         final defaultUrl = qualities.firstWhere(
           (q) => q['resolution'] == '480p' || q['resolution'] == '360p',
           orElse: () => qualities.firstWhere((q) => q['resolution'] == '720p', orElse: () => qualities.first),
@@ -147,7 +146,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 3. مدير التنزيلات المتكامل (DownloadManager)
+// 3. مدير التنزيلات (DownloadManager)
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -334,7 +333,7 @@ class OnebrFutureApp extends StatelessWidget {
 }
 
 // -------------------------------------------------------------
-// 5. الشاشة الرئيسية فائقة المستقبلية (Cyberpunk / Glass UI)
+// 5. الشاشة الرئيسية
 // -------------------------------------------------------------
 class FutureHomeScreen extends StatefulWidget {
   const FutureHomeScreen({super.key});
@@ -423,7 +422,6 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
         drawer: _buildFuturisticDrawer(),
         body: Stack(
           children: [
-            // تدرجات النيون في الخلفية
             Positioned(
               top: -100,
               right: -100,
@@ -454,12 +452,10 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                 ),
               ),
             ),
-
             SafeArea(
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // شريط علوي زجاجي
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -486,8 +482,6 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                       ),
                     ),
                   ),
-
-                  // مربع البحث التفاعلي
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -518,20 +512,10 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                       ),
                     ),
                   ),
-
-                  // رف متابعة المشاهدة
                   if (!_isSearching && _continueWatching.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: _buildContinueWatchingShelf(),
-                    ),
-
-                  // البانر التفاعلي
+                    SliverToBoxAdapter(child: _buildContinueWatchingShelf()),
                   if (!_isSearching && _bannerList.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: _buildFuturisticHero(),
-                    ),
-
-                  // العنوان الرئيسي للقسم
+                    SliverToBoxAdapter(child: _buildFuturisticHero()),
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
@@ -540,7 +524,7 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                         children: [
                           Text(
                             _isSearching
-                                ? 'نتائج البحث الحصري'
+                                ? 'نتائج البحث'
                                 : (_selectedType == '0' ? '⚡ أحدث الأفلام' : '📺 أحدث المسلسلات والأنمي'),
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
                           ),
@@ -551,14 +535,12 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
                             ),
-                            child: const Text('أعلى سرعة وبأقل إنترنت ⚡', style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold)),
+                            child: const Text('أعلى سرعة بأقل إنترنت ⚡', style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
                     ),
                   ),
-
-                  // شبكة الأعمال
                   _isLoading && _catalog.isEmpty
                       ? const SliverFillRemaining(
                           child: Center(child: CircularProgressIndicator(color: Color(0xFFFF003C))),
@@ -578,7 +560,6 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
                             ),
                           ),
                         ),
-
                   if (_isLoading && _catalog.isNotEmpty)
                     const SliverToBoxAdapter(
                       child: Padding(
@@ -672,8 +653,9 @@ class _FutureHomeScreenState extends State<FutureHomeScreen> {
             itemCount: _continueWatching.length,
             itemBuilder: (ctx, i) {
               final item = _continueWatching[i];
+              final isTv = item['is_series'] == true;
               return GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(item: item, isSeries: widget.isSeries))).then((_) => _loadContinueWatching()),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(item: item, isSeries: isTv))).then((_) => _loadContinueWatching()),
                 child: Container(
                   width: 140,
                   margin: const EdgeInsets.symmetric(horizontal: 5),
@@ -952,7 +934,9 @@ class _DetailScreenState extends State<DetailScreen> {
 
   void _startPlay(String videoId, String title) async {
     setState(() => _isLoading = true);
-    await LocalStorageService.appendItem('continue_watching_pure', widget.item);
+    final toSave = Map<String, dynamic>.from(widget.item);
+    toSave['is_series'] = widget.isSeries;
+    await LocalStorageService.appendItem('continue_watching_pure', toSave);
 
     final streamData = await CinemanaPureEngine.getStreamData(videoId);
     setState(() => _isLoading = false);
@@ -1089,7 +1073,6 @@ class _DetailScreenState extends State<DetailScreen> {
                     const Text('قصة العمل:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 8),
                     Text(story, style: const TextStyle(color: Colors.white70, height: 1.6, fontSize: 13)),
-
                     if (widget.isSeries) ...[
                       const SizedBox(height: 24),
                       Text('الحلقات (${_episodes.length}):', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
@@ -1441,7 +1424,6 @@ class _PurePlayerScreenState extends State<PurePlayerScreen> with WidgetsBinding
                         ? Chewie(controller: _chewieController!)
                         : const CircularProgressIndicator(color: Color(0xFFFF003C)),
                   ),
-
                   if (_showVolumeIndicator)
                     Center(
                       child: Container(
@@ -1457,7 +1439,6 @@ class _PurePlayerScreenState extends State<PurePlayerScreen> with WidgetsBinding
                         ),
                       ),
                     ),
-
                   if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
                     Positioned(
                       bottom: _subtitleBottomPadding,
@@ -1471,7 +1452,6 @@ class _PurePlayerScreenState extends State<PurePlayerScreen> with WidgetsBinding
                         ),
                       ),
                     ),
-
                   if (!_isLocked)
                     Positioned(
                       top: 14,
@@ -1507,7 +1487,6 @@ class _PurePlayerScreenState extends State<PurePlayerScreen> with WidgetsBinding
                         ],
                       ),
                     ),
-
                   if (_isLocked)
                     Positioned(
                       top: 16,
