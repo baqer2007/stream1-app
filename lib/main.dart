@@ -46,7 +46,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 2. مدير التنزيل الداخلي مع دعم الاستئناف (Resumable Download)
+// 2. مدير التنزيلات مع دعم الاستئناف (Resumable Download)
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -310,7 +310,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// 4. الشاشة الرئيسية بتصميم انسيابي فاخر
+// 4. الشاشة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -375,7 +375,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     _loadSearchHistory();
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
           _fetchTabContent(reset: false);
         }
@@ -1172,7 +1173,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 5. شاشة التفاصيل (خوارزمية المطابقة الثلاثية الدقيقة للأنمي)
+// 5. محرك المطابقة الصارم الحاسم (Definitive Deterministic Matcher)
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1189,7 +1190,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isWatchLater = false;
 
   Map<String, dynamic>? _matchedCee;
-  List<dynamic> _seasons = [];
+  List<dynamic> _ceeEpisodesList = [];
   List<dynamic> _episodes = [];
   List<dynamic> _similarMedia = [];
   int _selectedSeasonNumber = 1;
@@ -1201,7 +1202,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _isSeries = widget.media['first_air_date'] != null || widget.media['name'] != null;
     _checkSavedStates();
     _saveHistory();
-    _matchExactContent();
+    _executeDeterministicMatch();
     _loadSimilar();
     if (_isSeries) _loadSeasons();
   }
@@ -1246,42 +1247,89 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     await LocalStorageService.appendItem('continue_watching_list_$p', widget.media);
   }
 
-  Future<void> _matchExactContent() async {
-    final originalName = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
-    final titleAr = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
+  String _cleanString(String s) {
+    return s.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9\u0621-\u064A\s]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  // خوارزمية التطابق الصارم لحل الخطأ تماماً
+  Future<void> _executeDeterministicMatch() async {
+    final orig = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
+    final title = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
     final date = (widget.media['first_air_date'] ?? widget.media['release_date'] ?? '').toString();
-    final year = date.split('-').first;
+    final targetYear = date.split('-').first.trim();
 
-    final searchTerms = [originalName, titleAr];
+    final queries = <String>[];
+    if (orig.isNotEmpty) queries.add(orig);
+    if (title.isNotEmpty && title != orig) queries.add(title);
 
-    for (var query in searchTerms) {
-      if (query.isEmpty) continue;
-      try {
-        final b64 = base64.encode(utf8.encode(query)).replaceAll('=', '');
-        final level = _isSeries ? '1' : '0';
-        final res = await http.get(
-          Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/25/video_title_search/$b64/itemsPerPage/25/pageNumber/0/level/$level'),
-          headers: StreamService.stealthHeaders,
-        ).timeout(const Duration(seconds: 4));
+    final levels = _isSeries ? ['1', '0'] : ['0', '1'];
 
-        if (res.statusCode == 200) {
-          dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-          List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
-          if (list.isNotEmpty) {
-            var matched = list.firstWhere(
-              (item) {
-                final itemYear = (item['year'] ?? '').toString();
-                final itemTitle = (item['en_title'] ?? item['title'] ?? '').toString().toLowerCase();
-                return itemYear == year || itemTitle.contains(query.toLowerCase());
-              },
-              orElse: () => list.first,
-            );
-            setState(() => _matchedCee = matched);
-            return;
+    for (var lvl in levels) {
+      for (var q in queries) {
+        try {
+          // الحفاظ على Base64 سليم بالكامل مع الـ Padding
+          final b64 = base64.encode(utf8.encode(q));
+          final res = await http.get(
+            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
+            headers: StreamService.stealthHeaders,
+          ).timeout(const Duration(seconds: 4));
+
+          if (res.statusCode == 200) {
+            dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
+            List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+
+            final cleanTarget = _cleanString(q);
+
+            for (var item in list) {
+              final enTitle = _cleanString((item['en_title'] ?? '').toString());
+              final arTitle = _cleanString((item['title'] ?? '').toString());
+              final itemYear = (item['year'] ?? '').toString().trim();
+
+              // التحقق الصارم من التطابق: يجب أن يحتوي الاسم على الكلمات الأساسية
+              bool nameMatched = false;
+              if (enTitle.isNotEmpty && (enTitle.contains(cleanTarget) || cleanTarget.contains(enTitle))) {
+                nameMatched = true;
+              } else if (arTitle.isNotEmpty && (arTitle.contains(cleanTarget) || cleanTarget.contains(arTitle))) {
+                nameMatched = true;
+              }
+
+              // إذا لم يتطابق الاسم، يتم استبعاده فوراً ومستحيل أن يفتح بالخطأ
+              if (!nameMatched) continue;
+
+              // إذا كانت السنة متطابقة أو أحدهما فارغ
+              bool yearMatched = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
+
+              if (yearMatched) {
+                if (mounted) {
+                  setState(() => _matchedCee = item);
+                  if (_isSeries) {
+                    _loadCeeEpisodes(item['nb'].toString());
+                  }
+                }
+                return;
+              }
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
+  }
+
+  Future<void> _loadCeeEpisodes(String parentId) async {
+    try {
+      final epRes = await http.get(
+        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/parent_id/$parentId/itemsPerPage/100/pageNumber/0/level/2'),
+        headers: StreamService.stealthHeaders,
+      ).timeout(const Duration(seconds: 5));
+
+      if (epRes.statusCode == 200) {
+        dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
+        List list = (epData is List) ? epData : (epData['articles'] ?? []);
+        if (mounted && list.isNotEmpty) {
+          setState(() => _ceeEpisodesList = list);
+        }
+      }
+    } catch (_) {}
   }
 
   void _loadSimilar() async {
@@ -1353,23 +1401,39 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 
   void _play(int epNum) async {
-    setState(() => _isLaunching = true);
-    String targetId = _matchedCee != null ? _matchedCee!['nb'].toString() : widget.media['id'].toString();
+    if (_matchedCee == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: const Text('هذا العمل غير متاح في السيرفر حالياً لتجنب تشغيل عمل عشوائي خاطئ 🛡️'),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
 
-    if (_isSeries && _matchedCee != null) {
-      try {
-        final epRes = await http.get(
-          Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/50/parent_id/$targetId/itemsPerPage/50/pageNumber/0/level/2'),
-          headers: StreamService.stealthHeaders,
-        ).timeout(const Duration(seconds: 4));
-        if (epRes.statusCode == 200) {
-          dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
-          List epList = (epData is List) ? epData : (epData['articles'] ?? []);
-          if (epList.isNotEmpty && epNum <= epList.length) {
-            targetId = epList[epNum - 1]['nb'].toString();
+    setState(() => _isLaunching = true);
+    String targetId = _matchedCee!['nb'].toString();
+
+    // اختيار حلقة المسلسل/الأنمي الدقيقة بدون خلط
+    if (_isSeries) {
+      if (_ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
+        targetId = _ceeEpisodesList[epNum - 1]['nb'].toString();
+      } else {
+        try {
+          final epRes = await http.get(
+            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/parent_id/$targetId/itemsPerPage/100/pageNumber/0/level/2'),
+            headers: StreamService.stealthHeaders,
+          ).timeout(const Duration(seconds: 4));
+          if (epRes.statusCode == 200) {
+            dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
+            List list = (epData is List) ? epData : (epData['articles'] ?? []);
+            if (list.isNotEmpty && epNum <= list.length) {
+              targetId = list[epNum - 1]['nb'].toString();
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
 
     StreamService.recordWatchEvent(targetId, widget.media['title'] ?? widget.media['name'] ?? '');
@@ -1394,7 +1458,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('تعذر استخراج رابط الفيديو، يرجى المحاولة بعد قليل'),
+          content: const Text('جاري معالجة سيرفر هذا الفيديو، يرجى المحاولة بعد لحظات'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -1402,7 +1466,18 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 
   void _triggerDownload() async {
-    String targetId = _matchedCee != null ? _matchedCee!['nb'].toString() : widget.media['id'].toString();
+    if (_matchedCee == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: const Text('العمل غير متوفر للتنزيل حالياً في السيرفر'),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
+
+    String targetId = _matchedCee!['nb'].toString();
     final title = widget.media['title'] ?? widget.media['name'] ?? 'Video';
 
     final data = await StreamService.getVideoSource(targetId);
@@ -1646,7 +1721,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 6. المشغل المطور مع شريط تحكم علوي منحني وتلقائي
+// 6. المشغل المطور: أزرار منفصلة لمنع التضارب والجودة التلقائية
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -2008,7 +2083,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
 
-            // شريط علوي أنيق مستدير الزوايا يفصل أزرار اليسار واليمين تماماً
+            // شريط علوي منفصل تماماً ومستدير لمنع تضارب أزرار الخروج مع الإعدادات
             if (!_isLocked)
               Positioned(
                 top: 14,
@@ -2088,7 +2163,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
 // -------------------------------------------------------------
-// 7. شاشة مدير التنزيلات المنحنية
+// 7. شاشة مدير التنزيلات
 // -------------------------------------------------------------
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
