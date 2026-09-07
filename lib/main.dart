@@ -310,7 +310,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// 4. الشاشة الرئيسية
+// 4. الشاشة الرئيسية بتصميم انسيابي خالي من الحواف الحادة
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -375,8 +375,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     _loadSearchHistory();
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 400) {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
         if (!_isLoadingMore && _hasMore) {
           _fetchTabContent(reset: false);
         }
@@ -1192,6 +1191,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   Map<String, dynamic>? _matchedCee;
   List<dynamic> _ceeEpisodesList = [];
   List<dynamic> _episodes = [];
+  List<dynamic> _seasons = []; // الحقل المضاف لحل خطأ الـ Build
   List<dynamic> _similarMedia = [];
   int _selectedSeasonNumber = 1;
   bool _isSeries = false;
@@ -1267,7 +1267,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     for (var lvl in levels) {
       for (var q in queries) {
         try {
-          // الحفاظ على Base64 سليم بالكامل مع الـ Padding
           final b64 = base64.encode(utf8.encode(q));
           final res = await http.get(
             Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
@@ -1285,7 +1284,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               final arTitle = _cleanString((item['title'] ?? '').toString());
               final itemYear = (item['year'] ?? '').toString().trim();
 
-              // التحقق الصارم من التطابق: يجب أن يحتوي الاسم على الكلمات الأساسية
               bool nameMatched = false;
               if (enTitle.isNotEmpty && (enTitle.contains(cleanTarget) || cleanTarget.contains(enTitle))) {
                 nameMatched = true;
@@ -1293,10 +1291,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 nameMatched = true;
               }
 
-              // إذا لم يتطابق الاسم، يتم استبعاده فوراً ومستحيل أن يفتح بالخطأ
               if (!nameMatched) continue;
 
-              // إذا كانت السنة متطابقة أو أحدهما فارغ
               bool yearMatched = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
 
               if (yearMatched) {
@@ -1415,7 +1411,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     setState(() => _isLaunching = true);
     String targetId = _matchedCee!['nb'].toString();
 
-    // اختيار حلقة المسلسل/الأنمي الدقيقة بدون خلط
     if (_isSeries) {
       if (_ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
         targetId = _ceeEpisodesList[epNum - 1]['nb'].toString();
@@ -2443,7 +2438,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           children: [
-                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12))),
                             Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (e.value / 10).clamp(0.1, 1.0), color: const Color(0xFFE50914), minHeight: 6))),
                             const SizedBox(width: 10),
                             Text('${e.value}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
