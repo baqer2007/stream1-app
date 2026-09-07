@@ -7,11 +7,10 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
-// مدير عام للمظهر واللغة وحساب المستخدم
+// مدير عام للحالة والمظهر واللغة وحساب المشرف
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
   AppState._();
@@ -131,7 +130,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// الصفحة الرئيسية (مع تبويبات الأفلام والمسلسلات والبحث المتوسع)
+// الصفحة الرئيسية (تبويبات الأفلام والمسلسلات، البحث المتوسع)
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -166,7 +165,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   bool _hasError = false;
   String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
   Map<String, dynamic>? _selectedGenre;
-  String _currentTabType = 'all'; // 'all', 'movies', 'series'
+  String _currentTabType = 'all';
 
   final List<Map<String, dynamic>> _genres = [
     {'id': 'all', 'ar': 'الكل', 'en': 'All'},
@@ -654,7 +653,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                 )
               : const Text('ONEBR TV', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           actions: [
-            // زر العدسة الذي يتوسع تلقائياً
             IconButton(
               icon: Icon(_isSearchExpanded ? Icons.close : Icons.search, color: const Color(0xFF00F0FF)),
               onPressed: () {
@@ -1244,7 +1242,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     String targetId = _ceeData != null ? _ceeData!['nb'].toString() : widget.media['id'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
-    // تسجيل المشاهدة الحقيقية في Firebase
     StreamService.recordWatchEvent(targetId, title);
 
     final data = await StreamService.getVideoSource(targetId);
@@ -1272,7 +1269,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  // التنزيل المباشر داخل التطبيق
+  // التنزيل المباشر داخل التطبيق بالاعتماد على التخزين الداخلي القياسي دون path_provider
   void _downloadAction() async {
     String targetId = _ceeData != null ? _ceeData!['nb'].toString() : widget.media['id'].toString();
     final title = widget.media['title'] ?? widget.media['name'] ?? 'Video';
@@ -1316,7 +1313,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
 
       try {
-        final dir = await getApplicationDocumentsDirectory();
+        final dir = Directory('/data/data/com.example.stream1_app/app_flutter');
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+
         final safeName = targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
         final filePath = '${dir.path}/$safeName.mp4';
 
@@ -1340,11 +1339,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         }).asFuture();
 
         await sink.close();
-        Navigator.pop(context); // إغلاق صندوق التقدم
+        Navigator.pop(context);
 
         final fileSizeMb = (file.lengthSync() / (1024 * 1024)).toStringAsFixed(1);
 
-        // حفظ في قائمة المنزلة
         final prefs = await SharedPreferences.getInstance();
         final raw = prefs.getString('downloaded_works_list');
         List<dynamic> dList = raw != null ? jsonDecode(raw) : [];
@@ -1493,7 +1491,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6, // أزرار صغيرة وأنيقة جداً
+                          crossAxisCount: 6,
                           crossAxisSpacing: 6,
                           mainAxisSpacing: 6,
                           childAspectRatio: 1.25,
@@ -1506,7 +1504,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                           return InkWell(
                             onTap: () => _playStream(episodeNum: epNum, epTitle: '$title - حلقة $epNum'),
                             child: Container(
-                              decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
+                              decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(5), border: Border.all(color: Colors.white12)),
                               child: Center(child: Text('$epNum', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
                             ),
                           );
@@ -1584,7 +1582,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _gestureFeedback = '';
   Timer? _feedbackTimer;
 
-  bool _subtitlesEnabled = true; // تعمل تلقائياً فوراً
+  bool _subtitlesEnabled = true;
   double _subtitleFontSize = 16.0;
   Color _subtitleTextColor = Colors.white;
   Color _subtitleBgColor = Colors.black;
