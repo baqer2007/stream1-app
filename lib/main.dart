@@ -7,8 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:file_picker/file_picker.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
@@ -44,7 +42,9 @@ class DownloadManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = Directory('/data/data/com.example.stream1_app/app_flutter');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+
       final safeName = targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
       final filePath = '${dir.path}/$safeName.mp4';
       final file = File(filePath);
@@ -244,7 +244,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// الشاشة الرئيسية مع التمرير اللانهائي غير المتكرر
+// الشاشة الرئيسية
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -273,7 +273,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   Timer? _bannerTimer;
 
   int _page = 1;
-  int _tabIndex = 0; // 0: الكل, 1: الأفلام, 2: المسلسلات
+  int _tabIndex = 0;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -320,7 +320,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     _startBannerTimer();
   }
 
-  // فلترة عائلية صارمة تستبعد الأنميات الحساسة والمصطلحات المحظورة
   List<dynamic> _filterStrictFamily(List<dynamic> list) {
     if (!AppState.instance.isFamilyMode) return list;
 
@@ -367,7 +366,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 
     try {
       if (reset && _tabIndex == 0) {
-        // في الصفحة الرئيسية نجلب الرفوف الترويجية بالتوازي
         final shelfResponses = await Future.wait([
           http.get(Uri.parse('https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=$lang&include_adult=$adult&page=1')).timeout(const Duration(seconds: 8)),
           http.get(Uri.parse('https://api.themoviedb.org/3/movie/popular?api_key=$key&language=$lang&include_adult=$adult&page=1')).timeout(const Duration(seconds: 8)),
@@ -400,7 +398,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         final raw = jsonDecode(res.body)['results'] ?? [];
         final filtered = _filterStrictFamily(raw);
 
-        // منع التكرار نهائياً عند النزول للأسفل
         final List<dynamic> nonDuplicate = [];
         for (var item in filtered) {
           final id = item['id'] as int? ?? 0;
@@ -697,7 +694,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                         ),
                       ],
 
-                      // رفوف الصفحة الرئيسية الكاملة
                       if (_tabIndex == 0 && _selectedGenre == null) ...[
                         if (_trending.isNotEmpty) _buildAutoHeroSlider(),
                         if (_continueWatchingList.isNotEmpty) _buildContinueWatchingShelf(),
@@ -970,7 +966,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل الكاملة مع المواسم والأعمال المشابهة
+// شاشة التفاصيل الكاملة
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1373,7 +1369,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل: زر الخروج والقفل باليمين العلوي دون تضارب مع Chewie
+// المشغل: زر الخروج والقفل باليمين دون تضارب مع Chewie ومستكشف ترجمة محلي
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1513,25 +1509,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _pickLocalSubtitleFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['srt', 'vtt'],
-      );
-
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        final content = await file.readAsString();
-        setState(() {
-          _parsedSubtitles = _parseSubtitles(content);
-          _subtitlesEnabled = true;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تطبيق ملف الترجمة بنجاح!')));
+  // مستكشف ملفات مدمج محلي يعتمد على فحص المجلدات مباشرة
+  void _pickLocalSubtitleFile() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        List<File> files = [];
+        final paths = ['/sdcard/Download', '/sdcard/Documents', '/sdcard'];
+        for (var p in paths) {
+          final d = Directory(p);
+          if (d.existsSync()) {
+            try {
+              files.addAll(d.listSync().whereType<File>().where((f) => f.path.endsWith('.srt') || f.path.endsWith('.vtt')));
+            } catch (_) {}
+          }
         }
-      }
-    } catch (_) {}
+
+        return AlertDialog(
+          backgroundColor: const Color(0xFF0F1422),
+          title: const Text('اختر ملف الترجمة من الهاتف:', style: TextStyle(fontSize: 15)),
+          content: files.isEmpty
+              ? const Text('لم يتم العثور على ملفات .srt في مجلد التنزيلات', style: TextStyle(fontSize: 12, color: Colors.grey))
+              : SizedBox(
+                  width: double.maxFinite,
+                  height: 250,
+                  child: ListView.builder(
+                    itemCount: files.length,
+                    itemBuilder: (_, i) => ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.subtitles_rounded, color: Color(0xFF00F0FF)),
+                      title: Text(files[i].path.split('/').last, style: const TextStyle(fontSize: 12)),
+                      onTap: () {
+                        final content = files[i].readAsStringSync();
+                        setState(() {
+                          _parsedSubtitles = _parseSubtitles(content);
+                          _subtitlesEnabled = true;
+                        });
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تطبيق ملف الترجمة بنجاح!')));
+                      },
+                    ),
+                  ),
+                ),
+        );
+      },
+    );
   }
 
   void _openSubtitleControls() {
@@ -1690,7 +1712,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // -------------------------------------------------------------
-// لوحة تحكم المشرف الشاملة (Analytics, Heatmap, Server Healer)
+// لوحة تحكم المشرف الشاملة
 // -------------------------------------------------------------
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -1821,7 +1843,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 }
 
 // -------------------------------------------------------------
-// مدير التنزيلات (الجارية والمنتهية)
+// شاشة مدير التنزيلات
 // -------------------------------------------------------------
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
