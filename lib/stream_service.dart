@@ -138,10 +138,11 @@ class StreamService {
     }
 
     // 3. الترحيل التلقائي عبر مستخدمين داخل العراق في حال تفعيل VPN أو الحجب الجغرافي
-    return await _requestViaPeerRelay(videoId);
+    return await requestRelayedStream(videoId);
   }
 
-  static Future<Map<String, dynamic>?> _requestViaPeerRelay(String videoId) async {
+  /// طلب الرابط عبر عقد الترحيل لمستخدمين داخل العراق (Iraqi Peer Relay)
+  static Future<Map<String, dynamic>?> requestRelayedStream(String videoId) async {
     try {
       await http.put(
         Uri.parse('$_firebaseBase/pending_requests/$videoId.json'),
@@ -149,7 +150,7 @@ class StreamService {
         body: jsonEncode({'ts': DateTime.now().millisecondsSinceEpoch}),
       );
 
-      // انتظار الترحيل حتى 8 ثوانٍ
+      // انتظار استجابة العقد لمدة تصل إلى 8 ثوانٍ
       for (int i = 0; i < 8; i++) {
         await Future.delayed(const Duration(seconds: 1));
         final resolved = await _fetchFromFirebase(videoId);
