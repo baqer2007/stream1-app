@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -52,7 +51,7 @@ class StreamLinkCache {
 }
 
 // -------------------------------------------------------------
-// 2. محرك البث الذكي الخالي من التخمين والمسميات
+// 2. محرك البث الذكي المباشر (فيديو خام فقط بدون صفحات ويب)
 // -------------------------------------------------------------
 class UniversalStreamResolver {
   static Future<Map<String, dynamic>?> resolveSmartStream({
@@ -67,6 +66,7 @@ class UniversalStreamResolver {
     final cached = await StreamLinkCache.getValidSource(cacheKey);
     if (cached != null) return cached;
 
+    // 1. جلب رابط الفيديو المباشر من الخادم المحلي
     if (targetId.isNotEmpty) {
       try {
         final localData = await StreamService.getVideoSource(targetId).timeout(const Duration(seconds: 3));
@@ -77,21 +77,36 @@ class UniversalStreamResolver {
       } catch (_) {}
     }
 
+    // 2. فحص محرك الاستخراج الاحتياطي لرابط HLS/MP4 مباشر فقط
     try {
-      final streamUrl = isSeries
-          ? 'https://autoembed.co/tv/tmdb/$tmdbId-$season-$episode'
-          : 'https://autoembed.co/movie/tmdb/$tmdbId';
+      final apiUrl = isSeries
+          ? 'https://vidlink.pro/api/b/tv/$tmdbId/$season/$episode'
+          : 'https://vidlink.pro/api/b/movie/$tmdbId';
 
-      final result = {
-        'video_url': streamUrl,
-        'qualities': [{'resolution': 'تلقائي', 'url': streamUrl}],
-      };
+      final res = await http.get(
+        Uri.parse(apiUrl),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://vidlink.pro/',
+        },
+      ).timeout(const Duration(seconds: 3));
 
-      await StreamLinkCache.saveSource(cacheKey, result);
-      return result;
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final streamUrl = data['stream']?['playlist'] ?? data['stream']?['qualities']?['auto']?['url'];
+
+        if (streamUrl != null && streamUrl.toString().contains(RegExp(r'\.(m3u8|mp4)'))) {
+          final result = {
+            'video_url': streamUrl.toString(),
+            'qualities': [{'resolution': 'تلقائي', 'url': streamUrl.toString()}],
+          };
+          await StreamLinkCache.saveSource(cacheKey, result);
+          return result;
+        }
+      }
     } catch (_) {}
 
-    return null;
+    return null; // لا نرجع رابط صفحة ويب نهائياً لمنع تعليق المشغل على شاشة سوداء
   }
 }
 
@@ -131,7 +146,7 @@ class LocalStorageService {
 }
 
 // -------------------------------------------------------------
-// 4. مدير التنزيل مع الاستمرار في الخلفية
+// 4. مدير التنزيل الداخلي
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -348,10 +363,6 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
                 surface: Color(0xFF111726),
                 secondary: Color(0xFF00F0FF),
               ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                backgroundColor: const Color(0xFF111726),
-              ),
             )
           : ThemeData.light().copyWith(
               scaffoldBackgroundColor: const Color(0xFFF1F5F9),
@@ -361,10 +372,6 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
                 primary: Color(0xFFE50914),
                 surface: Colors.white,
                 secondary: Color(0xFF0284C7),
-              ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                backgroundColor: Colors.white,
               ),
             ),
       home: const MainHomeScreen(),
@@ -953,7 +960,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 7. شاشة التفاصيل بالمطابقة الصارمة
+// 7. شاشة التفاصيل بالمطابقة الدقيقة للاسم الأصلي
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1014,37 +1021,51 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   Future<void> _matchStrictly() async {
     setState(() => _isMatching = true);
 
-    final title = (widget.media['original_title'] ?? widget.media['original_name'] ?? widget.media['title'] ?? widget.media['name'] ?? '').toString();
-    final cleanTitle = _clean(title);
+    // استخدام الاسم الأصلي دائماً (مثل Bleach) لتجنب الترجمات الحرفية
+    final String origName = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
+    final String fallbackName = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
+
+    final List<String> searchTerms = [];
+    if (origName.isNotEmpty) searchTerms.add(origName);
+    if (fallbackName.isNotEmpty && fallbackName != origName) searchTerms.add(fallbackName);
+
     final date = (widget.media['release_date'] ?? widget.media['first_air_date'] ?? '').toString();
     final targetYear = date.split('-').first.trim();
 
-    try {
-      final b64 = base64Url.encode(utf8.encode(title)).replaceAll('=', '');
-      final lvl = _isSeries ? '1' : '0';
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
-        headers: StreamService.stealthHeaders,
-      ).timeout(const Duration(seconds: 3));
+    for (var term in searchTerms) {
+      if (_matchedWork != null) break;
+      final cleanSearch = _clean(term);
+      if (cleanSearch.isEmpty) continue;
 
-      if (res.statusCode == 200) {
-        dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
+      try {
+        final b64 = base64Url.encode(utf8.encode(term)).replaceAll('=', '');
+        final lvl = _isSeries ? '1' : '0';
+        final res = await http.get(
+          Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
+          headers: StreamService.stealthHeaders,
+        ).timeout(const Duration(seconds: 3));
 
-        for (var item in list) {
-          final enTitle = _clean((item['en_title'] ?? '').toString());
-          final itemY = (item['year'] ?? '').toString().trim();
+        if (res.statusCode == 200) {
+          dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
+          List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
-          if (enTitle == cleanTitle && (targetYear.isEmpty || itemY == targetYear)) {
-            _matchedWork = item;
-            if (_isSeries) {
-              await _loadEpisodes(item['nb'].toString());
+          for (var item in list) {
+            final enTitle = _clean((item['en_title'] ?? '').toString());
+            final itemY = (item['year'] ?? '').toString().trim();
+
+            if (enTitle == cleanSearch || enTitle.contains(cleanSearch) || cleanSearch.contains(enTitle)) {
+              if (targetYear.isEmpty || itemY.isEmpty || (int.tryParse(itemY) != null && int.tryParse(targetYear) != null && (int.parse(itemY) - int.parse(targetYear)).abs() <= 1)) {
+                _matchedWork = item;
+                if (_isSeries) {
+                  await _loadEpisodes(item['nb'].toString());
+                }
+                break;
+              }
             }
-            break;
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     if (mounted) setState(() => _isMatching = false);
   }
@@ -1121,7 +1142,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تشغيل هذا العمل حالياً، يرجى المحاولة لاحقاً'), backgroundColor: Colors.redAccent),
+        const SnackBar(
+          content: Text('عذراً، هذا العمل غير متوفر حالياً على خوادم البث المباشر'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }
@@ -1216,7 +1240,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 8. المشغل المتكامل مع إيماءات اللمس والترجمة والقفل
+// 8. المشغل السريع مع إيماءات اللمس والترجمة المفصولة
 // -------------------------------------------------------------
 class Subtitle {
   final int index;
@@ -1277,7 +1301,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _currentStreamUrl = widget.videoUrl;
     _init();
-    if (!widget.isLocalFile) _fetchSubs();
   }
 
   @override
@@ -1355,7 +1378,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     _videoPlayerController = widget.isLocalFile
         ? VideoPlayerController.file(File(_currentStreamUrl))
-        : VideoPlayerController.networkUrl(Uri.parse(_currentStreamUrl), httpHeaders: resolvedHeaders);
+        : VideoPlayerController.networkUrl(
+            Uri.parse(_currentStreamUrl),
+            httpHeaders: resolvedHeaders,
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+          );
 
     await _videoPlayerController!.initialize();
 
@@ -1377,7 +1404,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       showOptions: false,
     );
 
-    if (mounted) setState(() => _isReady = true);
+    if (mounted) {
+      setState(() => _isReady = true);
+      if (!widget.isLocalFile) {
+        Future.delayed(const Duration(milliseconds: 500), _fetchSubs);
+      }
+    }
   }
 
   String _findSubtitleBinary(Duration pos) {
@@ -1691,7 +1723,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
 // -------------------------------------------------------------
-// 9. شاشة مدير التنزيلات
+// 9. شاشات التنزيل والمفضلة والمشاهدة لاحقاً
 // -------------------------------------------------------------
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -1786,9 +1818,53 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   }
 }
 
-// -------------------------------------------------------------
-// 10. شاشة المشاهدة لاحقاً
-// -------------------------------------------------------------
+class FavoritesScreen extends StatefulWidget {
+  const FavoritesScreen({super.key});
+
+  @override
+  State<FavoritesScreen> createState() => _FavoritesScreenState();
+}
+
+class _FavoritesScreenState extends State<FavoritesScreen> {
+  List<Map<String, dynamic>> _favorites = [];
+
+  @override
+  void initState() {
+    super.initState();
+    FavoritesService.getFavorites().then((list) {
+      if (mounted) setState(() => _favorites = list);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('⭐ قائمة المفضلة')),
+        body: _favorites.isEmpty
+            ? const Center(child: Text('لا توجد عناصر في المفضلة'))
+            : GridView.builder(
+                padding: const EdgeInsets.all(14),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.65),
+                itemCount: _favorites.length,
+                itemBuilder: (ctx, i) {
+                  final item = _favorites[i];
+                  final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+                  return InkWell(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
 class WatchLaterScreen extends StatefulWidget {
   const WatchLaterScreen({super.key});
 
@@ -1840,59 +1916,6 @@ class _WatchLaterScreenState extends State<WatchLaterScreen> {
   }
 }
 
-// -------------------------------------------------------------
-// 11. شاشة المفضلة
-// -------------------------------------------------------------
-class FavoritesScreen extends StatefulWidget {
-  const FavoritesScreen({super.key});
-
-  @override
-  State<FavoritesScreen> createState() => _FavoritesScreenState();
-}
-
-class _FavoritesScreenState extends State<FavoritesScreen> {
-  List<Map<String, dynamic>> _favorites = [];
-
-  @override
-  void initState() {
-    super.initState();
-    FavoritesService.getFavorites().then((list) {
-      if (mounted) setState(() => _favorites = list);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: const Text('⭐ قائمة المفضلة')),
-        body: _favorites.isEmpty
-            ? const Center(child: Text('لا توجد عناصر في المفضلة'))
-            : GridView.builder(
-                padding: const EdgeInsets.all(14),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.65),
-                itemCount: _favorites.length,
-                itemBuilder: (ctx, i) {
-                  final item = _favorites[i];
-                  final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
-                  return InkWell(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
-                    ),
-                  );
-                },
-              ),
-      ),
-    );
-  }
-}
-
-// -------------------------------------------------------------
-// 12. لوحة تحكم المشرف (Admin Dashboard)
-// -------------------------------------------------------------
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -1925,7 +1948,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('👑 لوحة تحكم المشرف'),
+          title: const Text('👑 لوحة الإدارة'),
           actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)],
         ),
         body: _loading
