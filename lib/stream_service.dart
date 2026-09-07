@@ -3,13 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class StreamService {
-  static const String _firebaseBase =
-      'https://cee-stream-default-rtdb.firebaseio.com';
+  static const String _firebaseBase = 'https://cee-stream-default-rtdb.firebaseio.com';
   static const String _cacheNode = 'stream_cache_v4';
 
   static Map<String, String> get stealthHeaders => {
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
         'Referer': 'https://cee.buzz/home',
         'Origin': 'https://cee.buzz',
         'Accept': 'application/json, text/plain, */*',
@@ -18,20 +16,15 @@ class StreamService {
   static Timer? _relayWorkerTimer;
   static bool _workerRunning = false;
 
-  /// تشغيل عقدة الترحيل (تعمل للأجهزة داخل العراق لخدمة طلبات الخارج والـ VPN)
   static void startRelayWorker() {
     if (_workerRunning) return;
     _workerRunning = true;
 
-    _relayWorkerTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _relayWorkerTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       try {
-        final res = await http
-            .get(Uri.parse('$_firebaseBase/pending_requests.json'))
-            .timeout(const Duration(seconds: 4));
-
+        final res = await http.get(Uri.parse('$_firebaseBase/pending_requests.json')).timeout(const Duration(seconds: 4));
         if (res.statusCode == 200 && res.body.isNotEmpty && res.body != 'null') {
           final Map<String, dynamic> requests = jsonDecode(res.body);
-
           for (var entry in requests.entries) {
             final String videoId = entry.key;
             final freshData = await _fetchFromCeeDirectly(videoId);
@@ -122,26 +115,22 @@ class StreamService {
     };
   }
 
-  /// طلب مصدر الفيديو (كاش -> مباشر محلي -> شبكة الترحيل للـ VPN)
+  /// جلب الفيديو المباشر من سينمانا أو الكاش السحابي
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     if (videoId.isEmpty) return null;
 
-    // 1. الكاش
     final cached = await _fetchFromFirebase(videoId);
     if (cached != null) return cached;
 
-    // 2. مباشر من السيرفر
     final fresh = await _fetchFromCeeDirectly(videoId);
     if (fresh != null) {
       await _saveToFirebase(videoId, fresh);
       return fresh;
     }
 
-    // 3. الترحيل التلقائي عبر مستخدمين داخل العراق في حال تفعيل VPN أو الحجب الجغرافي
     return await requestRelayedStream(videoId);
   }
 
-  /// طلب الرابط عبر عقد الترحيل لمستخدمين داخل العراق (Iraqi Peer Relay)
   static Future<Map<String, dynamic>?> requestRelayedStream(String videoId) async {
     try {
       await http.put(
@@ -150,8 +139,7 @@ class StreamService {
         body: jsonEncode({'ts': DateTime.now().millisecondsSinceEpoch}),
       );
 
-      // انتظار استجابة العقد لمدة تصل إلى 8 ثوانٍ
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; i < 6; i++) {
         await Future.delayed(const Duration(seconds: 1));
         final resolved = await _fetchFromFirebase(videoId);
         if (resolved != null) return resolved;
