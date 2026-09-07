@@ -7,11 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
 // -------------------------------------------------------------
-// مدير التنزيلات في الخلفية مع تتبع التقدم والإلغاء
+// مدير التنزيلات المتقدم (Active & Completed Downloads)
 // -------------------------------------------------------------
 class ActiveDownload {
   final String id;
@@ -42,9 +44,7 @@ class DownloadManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final dir = Directory('/data/data/com.example.stream1_app/app_flutter');
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-
+      final dir = await getApplicationDocumentsDirectory();
       final safeName = targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
       final filePath = '${dir.path}/$safeName.mp4';
       final file = File(filePath);
@@ -105,7 +105,7 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // -------------------------------------------------------------
-// مدير الحالة واللغة والوضع العائلي
+// مدير الحالة واللغة والمظهر والوضع العائلي
 // -------------------------------------------------------------
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
@@ -119,7 +119,6 @@ class AppState extends ChangeNotifier {
   String deviceId = '';
 
   bool isFamilyMode = true;
-
   List<String> profiles = ['الرئيسي', 'أنمي', 'أطفال'];
   String currentProfile = 'الرئيسي';
 
@@ -245,7 +244,7 @@ class SecurityEngine {
 }
 
 // -------------------------------------------------------------
-// الشاشة الرئيسية
+// الشاشة الرئيسية مع التمرير اللانهائي غير المتكرر
 // -------------------------------------------------------------
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -262,18 +261,36 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 
   bool _isSearchExpanded = false;
   List<dynamic> _trending = [];
+  List<dynamic> _featuredMovies = [];
+  List<dynamic> _featuredSeries = [];
   List<dynamic> _activeGrid = [];
+  final Set<int> _seenGridIds = {};
+
   List<Map<String, dynamic>> _continueWatchingList = [];
   List<String> _recentSearches = [];
 
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
+
   int _page = 1;
   int _tabIndex = 0; // 0: الكل, 1: الأفلام, 2: المسلسلات
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String _activeTitle = '🔥 الأكثر تداولاً وشهرة';
+  Map<String, dynamic>? _selectedGenre;
+
+  final List<Map<String, dynamic>> _genres = [
+    {'id': 'all', 'ar': 'الكل', 'en': 'All'},
+    {'id': 'anime', 'ar': 'أنمي ياباني', 'en': 'Anime'},
+    {'id': '28', 'ar': 'أكشن', 'en': 'Action'},
+    {'id': '12', 'ar': 'مغامرة', 'en': 'Adventure'},
+    {'id': '35', 'ar': 'كوميديا', 'en': 'Comedy'},
+    {'id': '80', 'ar': 'جريمة', 'en': 'Crime'},
+    {'id': '18', 'ar': 'دراما', 'en': 'Drama'},
+    {'id': '27', 'ar': 'رعب', 'en': 'Horror'},
+    {'id': '878', 'ar': 'خيال علمي', 'en': 'Sci-Fi'},
+  ];
 
   @override
   void initState() {
@@ -282,6 +299,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         _tabIndex = _tabController.index;
+        _selectedGenre = null;
         _fetchTabContent(reset: true);
       }
     });
@@ -302,12 +320,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     _startBannerTimer();
   }
 
+  // فلترة عائلية صارمة تستبعد الأنميات الحساسة والمصطلحات المحظورة
   List<dynamic> _filterStrictFamily(List<dynamic> list) {
     if (!AppState.instance.isFamilyMode) return list;
 
     final blockedTerms = [
       'overflow', 'ecchi', 'hentai', 'erotic', 'sensual', 'sex', 'nude',
-      'حمام', 'إباحي', 'جنسي', 'عري', 'إيتشي', 'شذوذ', 'adult'
+      'حمام', 'إباحي', 'جنسي', 'عري', 'إيتشي', 'شذوذ', 'adult', 'lust'
     ];
 
     return list.where((item) {
@@ -336,6 +355,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (reset) {
       _page = 1;
       _hasMore = true;
+      _seenGridIds.clear();
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
@@ -345,29 +365,59 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
     final adult = AppState.instance.isFamilyMode ? 'false' : 'true';
 
-    String endpoint;
-    if (_tabIndex == 1) {
-      endpoint = 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=$lang&include_adult=$adult&sort_by=popularity.desc&page=$_page';
-    } else if (_tabIndex == 2) {
-      endpoint = 'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=$lang&include_adult=$adult&sort_by=popularity.desc&page=$_page';
-    } else {
-      endpoint = 'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=$lang&include_adult=$adult&page=$_page';
-    }
-
     try {
+      if (reset && _tabIndex == 0) {
+        // في الصفحة الرئيسية نجلب الرفوف الترويجية بالتوازي
+        final shelfResponses = await Future.wait([
+          http.get(Uri.parse('https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=$lang&include_adult=$adult&page=1')).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse('https://api.themoviedb.org/3/movie/popular?api_key=$key&language=$lang&include_adult=$adult&page=1')).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse('https://api.themoviedb.org/3/tv/popular?api_key=$key&language=$lang&include_adult=$adult&page=1')).timeout(const Duration(seconds: 8)),
+        ]);
+
+        if (mounted) {
+          _trending = _filterStrictFamily(jsonDecode(shelfResponses[0].body)['results'] ?? []);
+          _featuredMovies = _filterStrictFamily(jsonDecode(shelfResponses[1].body)['results'] ?? []);
+          _featuredSeries = _filterStrictFamily(jsonDecode(shelfResponses[2].body)['results'] ?? []);
+        }
+      }
+
+      String endpoint;
+      if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
+        final gId = _selectedGenre!['id'];
+        endpoint = (gId == 'anime')
+            ? 'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=$lang&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=$_page&include_adult=$adult'
+            : 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=$lang&with_genres=$gId&sort_by=popularity.desc&page=$_page&include_adult=$adult';
+      } else if (_tabIndex == 1) {
+        endpoint = 'https://api.themoviedb.org/3/discover/movie?api_key=$key&language=$lang&include_adult=$adult&sort_by=popularity.desc&page=$_page';
+      } else if (_tabIndex == 2) {
+        endpoint = 'https://api.themoviedb.org/3/discover/tv?api_key=$key&language=$lang&include_adult=$adult&sort_by=popularity.desc&page=$_page';
+      } else {
+        endpoint = 'https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=$lang&include_adult=$adult&page=$_page';
+      }
+
       final res = await http.get(Uri.parse(endpoint)).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
         final raw = jsonDecode(res.body)['results'] ?? [];
         final filtered = _filterStrictFamily(raw);
 
+        // منع التكرار نهائياً عند النزول للأسفل
+        final List<dynamic> nonDuplicate = [];
+        for (var item in filtered) {
+          final id = item['id'] as int? ?? 0;
+          if (!_seenGridIds.contains(id)) {
+            _seenGridIds.add(id);
+            nonDuplicate.add(item);
+          }
+        }
+
         setState(() {
           if (reset) {
-            _activeGrid = filtered;
-            if (_tabIndex == 0) _trending = List.from(filtered);
+            _activeGrid = nonDuplicate;
           } else {
-            _activeGrid.addAll(filtered);
-            if (filtered.isEmpty) _hasMore = false;
+            _activeGrid.addAll(nonDuplicate);
           }
+          if (filtered.isEmpty || nonDuplicate.isEmpty) _hasMore = false;
+          _page++;
           _isLoadingInitial = false;
           _isLoadingMore = false;
         });
@@ -375,6 +425,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     } catch (_) {
       if (mounted) setState(() { _isLoadingInitial = false; _isLoadingMore = false; });
     }
+  }
+
+  void _filterGenre(Map<String, dynamic> genre) {
+    _selectedGenre = genre;
+    final app = AppState.instance;
+    setState(() {
+      _activeTitle = genre['id'] == 'all'
+          ? app.tr('🔥 الأكثر تداولاً وشهرة', '🔥 Trending Now')
+          : app.tr('تصنيف: ${genre['ar']}', 'Category: ${genre['en']}');
+    });
+    _fetchTabContent(reset: true);
   }
 
   void _startBannerTimer() {
@@ -498,7 +559,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               SwitchListTile(
                 secondary: const Icon(Icons.shield_rounded, color: Color(0xFF10B981)),
                 title: Text(app.tr('الوضع العائلي الصارم', 'Strict Family Mode')),
-                subtitle: Text(app.tr('حجب تام لكافة الأفلام والأنميات غير الملائمة', 'Block sensitive & ecchi titles'), style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                subtitle: Text(app.tr('حجب تام لكافة الأفلام والأنميات غير الملائمة', 'Block sensitive titles'), style: const TextStyle(fontSize: 10, color: Colors.grey)),
                 value: app.isFamilyMode,
                 onChanged: (val) {
                   app.toggleFamilyMode(val);
@@ -521,12 +582,48 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.watch_later_rounded, color: Color(0xFF00F0FF)),
+                title: Text(app.tr('المشاهدة لاحقاً', 'Watch Later')),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const WatchLaterScreen()));
+                },
+              ),
+              if (app.isAdmin)
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF00F0FF)),
+                  title: Text(app.tr('👑 لوحة تحكم المشرف (Admin)', '👑 Admin Dashboard')),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboardScreen()));
+                  },
+                ),
+              const Divider(),
               SwitchListTile(
                 secondary: Icon(app.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded),
                 title: Text(app.tr('المظهر الداكن', 'Dark Theme')),
                 value: app.isDark,
                 onChanged: (_) => app.toggleTheme(),
               ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(app.tr('التصنيفات والأنواع:', 'Categories:'), style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
+              ),
+              ..._genres.map((g) => ListTile(
+                    dense: true,
+                    leading: Icon(
+                      g['id'] == 'anime' ? Icons.animation_rounded : Icons.movie_creation_outlined,
+                      size: 20,
+                      color: g['id'] == 'anime' ? const Color(0xFF00F0FF) : Colors.grey,
+                    ),
+                    title: Text(isRtl ? g['ar'] : g['en']),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _filterGenre(g);
+                    },
+                  )),
             ],
           ),
         ),
@@ -600,12 +697,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                         ),
                       ],
 
-                      if (_tabIndex == 0 && _trending.isNotEmpty) ...[
-                        _buildAutoHeroSlider(),
-                      ],
-
-                      if (_continueWatchingList.isNotEmpty) ...[
-                        _buildContinueWatchingShelf(),
+                      // رفوف الصفحة الرئيسية الكاملة
+                      if (_tabIndex == 0 && _selectedGenre == null) ...[
+                        if (_trending.isNotEmpty) _buildAutoHeroSlider(),
+                        if (_continueWatchingList.isNotEmpty) _buildContinueWatchingShelf(),
+                        if (_featuredMovies.isNotEmpty) _buildSectionShelf('🎬 أفلام مميزة ومختارة', _featuredMovies),
+                        if (_featuredSeries.isNotEmpty) _buildSectionShelf('📺 مسلسلات وأنمي رائجة', _featuredSeries),
                       ],
 
                       Padding(
@@ -746,6 +843,61 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     );
   }
 
+  Widget _buildSectionShelf(String title, List<dynamic> list) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth / 3.8).clamp(85.0, 115.0);
+    final cardHeight = cardWidth * 1.45;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 6.0), child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+        SizedBox(
+          height: cardHeight + 42,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: list.length,
+            itemBuilder: (ctx, i) {
+              final item = list[i];
+              final mTitle = item['title'] ?? item['name'] ?? '';
+              final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+              final score = (item['vote_average'] ?? 8.0).toStringAsFixed(1);
+
+              return InkWell(
+                onTap: () => _openDetails(item),
+                child: Container(
+                  width: cardWidth,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white10)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        child: poster.isNotEmpty ? Image.network(poster, height: cardHeight, width: double.infinity, fit: BoxFit.cover) : Container(height: cardHeight, color: Colors.grey.shade900),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(mTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700)),
+                            Text('⭐ $score', style: const TextStyle(fontSize: 8.5, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildResponsiveGrid(List<dynamic> list) {
     final width = MediaQuery.of(context).size.width;
     final count = width > 900 ? 6 : (width > 600 ? 5 : (width > 380 ? 4 : 3));
@@ -818,7 +970,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// شاشة التفاصيل
+// شاشة التفاصيل الكاملة مع المواسم والأعمال المشابهة
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -831,17 +983,68 @@ class MediaDetailScreen extends StatefulWidget {
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isLaunching = false;
   bool _isLoadingEpisodes = true;
+  bool _isFav = false;
+  bool _isWatchLater = false;
+
   Map<String, dynamic>? _ceeData;
+  List<dynamic> _seasons = [];
   List<dynamic> _episodes = [];
+  List<dynamic> _similarMedia = [];
+  int _selectedSeasonNumber = 1;
   bool _isSeries = false;
 
   @override
   void initState() {
     super.initState();
     _isSeries = widget.media['first_air_date'] != null || widget.media['name'] != null;
+    _checkSavedStates();
     _saveToContinueWatching();
     _matchExactContent();
-    if (_isSeries) _loadEpisodes();
+    _loadSimilar();
+    if (_isSeries) _loadSeasons();
+  }
+
+  void _checkSavedStates() async {
+    final id = widget.media['id'].toString();
+    final isFav = await FavoritesService.isFavorited(id);
+    final prefs = await SharedPreferences.getInstance();
+    final p = AppState.instance.currentProfile;
+    final wlList = prefs.getStringList('watch_later_ids_$p') ?? [];
+
+    if (mounted) {
+      setState(() {
+        _isFav = isFav;
+        _isWatchLater = wlList.contains(id);
+      });
+    }
+  }
+
+  void _toggleWatchLater() async {
+    final prefs = await SharedPreferences.getInstance();
+    final p = AppState.instance.currentProfile;
+    final id = widget.media['id'].toString();
+    final raw = prefs.getString('watch_later_items_$p');
+    List<dynamic> list = raw != null ? jsonDecode(raw) : [];
+    List<String> ids = prefs.getStringList('watch_later_ids_$p') ?? [];
+
+    if (_isWatchLater) {
+      list.removeWhere((x) => x['id'].toString() == id);
+      ids.remove(id);
+    } else {
+      list.insert(0, widget.media);
+      ids.add(id);
+    }
+
+    await prefs.setString('watch_later_items_$p', jsonEncode(list));
+    await prefs.setStringList('watch_later_ids_$p', ids);
+
+    if (mounted) {
+      setState(() => _isWatchLater = !_isWatchLater);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_isWatchLater ? 'تمت الإضافة للمشاهدة لاحقاً' : 'تمت الإزالة من المشاهدة لاحقاً'),
+        duration: const Duration(seconds: 1),
+      ));
+    }
   }
 
   void _saveToContinueWatching() async {
@@ -882,15 +1085,65 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadEpisodes() async {
+  void _loadSimilar() async {
     final tmdbId = widget.media['id'];
     final key = SecurityEngine.tmdbKey;
+    final type = _isSeries ? 'tv' : 'movie';
+    final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
+
     try {
-      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/tv/$tmdbId/season/1?api_key=$key&language=ar')).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final list = jsonDecode(res.body)['episodes'] as List? ?? [];
-        if (mounted) setState(() { _episodes = list; _isLoadingEpisodes = false; });
-        return;
+      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/$type/$tmdbId/recommendations?api_key=$key&language=$lang')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200 && mounted) {
+        setState(() {
+          _similarMedia = jsonDecode(res.body)['results'] ?? [];
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadSeasons() async {
+    final tmdbId = widget.media['id'];
+    final key = SecurityEngine.tmdbKey;
+    final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
+
+    try {
+      final tvRes = await http.get(Uri.parse('https://api.themoviedb.org/3/tv/$tmdbId?api_key=$key&language=$lang')).timeout(const Duration(seconds: 5));
+      if (tvRes.statusCode == 200) {
+        final data = jsonDecode(tvRes.body);
+        final rawSeasons = data['seasons'] as List? ?? [];
+        _seasons = rawSeasons.where((s) => (s['season_number'] ?? 0) > 0).toList();
+
+        if (_seasons.isNotEmpty) {
+          _selectedSeasonNumber = _seasons.first['season_number'] ?? 1;
+          _loadEpisodesForSeason(_selectedSeasonNumber);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    _seasons = [{'season_number': 1, 'name': 'الموسم 1'}];
+    _episodes = List.generate(24, (i) => {'episode_number': i + 1});
+    if (mounted) setState(() => _isLoadingEpisodes = false);
+  }
+
+  Future<void> _loadEpisodesForSeason(int sNum) async {
+    setState(() => _isLoadingEpisodes = true);
+    final tmdbId = widget.media['id'];
+    final key = SecurityEngine.tmdbKey;
+    final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
+
+    try {
+      final epRes = await http.get(Uri.parse('https://api.themoviedb.org/3/tv/$tmdbId/season/$sNum?api_key=$key&language=$lang')).timeout(const Duration(seconds: 5));
+      if (epRes.statusCode == 200) {
+        final epData = jsonDecode(epRes.body);
+        final list = epData['episodes'] as List? ?? [];
+        if (mounted) {
+          setState(() {
+            _episodes = list;
+            _isLoadingEpisodes = false;
+          });
+          return;
+        }
       }
     } catch (_) {}
 
@@ -908,6 +1161,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     String targetId = _ceeData != null ? _ceeData!['nb'].toString() : widget.media['id'].toString();
     final title = epTitle ?? widget.media['title'] ?? widget.media['name'] ?? 'بث مباشر';
 
+    StreamService.recordWatchEvent(targetId, title);
+
     final data = await StreamService.getVideoSource(targetId);
     setState(() => _isLaunching = false);
 
@@ -920,6 +1175,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             title: title,
             videoUrl: data['video_url'],
             qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
+            onNextEpisode: episodeNum != null && episodeNum < _episodes.length
+                ? () => _playStream(episodeNum: episodeNum + 1, epTitle: '${widget.media['title'] ?? widget.media['name']} - حلقة ${episodeNum + 1}')
+                : null,
           ),
         ),
       );
@@ -961,7 +1219,23 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(backgroundColor: Theme.of(context).cardColor, title: Text(title, style: const TextStyle(fontSize: 16))),
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).cardColor,
+          title: Text(title, style: const TextStyle(fontSize: 16)),
+          actions: [
+            IconButton(
+              icon: Icon(_isWatchLater ? Icons.watch_later_rounded : Icons.watch_later_outlined, color: const Color(0xFF00F0FF)),
+              onPressed: _toggleWatchLater,
+            ),
+            IconButton(
+              icon: Icon(_isFav ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: const Color(0xFFF59E0B)),
+              onPressed: () async {
+                final state = await FavoritesService.toggleFavorite(widget.media, _isSeries ? 'tv' : 'movie');
+                setState(() => _isFav = state);
+              },
+            ),
+          ],
+        ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1009,6 +1283,38 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
               if (_isSeries) ...[
                 const SizedBox(height: 18),
+                if (_seasons.isNotEmpty) ...[
+                  const Text('المواسم:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 34,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _seasons.length,
+                      itemBuilder: (ctx, i) {
+                        final sNum = _seasons[i]['season_number'] ?? (i + 1);
+                        final isSelected = _selectedSeasonNumber == sNum;
+                        return InkWell(
+                          onTap: () {
+                            setState(() => _selectedSeasonNumber = sNum);
+                            _loadEpisodesForSeason(sNum);
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFFE50914) : Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Text('الموسم $sNum', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text('الحلقات (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 _isLoadingEpisodes
@@ -1030,6 +1336,34 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         },
                       ),
               ],
+
+              if (_similarMedia.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                const Text('أعمال قد تعجبك (مشابهة):', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 140,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _similarMedia.length,
+                    itemBuilder: (ctx, i) {
+                      final item = _similarMedia[i];
+                      final pPath = item['poster_path'];
+                      return InkWell(
+                        onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))),
+                        child: Container(
+                          width: 90,
+                          margin: const EdgeInsets.only(left: 6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: pPath != null ? Image.network('https://image.tmdb.org/t/p/w200$pPath', fit: BoxFit.cover) : Container(color: Colors.grey.shade900),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1039,13 +1373,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// المشغل المطور: زر خروج منفصل لا يتعارض مع زر إعدادات Chewie
+// المشغل: زر الخروج والقفل باليمين العلوي دون تضارب مع Chewie
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
   final List<Map<String, dynamic>> qualities;
+  final VoidCallback? onNextEpisode;
   final bool isLocalFile;
 
   const PlayerScreen({
@@ -1054,6 +1389,7 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.videoUrl,
     required this.qualities,
+    this.onNextEpisode,
     this.isLocalFile = false,
   });
 
@@ -1177,50 +1513,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _pickLocalSubtitleFile() {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        List<File> files = [];
-        final paths = ['/sdcard/Download', '/sdcard/Documents', '/sdcard'];
-        for (var p in paths) {
-          final d = Directory(p);
-          if (d.existsSync()) {
-            try {
-              files.addAll(d.listSync().whereType<File>().where((f) => f.path.endsWith('.srt') || f.path.endsWith('.vtt')));
-            } catch (_) {}
-          }
-        }
+  void _pickLocalSubtitleFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['srt', 'vtt'],
+      );
 
-        return AlertDialog(
-          backgroundColor: const Color(0xFF0F1422),
-          title: const Text('اختر ملف الترجمة من الهاتف:', style: TextStyle(fontSize: 15)),
-          content: files.isEmpty
-              ? const Text('لم يتم العثور على ملفات .srt في مجلد التنزيلات', style: TextStyle(fontSize: 12, color: Colors.grey))
-              : SizedBox(
-                  width: double.maxFinite,
-                  height: 250,
-                  child: ListView.builder(
-                    itemCount: files.length,
-                    itemBuilder: (_, i) => ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.subtitles_rounded, color: Color(0xFF00F0FF)),
-                      title: Text(files[i].path.split('/').last, style: const TextStyle(fontSize: 12)),
-                      onTap: () {
-                        final content = files[i].readAsStringSync();
-                        setState(() {
-                          _parsedSubtitles = _parseSubtitles(content);
-                          _subtitlesEnabled = true;
-                        });
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تطبيق ملف الترجمة بنجاح!')));
-                      },
-                    ),
-                  ),
-                ),
-        );
-      },
-    );
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final content = await file.readAsString();
+        setState(() {
+          _parsedSubtitles = _parseSubtitles(content);
+          _subtitlesEnabled = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تطبيق ملف الترجمة بنجاح!')));
+        }
+      }
+    } catch (_) {}
   }
 
   void _openSubtitleControls() {
@@ -1312,7 +1623,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
             ),
 
-            // طبقة الترجمة الحرة
             if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
               Positioned(
                 bottom: _subtitleBottomPadding,
@@ -1331,19 +1641,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
 
-            // شريط علوي أنيق: زر الخروج وزر القفل في الزاوية اليمنى بعيداً عن أزرار Chewie اليسرى
+            // زر الخروج وزر القفل في الزاوية العلوية اليمنى
             if (!_isLocked)
               Positioned(
                 top: 14,
                 right: 14,
                 child: Row(
                   children: [
-                    // زر قفل الشاشة
                     Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), shape: BoxShape.circle),
                       child: IconButton(
                         icon: const Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
                         tooltip: 'قفل الشاشة',
@@ -1351,12 +1657,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // زر الخروج من المشغل
                     Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), shape: BoxShape.circle),
                       child: IconButton(
                         icon: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                         tooltip: 'إغلاق المشغل',
@@ -1367,16 +1669,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
 
-            // في حال القفل: إظهار زر فتح القفل فقط
             if (_isLocked)
               Positioned(
                 top: 14,
                 right: 14,
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE50914).withOpacity(0.8),
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFFE50914).withOpacity(0.8), shape: BoxShape.circle),
                   child: IconButton(
                     icon: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
                     tooltip: 'إلغاء قفل الشاشة',
@@ -1384,6 +1682,137 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// لوحة تحكم المشرف الشاملة (Analytics, Heatmap, Server Healer)
+// -------------------------------------------------------------
+class AdminDashboardScreen extends StatefulWidget {
+  const AdminDashboardScreen({super.key});
+
+  @override
+  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  bool _loading = true;
+  int _activeUsers = 0;
+  int _totalViews = 0;
+  List<Map<String, dynamic>> _recentPlays = [];
+  Map<String, int> _heatmap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  void _loadStats() async {
+    setState(() => _loading = true);
+    final stats = await StreamService.getRealAdminStats();
+    if (mounted) {
+      setState(() {
+        _activeUsers = stats['active_users'] ?? 0;
+        _totalViews = stats['total_views'] ?? 0;
+        _recentPlays = List<Map<String, dynamic>>.from(stats['recent_plays'] ?? []);
+        _heatmap = Map<String, int>.from(stats['heatmap'] ?? {});
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppState.instance;
+    return Directionality(
+      textDirection: app.lang == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(app.tr('👑 لوحة تحكم المشرف والخريطة الحية', '👑 Admin & Heatmap Dashboard')),
+          backgroundColor: const Color(0xFF0F1422),
+          actions: [
+            IconButton(icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00F0FF)), onPressed: _loadStats)
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(app.tr('📊 إحصائيات المنصة الحية:', '📊 Live Stats:'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _statCard('المستخدمين المتصلين الآن', '$_activeUsers', Icons.wifi_tethering_rounded, const Color(0xFF10B981)),
+                      const SizedBox(width: 10),
+                      _statCard('إجمالي المشاهدات الحقيقية', '$_totalViews', Icons.play_circle_filled_rounded, const Color(0xFFF59E0B)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  Text('🔥 الخريطة الحرارية للمشاهدين (Live Traffic Heatmap):', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFF0F1422), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+                    child: Column(
+                      children: _heatmap.entries.map((e) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 70, child: Text(e.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                value: (e.value / (_activeUsers == 0 ? 1 : _activeUsers)).clamp(0.1, 1.0),
+                                color: const Color(0xFFE50914),
+                                backgroundColor: const Color(0xFF172033),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text('${e.value} مشاهد', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  Text('📺 أحدث المشاهدات الحية:', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ..._recentPlays.map((p) => Card(
+                    color: const Color(0xFF0F1422),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.live_tv_rounded, color: Color(0xFFE50914), size: 20),
+                      title: Text(p['title'] ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      trailing: Text(p['time'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ),
+                  )),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _statCard(String title, String val, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: const Color(0xFF0F1422), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 26),
+            const SizedBox(height: 8),
+            Text(val, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
+            const SizedBox(height: 4),
+            Text(title, style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
       ),
@@ -1510,6 +1939,68 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
               )),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// شاشة المشاهدة لاحقاً
+// -------------------------------------------------------------
+class WatchLaterScreen extends StatefulWidget {
+  const WatchLaterScreen({super.key});
+
+  @override
+  State<WatchLaterScreen> createState() => _WatchLaterScreenState();
+}
+
+class _WatchLaterScreenState extends State<WatchLaterScreen> {
+  List<Map<String, dynamic>> _items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final p = AppState.instance.currentProfile;
+    final raw = prefs.getString('watch_later_items_$p');
+    if (raw != null) {
+      setState(() => _items = List<Map<String, dynamic>>.from(jsonDecode(raw)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('🕒 المشاهدة لاحقاً'), backgroundColor: Theme.of(context).cardColor),
+        body: _items.isEmpty
+            ? const Center(child: Text('لا توجد عناصر في قائمة المشاهدة لاحقاً'))
+            : GridView.builder(
+                padding: const EdgeInsets.all(10),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 6, mainAxisSpacing: 6, childAspectRatio: 0.58),
+                itemCount: _items.length,
+                itemBuilder: (ctx, i) {
+                  final item = _items[i];
+                  final poster = item['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${item['poster_path']}' : '';
+                  return InkWell(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _load()),
+                    child: Container(
+                      decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(6)),
+                      child: Column(
+                        children: [
+                          Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(6)), child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container())),
+                          Padding(padding: const EdgeInsets.all(4), child: Text(item['title'] ?? item['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5))),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
