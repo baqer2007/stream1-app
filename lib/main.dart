@@ -52,72 +52,67 @@ class StreamLinkCache {
 }
 
 // -------------------------------------------------------------
-// 2. محرك الاستخراج الهجين الفائق (Universal Stream Resolver)
+// 2. محرك الاستخراج والتوجيه الذكي للموقع الجغرافي
 // -------------------------------------------------------------
 class UniversalStreamResolver {
+  static const stealthHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+  };
+
+  /// استخراج روابط البث المباشرة الخالية من الإعلانات لمستخدمي الخارج
   static Future<Map<String, dynamic>?> resolveDirectExtraction({
     required String tmdbId,
     required bool isSeries,
     int season = 1,
     int episode = 1,
   }) async {
-    try {
-      final endpoint = isSeries
-          ? 'https://vidlink.pro/api/b/tv/$tmdbId/$season/$episode'
-          : 'https://vidlink.pro/api/b/movie/$tmdbId';
+    final urls = isSeries
+        ? [
+            'https://player.autoembed.cc/embed/tv/$tmdbId/$season/$episode',
+            'https://vidsrc.cc/v2/embed/tv/$tmdbId/$season/$episode',
+          ]
+        : [
+            'https://player.autoembed.cc/embed/movie/$tmdbId',
+            'https://vidsrc.cc/v2/embed/movie/$tmdbId',
+          ];
 
-      final res = await http.get(
-        Uri.parse(endpoint),
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://vidlink.pro/',
-        },
-      ).timeout(const Duration(seconds: 4));
+    for (var url in urls) {
+      try {
+        final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          final reg = RegExp(r'(https?://[^\s"\'<>]+\.(?:m3u8|mp4)[^\s"\'<>]*)');
+          final match = reg.firstMatch(res.body);
+
+          if (match != null) {
+            final rawUrl = match.group(1)!;
+            return {
+              'video_url': rawUrl,
+              'qualities': [{'resolution': 'تلقائي (Fast CDN)', 'url': rawUrl}],
+              'source_name': 'سيرفر دولي فائق السرعة 🌍',
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final emergencyApi = isSeries
+          ? 'https://embed.su/api/e/tv/$tmdbId/$season/$episode'
+          : 'https://embed.su/api/e/movie/$tmdbId';
+
+      final res = await http.get(Uri.parse(emergencyApi), headers: {
+        'Referer': 'https://embed.su/',
+        'User-Agent': stealthHeaders['User-Agent']!,
+      }).timeout(const Duration(seconds: 3));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final streamUrl = data['stream']?['playlist'] ?? data['stream']?['qualities']?['auto']?['url'];
-
-        if (streamUrl != null && streamUrl.toString().isNotEmpty) {
-          final List<Map<String, dynamic>> parsedQualities = [];
-          if (data['stream']?['qualities'] != null) {
-            final qMap = data['stream']['qualities'] as Map<String, dynamic>;
-            qMap.forEach((k, v) {
-              if (v is Map && v['url'] != null) {
-                parsedQualities.add({'resolution': k, 'url': v['url']});
-              }
-            });
-          }
-          if (parsedQualities.isEmpty) {
-            parsedQualities.add({'resolution': 'تلقائي (Auto)', 'url': streamUrl});
-          }
-
+        if (data['source'] != null) {
           return {
-            'video_url': streamUrl,
-            'qualities': parsedQualities,
-            'source_name': 'Global Fast Edge (Zero Ads)',
-          };
-        }
-      }
-    } catch (_) {}
-
-    try {
-      final altEndpoint = isSeries
-          ? 'https://vidsrc.me/embed/tv?tmdb=$tmdbId&season=$season&episode=$episode'
-          : 'https://vidsrc.me/embed/movie?tmdb=$tmdbId';
-
-      final altRes = await http.get(Uri.parse(altEndpoint), headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      }).timeout(const Duration(seconds: 4));
-
-      if (altRes.statusCode == 200) {
-        final match = RegExp(r'file:\s*"([^"]+\.m3u8[^"]*)"').firstMatch(altRes.body);
-        if (match != null && match.group(1) != null) {
-          final m3u8Url = match.group(1)!;
-          return {
-            'video_url': m3u8Url,
-            'qualities': [{'resolution': 'تلقائي (HLS)', 'url': m3u8Url}],
-            'source_name': 'Cloud Stream (Direct)',
+            'video_url': data['source'],
+            'qualities': [{'resolution': 'تلقائي (Multi-Quality)', 'url': data['source']}],
+            'source_name': 'سيرفر عالمي احتياطي 🚀',
           };
         }
       }
@@ -126,6 +121,7 @@ class UniversalStreamResolver {
     return null;
   }
 
+  /// التوجيه الفوري وفق بيئة الاتصال
   static Future<Map<String, dynamic>?> resolveSmartStream({
     required String targetId,
     required String tmdbId,
@@ -134,18 +130,26 @@ class UniversalStreamResolver {
     int episode = 1,
   }) async {
     final cacheKey = targetId.isNotEmpty ? targetId : tmdbId;
+
+    // 1. فحص الكاش الفوري (0 ثانية)
     final cached = await StreamLinkCache.getValidSource(cacheKey);
     if (cached != null) return cached;
 
-    if (targetId.isNotEmpty) {
-      final cinemanaData = await StreamService.getVideoSource(targetId);
-      if (cinemanaData != null && cinemanaData['video_url'] != null) {
-        cinemanaData['source_name'] = 'سيرفر سينمانا السريع ⚡';
-        await StreamLinkCache.saveSource(cacheKey, cinemanaData);
-        return cinemanaData;
-      }
+    final bool isLocal = AppState.instance.isInsideIraq;
+
+    // 2. إذا كان الاتصال من داخل العراق: التوجه فوراً لسينمانا
+    if (isLocal && targetId.isNotEmpty) {
+      try {
+        final cinemanaData = await StreamService.getVideoSource(targetId).timeout(const Duration(seconds: 2));
+        if (cinemanaData != null && cinemanaData['video_url'] != null) {
+          cinemanaData['source_name'] = 'سيرفر سينمانا المحلي ⚡';
+          await StreamLinkCache.saveSource(cacheKey, cinemanaData);
+          return cinemanaData;
+        }
+      } catch (_) {}
     }
 
+    // 3. إذا كان خارج العراق أو فشلت سينمانا: التوجه فوراً للسيرفر الدولي الخالي من الإعلانات
     final directData = await resolveDirectExtraction(
       tmdbId: tmdbId,
       isSeries: isSeries,
@@ -319,7 +323,7 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // -------------------------------------------------------------
-// 5. مدير الحالة العامة (AppState)
+// 5. مدير الحالة العامة مع فاحص الموقع الجغرافي
 // -------------------------------------------------------------
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
@@ -336,6 +340,30 @@ class AppState extends ChangeNotifier {
   List<String> profiles = ['الرئيسي', 'أنمي', 'أطفال'];
   String currentProfile = 'الرئيسي';
 
+  // معايير الفحص الجغرافي والشبكي
+  bool isInsideIraq = true;
+  String detectedCountry = 'IQ';
+  bool isNetworkChecking = true;
+
+  Future<void> detectNetworkEnvironment() async {
+    isNetworkChecking = true;
+    try {
+      final res = await http.get(Uri.parse('https://api.country.is/')).timeout(const Duration(milliseconds: 1800));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        detectedCountry = (data['country'] ?? 'IQ').toString().toUpperCase();
+        isInsideIraq = (detectedCountry == 'IQ');
+      } else {
+        isInsideIraq = true;
+      }
+    } catch (_) {
+      isInsideIraq = true;
+    } finally {
+      isNetworkChecking = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> initSession() async {
     final prefs = await SharedPreferences.getInstance();
     deviceId = prefs.getString('app_device_id') ?? '';
@@ -345,6 +373,9 @@ class AppState extends ChangeNotifier {
     }
     currentProfile = prefs.getString('active_profile') ?? 'الرئيسي';
     isFamilyMode = prefs.getBool('app_family_mode') ?? true;
+
+    await detectNetworkEnvironment();
+
     StreamService.sendHeartbeat(deviceId);
     Timer.periodic(const Duration(minutes: 4), (_) => StreamService.sendHeartbeat(deviceId));
   }
@@ -756,6 +787,33 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                       decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
                       child: Text('الملف: ${app.currentProfile} ${app.isFamilyMode ? "• عائلي 🛡️" : ""}',
                           style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: app.isInsideIraq ? const Color(0xFF10B981).withOpacity(0.2) : const Color(0xFF00F0FF).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            app.isInsideIraq ? Icons.offline_bolt_rounded : Icons.public_rounded,
+                            size: 14,
+                            color: app.isInsideIraq ? const Color(0xFF10B981) : const Color(0xFF00F0FF),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            app.isInsideIraq ? 'سيرفر محلي (العراق 🇮🇶)' : 'سيرفر دولي فائق السرعة 🌍',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: app.isInsideIraq ? const Color(0xFF10B981) : const Color(0xFF00F0FF),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1321,7 +1379,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // -------------------------------------------------------------
-// 7. شاشة التفاصيل مع محرك المطابقة المطور
+// 7. شاشة التفاصيل مع دمج المحرك الذكي
 // -------------------------------------------------------------
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1676,7 +1734,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             title: '${widget.media['title'] ?? widget.media['name'] ?? ''} - حلقة $epNum',
             videoUrl: playData['video_url'],
             qualities: List<Map<String, dynamic>>.from(playData['qualities'] ?? []),
-            serverSourceName: playData['source_name'] ?? 'Ultra VIP Edge',
+            serverSourceName: playData['source_name'] ?? 'سيرفر فائق السرعة',
             onNextEpisode: epNum < _episodes.length ? () => _play(epNum + 1) : null,
           ),
         ),
@@ -1684,7 +1742,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تعذر جلب رابط الفيديو من جميع المصادر، يرجى المحاولة لاحقاً'),
+          content: Text('تعذر جلب رابط الفيديو من السيرفر المخصص، يرجى المحاولة لاحقاً'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -1818,7 +1876,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(color: const Color(0xFF00F0FF).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-                                  child: const Text('متوفر بسيرفر VidLink ⚡', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, fontSize: 10)),
+                                  child: const Text('متوفر بالسيرفر الدولي ⚡', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, fontSize: 10)),
                                 ),
                             ],
                           ),
@@ -1856,7 +1914,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       : const Icon(Icons.play_arrow_rounded, color: Colors.white),
                   label: Text(
                     _isMatching
-                        ? 'جاري فحص السيرفرات...'
+                        ? 'جاري تجهيز السيرفر المخصص...'
                         : (_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن'),
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                   ),
@@ -1982,7 +2040,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // -------------------------------------------------------------
-// 8. المشغل العالمي (Gesture Controls, Fast Seek, Anti-Ad)
+// 8. المشغل العالمي المطور مع دعم الهيدرز الديناميكي وإيماءات اللمس
 // -------------------------------------------------------------
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1999,7 +2057,7 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.videoUrl,
     required this.qualities,
-    this.serverSourceName = 'High-Speed Edge',
+    this.serverSourceName = 'High-Speed Server',
     this.onNextEpisode,
     this.isLocalFile = false,
   });
@@ -2109,9 +2167,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     oldChewie?.dispose();
     await oldVideo?.dispose();
 
+    // إرسال ترويسات سينمانا فقط إذا كان الرابط تابعاً لسينمانا لمنع حظر السيرفرات البديلة
+    final Map<String, String> resolvedHeaders = _currentStreamUrl.contains('cee.buzz')
+        ? StreamService.stealthHeaders
+        : {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'};
+
     _videoPlayerController = widget.isLocalFile
         ? VideoPlayerController.file(File(_currentStreamUrl))
-        : VideoPlayerController.networkUrl(Uri.parse(_currentStreamUrl), httpHeaders: StreamService.stealthHeaders);
+        : VideoPlayerController.networkUrl(Uri.parse(_currentStreamUrl), httpHeaders: resolvedHeaders);
 
     await _videoPlayerController!.initialize();
 
