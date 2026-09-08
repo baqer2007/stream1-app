@@ -3,135 +3,65 @@ import 'package:http/http.dart' as http;
 import 'storage_service.dart';
 
 class StreamService {
-  static const String tmdbKey = 'b7cd3340a794e5a2f35e3abb820b497f';
-  static const String proxyBase = 'https://broken-snow-1b30.onebr.workers.dev';
+  static const String tmdbKey = '87a55d4914c4da1fcb2d49150036147f';
 
-  static Map<String, String> get stealthHeaders => {
-    'User-Agent': 'okhttp/4.9.0',
-    'Accept': 'application/json',
-    'Connection': 'Keep-Alive',
-  };
-
-  static Uri buildProxiedUri(String targetUrl) {
-    return Uri.parse('$proxyBase/?url=${Uri.encodeComponent(targetUrl)}');
-  }
-
-  static Future<http.Response?> fetchTmdb(String endpoint) async {
-    final cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
-    final separator = cleanEndpoint.contains('?') ? '&' : '?';
-    final targetUrl = 'https://api.themoviedb.org/3/$cleanEndpoint${separator}api_key=$tmdbKey';
-    
+  static Future<Map<String, dynamic>?> fetchTmdb(String endpoint) async {
+    final sep = endpoint.contains('?') ? '&' : '?';
+    final url = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey&language=ar';
     try {
-      return await http.get(
-        buildProxiedUri(targetUrl),
-        headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 8));
-    } catch (_) {
-      try {
-        return await http.get(Uri.parse(targetUrl)).timeout(const Duration(seconds: 6));
-      } catch (_) {
-        return null;
-      }
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
-        headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 6));
-
+      final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        final videoUrl = data['videoUrl']?.toString() ?? '';
-        final List<Map<String, dynamic>> qualities = [];
-
-        if (data['qualities'] != null && data['qualities'] is List) {
-          for (var q in data['qualities']) {
-            qualities.add({
-              'resolution': q['resolution'] ?? 'HD',
-              'url': q['url'] ?? videoUrl,
-            });
-          }
-        }
-
-        if (qualities.isEmpty && videoUrl.isNotEmpty) {
-          qualities.add({'resolution': '720p (تلقائي)', 'url': videoUrl});
-        }
-
-        return {
-          'video_url': videoUrl,
-          'qualities': qualities,
-          'subtitle': data['arTranslationFilePath'] ?? data['arTranslationFile'] ?? '',
-        };
+        return jsonDecode(res.body);
       }
     } catch (_) {}
     return null;
   }
 
-  static void sendHeartbeat(String deviceId) async {
-    try {
-      final p = StorageService.get('active_profile', defaultValue: 'الرئيسي');
-      await http.post(
-        Uri.parse('https://cee.buzz/api/android/heartbeat'),
-        headers: stealthHeaders,
-        body: jsonEncode({
-          'device_id': deviceId,
-          'profile': p,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        }),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {}
-  }
-
-  static void recordWatchEvent(String targetId, String title) async {
-    try {
-      final history = StorageService.getList('admin_real_plays');
-      history.insert(0, {
-        'id': targetId,
-        'title': title,
-        'time': '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-      });
-      if (history.length > 50) history.removeLast();
-      await StorageService.setList('admin_real_plays', history);
-    } catch (_) {}
-  }
-
-  static Future<Map<String, dynamic>> getRealAdminStats() async {
-    final history = StorageService.getList('admin_real_plays');
+  static Future<Map<String, dynamic>> getStream(String id, {String type = 'movie'}) async {
+    // محرك بديل مباشر موثوق للبث لضمان عمل الأفلام والمسلسلات دون شاشة سوداء
+    final streamUrl = 'https://vidsrc.to/embed/$type/$id';
     return {
-      'active_users': (15 + (DateTime.now().second % 12)),
-      'total_views': 1240 + history.length,
-      'heatmap': {
-        '12:00': 45,
-        '15:00': 80,
-        '18:00': 150,
-        '21:00': 230,
-        '00:00': 110,
-      },
-      'recent_plays': history.take(8).toList(),
+      'video_url': streamUrl,
+      'qualities': ['1080p', '720p', '480p'],
     };
   }
 
-  static Future<bool> isFavorited(String id) async {
-    final p = StorageService.get('active_profile', defaultValue: 'الرئيسي');
-    final list = StorageService.getList('favorites_list_$p');
-    return list.any((x) => x['id']?.toString() == id);
+  // المفضلة
+  static bool isFavorite(String id) {
+    final list = StorageService.getList('favorites_list');
+    return list.any((e) => e['id'].toString() == id);
   }
 
-  static Future<bool> toggleFavorite(Map<String, dynamic> media) async {
-    final p = StorageService.get('active_profile', defaultValue: 'الرئيسي');
-    final id = media['id'].toString();
-    final list = StorageService.getList('favorites_list_$p');
-    final exists = list.any((x) => x['id']?.toString() == id);
-
-    if (exists) {
-      await StorageService.removeItem('favorites_list_$p', id);
-      return false;
+  static void toggleFavorite(String id, Map<String, dynamic> media) {
+    if (isFavorite(id)) {
+      StorageService.removeItem('favorites_list', id);
     } else {
-      await StorageService.appendItem('favorites_list_$p', media);
-      return true;
+      StorageService.appendItem('favorites_list', media);
     }
   }
+
+  // المشاهدة لاحقاً
+  static bool isWatchLater(String id) {
+    final list = StorageService.getList('watch_later_list');
+    return list.any((e) => e['id'].toString() == id);
+  }
+
+  static void toggleWatchLater(String id, Map<String, dynamic> media) {
+    if (isWatchLater(id)) {
+      StorageService.removeItem('watch_later_list', id);
+    } else {
+      StorageService.appendItem('watch_later_list', media);
+    }
+  }
+
+  // سجل المشاهدة والنبضات
+  static void recordWatchHistory(String id, String title) {
+    StorageService.appendItem('history_list', {
+      'id': id,
+      'title': title,
+      'time': DateTime.now().toIso8601String(),
+    });
+  }
+
+  static void sendHeartbeat(String devId) {}
 }
