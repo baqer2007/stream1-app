@@ -11,18 +11,10 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-
-  media_kit: ^1.1.10
-  media_kit_video: ^1.2.4
-  media_kit_libs_android_video: ^1.2.4
-
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
-  path_provider: ^2.1.2
-
   http: ^1.2.0
-  cached_network_image: ^3.3.1
-  shimmer: ^3.0.0
+  shared_preferences: ^2.2.2
+  video_player: ^2.8.2
+  chewie: ^1.7.5
 
 dev_dependencies:
   flutter_test:
