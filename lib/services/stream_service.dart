@@ -3,25 +3,19 @@ import 'package:http/http.dart' as http;
 import 'storage_service.dart';
 
 class StreamService {
-  // مفتاح TMDB الأساسي
   static const String tmdbKey = 'b7cd3340a794e5a2f35e3abb820b497f';
-
-  // رابط البروكسي الخاص بك على Cloudflare (يُستخدم لخدمات TMDB وتجاوز حجب الـ DNS)
   static const String proxyBase = 'https://broken-snow-1b30.onebr.workers.dev';
 
-  // ترويسات تزييف الهوية لمحاكاة تطبيق أندرويد رسمي
   static Map<String, String> get stealthHeaders => {
     'User-Agent': 'okhttp/4.9.0',
     'Accept': 'application/json',
     'Connection': 'Keep-Alive',
   };
 
-  // توليد رابط ممرر عبر بروكسي Cloudflare
   static Uri buildProxiedUri(String targetUrl) {
     return Uri.parse('$proxyBase/?url=${Uri.encodeComponent(targetUrl)}');
   }
 
-  // جلب بيانات TMDB عبر البروكسي لتسريع الكاش وتخطي أي حظر محلي
   static Future<http.Response?> fetchTmdb(String endpoint) async {
     final cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
     final separator = cleanEndpoint.contains('?') ? '&' : '?';
@@ -33,7 +27,6 @@ class StreamService {
         headers: stealthHeaders,
       ).timeout(const Duration(seconds: 8));
     } catch (_) {
-      // محاولة اتصال احتياطية مباشرة في حال تعطل البروكسي
       try {
         return await http.get(Uri.parse(targetUrl)).timeout(const Duration(seconds: 6));
       } catch (_) {
@@ -42,15 +35,11 @@ class StreamService {
     }
   }
 
-  // -------------------------------------------------------------
-  // خدمات البث وسيرفر CEE (اتصال مباشر من الهاتف حصراً للحفاظ على الـ IP العراقي)
-  // -------------------------------------------------------------
-
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
-        headers: stealthHeaders, // مباشر بدون بروكسي
+        headers: stealthHeaders,
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
@@ -95,10 +84,6 @@ class StreamService {
       ).timeout(const Duration(seconds: 4));
     } catch (_) {}
   }
-
-  // -------------------------------------------------------------
-  // إدارة المفضلة وسجل المشاهدة الحي (Hive DB)
-  // -------------------------------------------------------------
 
   static void recordWatchEvent(String targetId, String title) async {
     try {
