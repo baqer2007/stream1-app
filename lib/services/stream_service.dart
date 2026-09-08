@@ -4,40 +4,42 @@ import 'storage_service.dart';
 
 class StreamService {
   static const String tmdbKey = '87a55d4914c4da1fcb2d49150036147f';
-  static const String proxyBase = 'https://broken-smoke-fb0b.onbr.workers.dev';
 
-  static Map<String, String> get stealthHeaders => {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'application/json',
-  };
-
+  // جلب مباشر وسريع من TMDB بدون أي وسيط أو بروكسي
   static Future<Map<String, dynamic>?> fetchTmdb(String endpoint) async {
     final sep = endpoint.contains('?') ? '&' : '?';
-    final targetUrl = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey&include_adult=false';
-    final proxiedUrl = '$proxyBase/?url=${Uri.encodeComponent(targetUrl)}';
+    final url = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey&language=ar';
 
     try {
-      // محاولة الجلب عبر البروكسي أولاً
-      final res = await http.get(Uri.parse(proxiedUrl), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+      final res = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 15));
+
       if (res.statusCode == 200) {
-        return jsonDecode(res.body);
+        return jsonDecode(utf8.decode(res.bodyBytes));
       }
-    } catch (_) {}
-
-    // محاولة اتصال احتياطية مباشرة في حال تعطل البروكسي
-    try {
-      final resDirect = await http.get(Uri.parse(targetUrl), headers: stealthHeaders).timeout(const Duration(seconds: 8));
-      if (resDirect.statusCode == 200) {
-        return jsonDecode(resDirect.body);
-      }
-    } catch (_) {}
+    } catch (_) {
+      try {
+        final fallbackUrl = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey';
+        final resFallback = await http.get(Uri.parse(fallbackUrl)).timeout(const Duration(seconds: 10));
+        if (resFallback.statusCode == 200) {
+          return jsonDecode(utf8.decode(resFallback.bodyBytes));
+        }
+      } catch (_) {}
+    }
 
     return null;
   }
 
   static Future<Map<String, dynamic>> getStream(String id, {String type = 'movie'}) async {
-    // محرك البث المتوافق مع التطبيق
-    final streamUrl = 'https://vidsrc.to/embed/$type/$id';
+    final streamUrl = type == 'tv'
+        ? 'https://vidsrc.xyz/embed/tv/$id/1/1'
+        : 'https://vidsrc.xyz/embed/movie/$id';
+
     return {
       'video_url': streamUrl,
       'qualities': ['1080p', '720p', '480p'],
