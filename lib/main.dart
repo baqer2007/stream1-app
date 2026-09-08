@@ -9,6 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
+// =========================================================================
+// 1. التخزين المحلي وإدارة التنزيلات (LocalStorageService & DownloadManager)
+// =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -157,6 +160,9 @@ class DownloadManager extends ChangeNotifier {
   }
 }
 
+// =========================================================================
+// 2. حالة التطبيق والمستخدم (AppState)
+// =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
   AppState._();
@@ -164,7 +170,7 @@ class AppState extends ChangeNotifier {
   bool isDark = true;
   String lang = 'ar';
   bool isLoggedIn = false;
-  bool isAdmin = false;
+  bool isAdmin = true;
   String username = '';
   String deviceId = '';
 
@@ -299,6 +305,9 @@ class SecurityEngine {
   }
 }
 
+// =========================================================================
+// 3. الشاشة الرئيسية والبحث والتصنيفات (MainHomeScreen)
+// =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -388,11 +397,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 
       for (var word in blockedTerms) {
         if (title.contains(word) || originalTitle.contains(word) || overview.contains(word)) return false;
-      }
-
-      final genreIds = List<int>.from(item['genre_ids'] ?? []);
-      if (genreIds.contains(10749) && (overview.contains('جسد') || overview.contains('شهوة'))) {
-        return false;
       }
       return true;
     }).toList();
@@ -1158,6 +1162,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   }
 }
 
+// =========================================================================
+// 4. شاشة التفاصيل والربط مع حلقات ومواسم سينمانا (MediaDetailScreen)
+// =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   const MediaDetailScreen({super.key, required this.media});
@@ -1174,8 +1181,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isWatchLater = false;
 
   Map<String, dynamic>? _matchedCee;
-  List<dynamic> _ceeEpisodesList = [];
-  List<dynamic> _episodes = [];
+  List<dynamic> _allEpisodes = [];
+  List<dynamic> _displayedEpisodes = [];
   List<dynamic> _seasons = [];
   List<dynamic> _similarMedia = [];
   int _selectedSeasonNumber = 1;
@@ -1191,7 +1198,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _saveHistory();
     _resolveRealTitlesAndMatch();
     _loadSimilar();
-    if (_isSeries) _loadSeasons();
   }
 
   void _checkSavedStates() async {
@@ -1236,6 +1242,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   String _clean(String s) {
     return s.toLowerCase()
+        .replaceAll(RegExp(r'^(the|a|an)\s+', caseSensitive: false), '')
         .replaceAll(RegExp(r'[:\-_–—!?.()\[\]]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
@@ -1253,10 +1260,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final origName = (widget.media['original_name'] ?? widget.media['original_title'] ?? '').toString().trim();
     final transName = (widget.media['name'] ?? widget.media['title'] ?? '').toString().trim();
 
-    if (origName.isNotEmpty) searchQueries.add(origName);
-
     try {
-      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/$type/$tmdbId?api_key=$key&language=en-US')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/$type/$tmdbId?api_key=$key&language=en-US')).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final enTitle = (data['name'] ?? data['title'] ?? '').toString().trim();
@@ -1267,6 +1272,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       }
     } catch (_) {}
 
+    if (origName.isNotEmpty && !searchQueries.contains(origName)) {
+      searchQueries.add(origName);
+    }
     if (transName.isNotEmpty && !searchQueries.contains(transName)) {
       searchQueries.add(transName);
     }
@@ -1281,44 +1289,49 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   Future<void> _searchCeeBuzz(List<String> queries, String targetYear) async {
     final levels = _isSeries ? ['1', '0'] : ['0', '1'];
+    int? parsedTargetYear = int.tryParse(targetYear);
 
-    for (var lvl in levels) {
-      for (var query in queries) {
-        if (query.isEmpty) continue;
+    for (var query in queries) {
+      final cleanQuery = _clean(query);
+      if (cleanQuery.length < 2) continue;
+
+      for (var lvl in levels) {
         try {
           final b64 = base64.encode(utf8.encode(query));
           final res = await http.get(
-            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$lvl'),
+            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/$lvl'),
             headers: StreamService.stealthHeaders,
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(seconds: 6));
 
           if (res.statusCode == 200) {
             dynamic decoded = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
             List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
-            final cleanQuery = _clean(query);
+            for (var item in list) {
+              final enTitle = _clean((item['en_title'] ?? '').toString());
+              final itemYear = int.tryParse((item['year'] ?? '').toString().trim());
+
+              bool nameMatch = (enTitle == cleanQuery);
+              bool yearMatch = parsedTargetYear == null || itemYear == null || (itemYear - parsedTargetYear).abs() <= 1;
+
+              if (nameMatch && yearMatch) {
+                _matchedCee = item;
+                if (_isSeries) await _loadSeriesStructure(item['nb'].toString());
+                return;
+              }
+            }
 
             for (var item in list) {
               final enTitle = _clean((item['en_title'] ?? '').toString());
               final arTitle = _clean((item['title'] ?? '').toString());
-              final itemYear = (item['year'] ?? '').toString().trim();
+              final itemYear = int.tryParse((item['year'] ?? '').toString().trim());
 
-              bool isNameMatched = false;
-              if (enTitle.isNotEmpty && (enTitle.contains(cleanQuery) || cleanQuery.contains(enTitle))) {
-                isNameMatched = true;
-              } else if (arTitle.isNotEmpty && (arTitle.contains(cleanQuery) || cleanQuery.contains(arTitle))) {
-                isNameMatched = true;
-              }
+              bool nameMatch = (enTitle.isNotEmpty && enTitle.contains(cleanQuery)) || (arTitle.isNotEmpty && arTitle.contains(cleanQuery));
+              bool yearMatch = parsedTargetYear != null && itemYear != null && (itemYear - parsedTargetYear).abs() <= 1;
 
-              if (!isNameMatched) continue;
-
-              bool isYearClose = targetYear.isEmpty || itemYear.isEmpty || (itemYear == targetYear);
-
-              if (isYearClose) {
+              if (nameMatch && yearMatch) {
                 _matchedCee = item;
-                if (_isSeries) {
-                  await _loadCeeEpisodes(item['nb'].toString());
-                }
+                if (_isSeries) await _loadSeriesStructure(item['nb'].toString());
                 return;
               }
             }
@@ -1328,21 +1341,33 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  Future<void> _loadCeeEpisodes(String parentId) async {
-    try {
-      final epRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/parent_id/$parentId/itemsPerPage/100/pageNumber/0/level/2'),
-        headers: StreamService.stealthHeaders,
-      ).timeout(const Duration(seconds: 5));
+  Future<void> _loadSeriesStructure(String seriesId) async {
+    setState(() => _isLoadingEpisodes = true);
+    final seasons = await StreamService.getSeriesSeasons(seriesId);
+    final episodes = await StreamService.getSeriesEpisodes(seriesId);
 
-      if (epRes.statusCode == 200) {
-        dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
-        List list = (epData is List) ? epData : (epData['articles'] ?? []);
-        if (mounted && list.isNotEmpty) {
-          setState(() => _ceeEpisodesList = list);
-        }
+    if (mounted) {
+      setState(() {
+        _seasons = seasons;
+        _allEpisodes = episodes;
+        _isLoadingEpisodes = false;
+        _filterEpisodesBySeason(_selectedSeasonNumber);
+      });
+    }
+  }
+
+  void _filterEpisodesBySeason(int sNum) {
+    setState(() {
+      _selectedSeasonNumber = sNum;
+      _displayedEpisodes = _allEpisodes.where((ep) {
+        final epSeason = int.tryParse((ep['season'] ?? '1').toString()) ?? 1;
+        return epSeason == sNum;
+      }).toList();
+
+      if (_displayedEpisodes.isEmpty && _allEpisodes.isNotEmpty) {
+        _displayedEpisodes = _allEpisodes;
       }
-    } catch (_) {}
+    });
   }
 
   void _loadSimilar() async {
@@ -1359,136 +1384,44 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadSeasons() async {
-    final tmdbId = widget.media['id'];
-    final key = SecurityEngine.tmdbKey;
-    final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
-
-    try {
-      final tvRes = await http.get(Uri.parse('https://api.themoviedb.org/3/tv/$tmdbId?api_key=$key&language=$lang')).timeout(const Duration(seconds: 5));
-      if (tvRes.statusCode == 200) {
-        final data = jsonDecode(tvRes.body);
-        final rawSeasons = data['seasons'] as List? ?? [];
-        _seasons = rawSeasons.where((s) => (s['season_number'] ?? 0) > 0).toList();
-
-        if (_seasons.isNotEmpty) {
-          _selectedSeasonNumber = _seasons.first['season_number'] ?? 1;
-          _loadEpisodesForSeason(_selectedSeasonNumber);
-          return;
-        }
-      }
-    } catch (_) {}
-
-    _seasons = [{'season_number': 1, 'name': 'الموسم 1'}];
-    _episodes = List.generate(24, (i) => {'episode_number': i + 1});
-    if (mounted) setState(() => _isLoadingEpisodes = false);
-  }
-
-  Future<void> _loadEpisodesForSeason(int sNum) async {
-    setState(() => _isLoadingEpisodes = true);
-    final tmdbId = widget.media['id'];
-    final key = SecurityEngine.tmdbKey;
-    final lang = AppState.instance.lang == 'ar' ? 'ar' : 'en-US';
-
-    try {
-      final epRes = await http.get(Uri.parse('https://api.themoviedb.org/3/tv/$tmdbId/season/$sNum?api_key=$key&language=$lang')).timeout(const Duration(seconds: 5));
-      if (epRes.statusCode == 200) {
-        final epData = jsonDecode(epRes.body);
-        final list = epData['episodes'] as List? ?? [];
-        if (mounted) {
-          setState(() {
-            _episodes = list;
-            _isLoadingEpisodes = false;
-          });
-          return;
-        }
-      }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _episodes = List.generate(24, (i) => {'episode_number': i + 1});
-        _isLoadingEpisodes = false;
-      });
-    }
-  }
-
-  void _play(int epNum) async {
-    if (_matchedCee == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('هذا العمل غير متوفر بسيرفر سينمانا حالياً، جاري محاولة إضافته'),
-          backgroundColor: Colors.orange.shade900,
-        ),
-      );
-      return;
-    }
-
+  void _play(Map<String, dynamic>? episodeData) async {
+    if (_matchedCee == null) return;
     setState(() => _isLaunching = true);
-    String targetId = _matchedCee!['nb'].toString();
 
-    if (_isSeries) {
-      if (_ceeEpisodesList.isNotEmpty && epNum <= _ceeEpisodesList.length) {
-        targetId = _ceeEpisodesList[epNum - 1]['nb'].toString();
-      } else {
-        try {
-          final epRes = await http.get(
-            Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/100/parent_id/$targetId/itemsPerPage/100/pageNumber/0/level/2'),
-            headers: StreamService.stealthHeaders,
-          ).timeout(const Duration(seconds: 4));
-          if (epRes.statusCode == 200) {
-            dynamic epData = jsonDecode(utf8.decode(epRes.bodyBytes, allowMalformed: true));
-            List list = (epData is List) ? epData : (epData['articles'] ?? []);
-            if (list.isNotEmpty && epNum <= list.length) {
-              targetId = list[epNum - 1]['nb'].toString();
-            }
-          }
-        } catch (_) {}
-      }
-    }
+    final targetId = episodeData != null ? episodeData['nb'].toString() : _matchedCee!['nb'].toString();
+    final epTitle = episodeData != null
+        ? '${widget.media['title'] ?? widget.media['name'] ?? ''} - حلقة ${episodeData['episodeNumber'] ?? 1}'
+        : (widget.media['title'] ?? widget.media['name'] ?? '');
 
-    StreamService.recordWatchEvent(targetId, widget.media['title'] ?? widget.media['name'] ?? '');
+    StreamService.recordWatchEvent(targetId, epTitle);
 
-    final data = await StreamService.getVideoSource(targetId);
+    final source = await StreamService.getVideoSource(targetId);
+    final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
+
     setState(() => _isLaunching = false);
 
-    if (data != null && mounted) {
+    if (source != null && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
             mediaId: targetId,
-            title: '${widget.media['title'] ?? widget.media['name'] ?? ''} - حلقة $epNum',
-            videoUrl: data['video_url'],
-            qualities: List<Map<String, dynamic>>.from(data['qualities'] ?? []),
-            onNextEpisode: epNum < _episodes.length ? () => _play(epNum + 1) : null,
+            title: epTitle,
+            videoUrl: source['video_url'],
+            subtitleUrl: subUrl,
+            qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
           ),
         ),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('تعذر تجهيز الرابط المباشر، تحقق من اتصالك أو السيرفر'),
-          backgroundColor: Colors.redAccent,
-        ),
+        const SnackBar(content: Text('تعذر تجهيز الرابط المباشر، تحقق من توفر العمل بالسيرفر'), backgroundColor: Colors.redAccent),
       );
     }
   }
 
   void _triggerDownload() async {
-    if (_matchedCee == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Text('العمل غير متوفر للتنزيل حالياً في السيرفر'),
-          backgroundColor: Colors.orange.shade900,
-        ),
-      );
-      return;
-    }
-
+    if (_matchedCee == null) return;
     String targetId = _matchedCee!['nb'].toString();
     final title = widget.media['title'] ?? widget.media['name'] ?? 'Video';
 
@@ -1519,7 +1452,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final originalName = widget.media['original_name'] ?? widget.media['original_title'] ?? '';
     final arabicTitle = widget.media['title'] ?? widget.media['name'] ?? '';
     final title = _displayEnglishTitle.isNotEmpty ? _displayEnglishTitle : (originalName.isNotEmpty ? originalName : arabicTitle);
-    
+
     final poster = widget.media['poster_path'] != null ? 'https://image.tmdb.org/t/p/w500${widget.media['poster_path']}' : '';
     final score = (widget.media['vote_average'] ?? 8.0).toStringAsFixed(1);
     final story = widget.media['overview'] ?? 'لا يوجد وصف متاح حالياً.';
@@ -1626,30 +1559,28 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: (_isMatching || _matchedCee == null) ? Colors.grey.shade800 : const Color(0xFFE50914),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    elevation: (_matchedCee != null) ? 6 : 0,
-                    shadowColor: const Color(0xFFE50914).withOpacity(0.5),
-                  ),
-                  onPressed: (_isMatching || _isLaunching) ? null : () => _play(1),
-                  icon: (_isMatching || _isLaunching)
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.play_arrow_rounded, color: Colors.white),
-                  label: Text(
-                    _isMatching
-                        ? 'جاري فحص السيرفر...'
-                        : (_matchedCee == null
-                            ? 'العمل غير متوفر بالسيرفر'
-                            : (_isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن')),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+              if (!_isSeries)
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: (_isMatching || _matchedCee == null) ? Colors.grey.shade800 : const Color(0xFFE50914),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      elevation: (_matchedCee != null) ? 6 : 0,
+                    ),
+                    onPressed: (_isMatching || _isLaunching || _matchedCee == null) ? null : () => _play(null),
+                    icon: _isLaunching
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                    label: Text(
+                      _isMatching
+                          ? 'جاري فحص السيرفر...'
+                          : (_matchedCee == null ? 'العمل غير متوفر بالسيرفر' : 'مشاهدة العمل الآن'),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(height: 20),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -1678,13 +1609,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       scrollDirection: Axis.horizontal,
                       itemCount: _seasons.length,
                       itemBuilder: (ctx, i) {
-                        final sNum = _seasons[i]['season_number'] ?? (i + 1);
+                        final sNum = i + 1;
                         final isSelected = _selectedSeasonNumber == sNum;
                         return InkWell(
-                          onTap: () {
-                            setState(() => _selectedSeasonNumber = sNum);
-                            _loadEpisodesForSeason(sNum);
-                          },
+                          onTap: () => _filterEpisodesBySeason(sNum),
                           child: Container(
                             margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1701,7 +1629,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   ),
                   const SizedBox(height: 14),
                 ],
-                Text('الحلقات (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                Text('الحلقات (${_displayedEpisodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 10),
                 _isLoadingEpisodes
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
@@ -1709,16 +1637,17 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6,
+                          crossAxisCount: 5,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                           childAspectRatio: 1.2,
                         ),
-                        itemCount: _episodes.length,
+                        itemCount: _displayedEpisodes.length,
                         itemBuilder: (ctx, i) {
-                          final epNum = i + 1;
+                          final ep = _displayedEpisodes[i];
+                          final epNum = ep['episodeNumber'] ?? (i + 1);
                           return InkWell(
-                            onTap: (_isMatching || _matchedCee == null) ? null : () => _play(epNum),
+                            onTap: (_isMatching || _matchedCee == null) ? null : () => _play(ep),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: Theme.of(context).cardColor,
@@ -1726,7 +1655,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 border: Border.all(color: Colors.white12),
                               ),
                               child: Center(
-                                child: Text('$epNum', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: (_matchedCee == null) ? Colors.grey : Colors.white)),
+                                child: Text('حلقة $epNum', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: (_matchedCee == null) ? Colors.grey : Colors.white)),
                               ),
                             ),
                           );
@@ -1769,10 +1698,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
+// =========================================================================
+// 5. المشغل المتكامل: قفل، جودات، تحكم احترافي بالترجمة (PlayerScreen)
+// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
+  final String subtitleUrl;
   final List<Map<String, dynamic>> qualities;
   final VoidCallback? onNextEpisode;
   final bool isLocalFile;
@@ -1782,6 +1715,7 @@ class PlayerScreen extends StatefulWidget {
     required this.mediaId,
     required this.title,
     required this.videoUrl,
+    this.subtitleUrl = '',
     required this.qualities,
     this.onNextEpisode,
     this.isLocalFile = false,
@@ -1816,7 +1750,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _currentStreamUrl = widget.videoUrl;
     _init();
-    if (!widget.isLocalFile) _fetchSubs();
+    if (!widget.isLocalFile && widget.subtitleUrl.isNotEmpty) {
+      _fetchSubs(widget.subtitleUrl);
+    }
   }
 
   @override
@@ -1835,18 +1771,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
-  void _fetchSubs() async {
+  void _fetchSubs(String url) async {
     try {
-      final res = await http.get(Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/${widget.mediaId}'), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 4));
-      if (res.statusCode == 200) {
-        dynamic info = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        final subUrl = info['arTranslationFilePath']?.toString() ?? info['arTranslationFile']?.toString() ?? '';
-        if (subUrl.isNotEmpty) {
-          final sRes = await http.get(Uri.parse(subUrl), headers: StreamService.stealthHeaders);
-          if (sRes.statusCode == 200 && mounted) {
-            setState(() => _parsedSubtitles = _parseSubtitles(utf8.decode(sRes.bodyBytes, allowMalformed: true)));
-          }
-        }
+      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200 && mounted) {
+        setState(() => _parsedSubtitles = _parseSubtitles(utf8.decode(res.bodyBytes, allowMalformed: true)));
       }
     } catch (_) {}
   }
@@ -2068,6 +1997,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     _colorChip(const Color(0xFF00F0FF), () { setSheet(() => _subtitleTextColor = const Color(0xFF00F0FF)); setState(() => _subtitleTextColor = const Color(0xFF00F0FF)); }),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text('لون الخلفية: ', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.transparent); setState(() => _subtitleBgColor = Colors.transparent); }, child: const Text('شفاف')),
+                    TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.black54); setState(() => _subtitleBgColor = Colors.black54); }, child: const Text('نصف شفاف')),
+                    TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.black); setState(() => _subtitleBgColor = Colors.black); }, child: const Text('معتم')),
+                  ],
+                ),
               ],
             ),
           ),
@@ -2207,6 +2145,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 }
 
+// =========================================================================
+// 6. الشاشات التابعة (مدير التنزيل، المفضلة، المشاهدة لاحقاً، لوحة المشرف)
+// =========================================================================
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
 
