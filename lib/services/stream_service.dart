@@ -4,21 +4,39 @@ import 'storage_service.dart';
 
 class StreamService {
   static const String tmdbKey = '87a55d4914c4da1fcb2d49150036147f';
+  static const String proxyBase = 'https://broken-smoke-fb0b.onbr.workers.dev';
+
+  static Map<String, String> get stealthHeaders => {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+  };
 
   static Future<Map<String, dynamic>?> fetchTmdb(String endpoint) async {
     final sep = endpoint.contains('?') ? '&' : '?';
-    final url = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey&language=ar';
+    final targetUrl = 'https://api.themoviedb.org/3$endpoint${sep}api_key=$tmdbKey&include_adult=false';
+    final proxiedUrl = '$proxyBase/?url=${Uri.encodeComponent(targetUrl)}';
+
     try {
-      final res = await http.get(Uri.parse(url));
+      // محاولة الجلب عبر البروكسي أولاً
+      final res = await http.get(Uri.parse(proxiedUrl), headers: stealthHeaders).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
     } catch (_) {}
+
+    // محاولة اتصال احتياطية مباشرة في حال تعطل البروكسي
+    try {
+      final resDirect = await http.get(Uri.parse(targetUrl), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+      if (resDirect.statusCode == 200) {
+        return jsonDecode(resDirect.body);
+      }
+    } catch (_) {}
+
     return null;
   }
 
   static Future<Map<String, dynamic>> getStream(String id, {String type = 'movie'}) async {
-    // محرك بديل مباشر موثوق للبث لضمان عمل الأفلام والمسلسلات دون شاشة سوداء
+    // محرك البث المتوافق مع التطبيق
     final streamUrl = 'https://vidsrc.to/embed/$type/$id';
     return {
       'video_url': streamUrl,
