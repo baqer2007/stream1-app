@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
@@ -10,7 +11,47 @@ import 'stream_service.dart';
 import 'favorites_service.dart';
 
 // =========================================================================
-// 1. التخزين المحلي وإدارة التنزيلات (LocalStorageService & DownloadManager)
+// 1. مدير التخزين المؤقت المسبق السريع (Smart Preload Manager - 5 Seconds Cache)
+// =========================================================================
+class PreloadManager {
+  static final PreloadManager instance = PreloadManager._();
+  PreloadManager._();
+
+  final Map<String, String> _preloadedFiles = {};
+
+  Future<String?> preloadInitialBuffer(String targetId, String videoUrl) async {
+    if (_preloadedFiles.containsKey(targetId)) {
+      final existing = File(_preloadedFiles[targetId]!);
+      if (existing.existsSync() && existing.lengthSync() > 1024 * 512) {
+        return existing.path;
+      }
+    }
+
+    try {
+      final tempDir = Directory.systemTemp;
+      final safeFile = File('${tempDir.path}/pre_${targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.mp4');
+
+      // طلب أول 3.5 ميغابايت (تكفي لتشغيل أول 5 - 10 ثوانٍ فوراً بدون انتظار)
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(videoUrl));
+      request.headers.addAll(StreamService.stealthHeaders);
+      request.headers['Range'] = 'bytes=0-3670016';
+
+      final response = await client.send(request);
+      if (response.statusCode == 200 || response.statusCode == 206) {
+        final sink = safeFile.openWrite(mode: FileMode.write);
+        await response.stream.pipe(sink);
+        await sink.close();
+        _preloadedFiles[targetId] = safeFile.path;
+        return safeFile.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+}
+
+// =========================================================================
+// 2. التخزين المحلي وإدارة التنزيلات (LocalStorageService & DownloadManager)
 // =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
@@ -110,6 +151,7 @@ class DownloadManager extends ChangeNotifier {
       download.client = client;
 
       final request = http.Request('GET', Uri.parse(url));
+      request.headers.addAll(StreamService.stealthHeaders);
       if (downloadedBytes > 0) {
         request.headers['Range'] = 'bytes=$downloadedBytes-';
       }
@@ -161,7 +203,7 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // =========================================================================
-// 2. حالة التطبيق والمستخدم (AppState)
+// 3. مدير الحالة العامة (AppState)
 // =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
@@ -213,20 +255,6 @@ class AppState extends ChangeNotifier {
 
   void setLanguage(String newLang) {
     lang = newLang;
-    notifyListeners();
-  }
-
-  void login(String user, String pass) {
-    username = user;
-    isLoggedIn = true;
-    isAdmin = (user.trim().toLowerCase() == 'admin' && pass.trim() == 'admin123');
-    notifyListeners();
-  }
-
-  void logout() {
-    isLoggedIn = false;
-    isAdmin = false;
-    username = '';
     notifyListeners();
   }
 
@@ -306,7 +334,7 @@ class SecurityEngine {
 }
 
 // =========================================================================
-// 3. الشاشة الرئيسية والبحث والتصنيفات (MainHomeScreen)
+// 4. الشاشة الرئيسية والبحث والتصنيفات (MainHomeScreen)
 // =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -1163,7 +1191,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 }
 
 // =========================================================================
-// 4. شاشة التفاصيل والربط مع حلقات ومواسم سينمانا (MediaDetailScreen)
+// 5. شاشة التفاصيل والتحميل المسبق لأول ثوانٍ فور الفتح (MediaDetailScreen)
 // =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1189,6 +1217,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isSeries = false;
 
   String _displayEnglishTitle = '';
+  String? _preloadedLocalPath;
 
   @override
   void initState() {
@@ -1242,7 +1271,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   String _clean(String s) {
     return s.toLowerCase()
-        .replaceAll(RegExp(r'^(the|a|an)\s+', caseSensitive: false), '')
         .replaceAll(RegExp(r'[:\-_–—!?.()\[\]]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
@@ -1284,16 +1312,38 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
     await _searchCeeBuzz(searchQueries, targetYear);
 
+    // بدء التحميل المؤقت المسبق فور العثور على العمل لضمان سرعة التشغيل
+    if (_matchedCee != null && !_isSeries) {
+      _triggerPreloadBuffer(_matchedCee!['nb'].toString());
+    }
+
     if (mounted) setState(() => _isMatching = false);
+  }
+
+  void _triggerPreloadBuffer(String targetId) async {
+    final source = await StreamService.getVideoSource(targetId);
+    if (source != null && source['video_url'] != null) {
+      final path = await PreloadManager.instance.preloadInitialBuffer(targetId, source['video_url']);
+      if (path != null && mounted) {
+        setState(() => _preloadedLocalPath = path);
+      }
+    }
   }
 
   Future<void> _searchCeeBuzz(List<String> queries, String targetYear) async {
     final levels = _isSeries ? ['1', '0'] : ['0', '1'];
     int? parsedTargetYear = int.tryParse(targetYear);
 
-    for (var query in queries) {
-      final cleanQuery = _clean(query);
-      if (cleanQuery.length < 2) continue;
+    List<String> rawKeywords = [];
+    for (var q in queries) {
+      final t = q.trim();
+      if (t.isNotEmpty && !rawKeywords.contains(t)) rawKeywords.add(t);
+      final cl = _clean(t);
+      if (cl.isNotEmpty && !rawKeywords.contains(cl)) rawKeywords.add(cl);
+    }
+
+    for (var query in rawKeywords) {
+      if (query.length < 2) continue;
 
       for (var lvl in levels) {
         try {
@@ -1308,13 +1358,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             List list = (decoded is List) ? decoded : (decoded['articles'] ?? []);
 
             for (var item in list) {
-              final enTitle = _clean((item['en_title'] ?? '').toString());
-              final itemYear = int.tryParse((item['year'] ?? '').toString().trim());
+              final enTitle = (item['en_title'] ?? '').toString().trim().toLowerCase();
+              final arTitle = (item['title'] ?? '').toString().trim().toLowerCase();
+              final target = query.toLowerCase();
 
-              bool nameMatch = (enTitle == cleanQuery);
-              bool yearMatch = parsedTargetYear == null || itemYear == null || (itemYear - parsedTargetYear).abs() <= 1;
-
-              if (nameMatch && yearMatch) {
+              if (enTitle == target || arTitle == target) {
                 _matchedCee = item;
                 if (_isSeries) await _loadSeriesStructure(item['nb'].toString());
                 return;
@@ -1322,14 +1370,15 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             }
 
             for (var item in list) {
-              final enTitle = _clean((item['en_title'] ?? '').toString());
-              final arTitle = _clean((item['title'] ?? '').toString());
+              final enTitle = (item['en_title'] ?? '').toString().trim().toLowerCase();
+              final arTitle = (item['title'] ?? '').toString().trim().toLowerCase();
               final itemYear = int.tryParse((item['year'] ?? '').toString().trim());
+              final target = query.toLowerCase();
 
-              bool nameMatch = (enTitle.isNotEmpty && enTitle.contains(cleanQuery)) || (arTitle.isNotEmpty && arTitle.contains(cleanQuery));
-              bool yearMatch = parsedTargetYear != null && itemYear != null && (itemYear - parsedTargetYear).abs() <= 1;
+              bool contains = enTitle.contains(target) || arTitle.contains(target) || target.contains(enTitle);
+              bool yearMatch = parsedTargetYear == null || itemYear == null || (itemYear - parsedTargetYear).abs() <= 1;
 
-              if (nameMatch && yearMatch) {
+              if (contains && yearMatch) {
                 _matchedCee = item;
                 if (_isSeries) await _loadSeriesStructure(item['nb'].toString());
                 return;
@@ -1410,6 +1459,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             videoUrl: source['video_url'],
             subtitleUrl: subUrl,
             qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
+            preloadedLocalPath: (episodeData == null) ? _preloadedLocalPath : null,
           ),
         ),
       );
@@ -1576,7 +1626,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     label: Text(
                       _isMatching
                           ? 'جاري فحص السيرفر...'
-                          : (_matchedCee == null ? 'العمل غير متوفر بالسيرفر' : 'مشاهدة العمل الآن'),
+                          : (_matchedCee == null ? 'العمل غير متوفر بالسيرفر' : 'مشاهدة العمل الآن ⚡'),
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                     ),
                   ),
@@ -1699,7 +1749,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// 5. المشغل المتكامل: قفل، جودات، تحكم احترافي بالترجمة (PlayerScreen)
+// 6. المشغل المطور: ثبات الترجمة، الجودات، والتحميل المسبق (PlayerScreen)
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1709,6 +1759,7 @@ class PlayerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> qualities;
   final VoidCallback? onNextEpisode;
   final bool isLocalFile;
+  final String? preloadedLocalPath;
 
   const PlayerScreen({
     super.key,
@@ -1719,6 +1770,7 @@ class PlayerScreen extends StatefulWidget {
     required this.qualities,
     this.onNextEpisode,
     this.isLocalFile = false,
+    this.preloadedLocalPath,
   });
 
   @override
@@ -1735,11 +1787,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   String _activeQualityName = 'تلقائي (Auto)';
   bool _isAutoBitrate = true;
 
+  // إعدادات الترجمة المتقدمة
   bool _subtitlesEnabled = true;
-  double _subtitleFontSize = 18.0;
+  double _subtitleFontSize = 19.0;
   Color _subtitleTextColor = Colors.white;
-  Color _subtitleBgColor = Colors.black87;
-  double _subtitleBottomPadding = 75.0;
+  Color _subtitleBgColor = Colors.black54;
+  double _subtitleBottomPadding = 40.0;
   double _subtitleOffsetSeconds = 0.0;
   List<Subtitle> _parsedSubtitles = [];
   String _activeSubtitleText = '';
@@ -1773,7 +1826,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   void _fetchSubs(String url) async {
     try {
-      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 5));
+      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200 && mounted) {
         setState(() => _parsedSubtitles = _parseSubtitles(utf8.decode(res.bodyBytes, allowMalformed: true)));
       }
@@ -1812,11 +1865,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _videoPlayerController?.removeListener(_updateSubsAndProgress);
     await _videoPlayerController?.dispose();
 
-    setState(() => _isReady = false);
+    if (mounted) setState(() => _isReady = false);
 
-    _videoPlayerController = widget.isLocalFile
-        ? VideoPlayerController.file(File(_currentStreamUrl))
-        : VideoPlayerController.networkUrl(Uri.parse(_currentStreamUrl), httpHeaders: StreamService.stealthHeaders);
+    // استخدام التخزين المؤقت المسبق لأول ثوانٍ لضمان انطلاق الفيديو فوراً
+    if (widget.preloadedLocalPath != null && File(widget.preloadedLocalPath!).existsSync() && startAtSecond == 0) {
+      _videoPlayerController = VideoPlayerController.file(File(widget.preloadedLocalPath!));
+    } else if (widget.isLocalFile) {
+      _videoPlayerController = VideoPlayerController.file(File(_currentStreamUrl));
+    } else {
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(_currentStreamUrl),
+        httpHeaders: StreamService.stealthHeaders,
+      );
+    }
 
     await _videoPlayerController!.initialize();
 
@@ -1835,27 +1896,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       aspectRatio: _videoPlayerController!.value.aspectRatio,
       showControlsOnInitialize: false,
       allowFullScreen: true,
-      showOptions: false,
+      deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
+      deviceOrientationsOnEnterFullScreen: [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
     );
 
     if (mounted) setState(() => _isReady = true);
-  }
-
-  String _findSubtitleBinary(Duration pos) {
-    int low = 0;
-    int high = _parsedSubtitles.length - 1;
-    while (low <= high) {
-      int mid = (low + high) ~/ 2;
-      final item = _parsedSubtitles[mid];
-      if (pos < item.start) {
-        high = mid - 1;
-      } else if (pos > item.end) {
-        low = mid + 1;
-      } else {
-        return item.text;
-      }
-    }
-    return '';
   }
 
   void _updateSubsAndProgress() {
@@ -1864,8 +1909,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     if (_subtitlesEnabled && _parsedSubtitles.isNotEmpty) {
       final adjustedPos = pos + Duration(milliseconds: (_subtitleOffsetSeconds * 1000).round());
-      final text = _findSubtitleBinary(adjustedPos);
-      if (text != _activeSubtitleText && mounted) setState(() => _activeSubtitleText = text);
+      final sub = _parsedSubtitles.firstWhere(
+        (s) => adjustedPos >= s.start && adjustedPos <= s.end,
+        orElse: () => Subtitle(index: -1, start: Duration.zero, end: Duration.zero, text: ''),
+      );
+      if (sub.text != _activeSubtitleText && mounted) {
+        setState(() => _activeSubtitleText = sub.text);
+      }
     } else if (_activeSubtitleText.isNotEmpty && mounted) {
       setState(() => _activeSubtitleText = '');
     }
@@ -1888,12 +1938,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 12),
             ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFF00F0FF).withOpacity(0.15), shape: BoxShape.circle),
-                child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF00F0FF), size: 20),
-              ),
-              title: const Text('تلقائي (Auto) - ذكي حسب سرعة الإنترنت', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF00F0FF)),
+              title: const Text('تلقائي (Auto)'),
               trailing: _isAutoBitrate ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F0FF)) : null,
               onTap: () {
                 Navigator.pop(context);
@@ -1910,12 +1956,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               final isCurrent = url == _currentStreamUrl && !_isAutoBitrate;
 
               return ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
-                  child: const Icon(Icons.hd_outlined, color: Colors.white70, size: 20),
-                ),
-                title: Text(res, style: TextStyle(color: isCurrent ? const Color(0xFF00F0FF) : Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                leading: const Icon(Icons.hd_outlined, color: Colors.white70),
+                title: Text(res, style: TextStyle(color: isCurrent ? const Color(0xFF00F0FF) : Colors.white)),
                 trailing: isCurrent ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F0FF)) : null,
                 onTap: () {
                   Navigator.pop(context);
@@ -1953,40 +1995,29 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 12),
                 SwitchListTile(
-                  title: const Text('تشغيل الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  title: const Text('تشغيل الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   value: _subtitlesEnabled,
                   onChanged: (v) {
                     setSheet(() => _subtitlesEnabled = v);
                     setState(() => _subtitlesEnabled = v);
                   },
                 ),
-                const SizedBox(height: 8),
-                Text('مزامنة الصوت والترجمة: ${_subtitleOffsetSeconds.toStringAsFixed(1)} ثانية', style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                Text('ارتفاع الترجمة عن الأسفل: ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(fontSize: 12, color: Colors.white70)),
                 Slider(
-                  value: _subtitleOffsetSeconds, min: -5.0, max: 5.0, divisions: 20,
+                  value: _subtitleBottomPadding, min: 10, max: 120, divisions: 11,
                   activeColor: const Color(0xFF00F0FF),
                   onChanged: (v) {
-                    setSheet(() => _subtitleOffsetSeconds = v);
-                    setState(() => _subtitleOffsetSeconds = v);
+                    setSheet(() => _subtitleBottomPadding = v);
+                    setState(() => _subtitleBottomPadding = v);
                   },
                 ),
-                const SizedBox(height: 6),
-                const Text('حجم الخط:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('حجم الخط: ${_subtitleFontSize.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 Slider(
                   value: _subtitleFontSize, min: 14, max: 32, divisions: 9,
                   activeColor: const Color(0xFF00F0FF),
                   onChanged: (v) {
                     setSheet(() => _subtitleFontSize = v);
                     setState(() => _subtitleFontSize = v);
-                  },
-                ),
-                const Text('ارتفاع الترجمة عن أسفل الشاشة:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                Slider(
-                  value: _subtitleBottomPadding, min: 30, max: 140, divisions: 11,
-                  activeColor: const Color(0xFF00F0FF),
-                  onChanged: (v) {
-                    setSheet(() => _subtitleBottomPadding = v);
-                    setState(() => _subtitleBottomPadding = v);
                   },
                 ),
                 Row(
@@ -2000,7 +2031,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Text('لون الخلفية: ', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    const Text('خلفية الترجمة: ', style: TextStyle(fontSize: 12, color: Colors.white70)),
                     TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.transparent); setState(() => _subtitleBgColor = Colors.transparent); }, child: const Text('شفاف')),
                     TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.black54); setState(() => _subtitleBgColor = Colors.black54); }, child: const Text('نصف شفاف')),
                     TextButton(onPressed: () { setSheet(() => _subtitleBgColor = Colors.black); setState(() => _subtitleBgColor = Colors.black); }, child: const Text('معتم')),
@@ -2019,8 +2050,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 6),
-        width: 26,
-        height: 26,
+        width: 24, height: 24,
         decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: Colors.white54, width: 2)),
       ),
     );
@@ -2042,6 +2072,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
+          fit: StackFit.expand,
           children: [
             Center(
               child: (_isReady && _chewieController != null)
@@ -2049,71 +2080,64 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
             ),
 
+            // طبقة الترجمة التفاعلية المتزامنة مع دعم كامل للدوران
             if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
               Positioned(
                 bottom: _subtitleBottomPadding,
-                left: 16,
-                right: 16,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _subtitleBgColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 6)],
+                left: 20,
+                right: 20,
+                child: IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _subtitleBgColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _activeSubtitleText,
+                        style: TextStyle(
+                          color: _subtitleTextColor,
+                          fontSize: _subtitleFontSize,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                    child: Text(_activeSubtitleText, style: TextStyle(color: _subtitleTextColor, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                   ),
                 ),
               ),
 
+            // أزرار التحكم العلوية
             if (!_isLocked)
               Positioned(
-                top: 14,
-                left: 16,
-                right: 16,
+                top: 10,
+                left: 14,
+                right: 14,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.high_quality_rounded, color: Color(0xFF00F0FF), size: 22),
-                            tooltip: 'الجودة: $_activeQualityName',
-                            onPressed: _showQualitySheet,
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.high_quality_rounded, color: Color(0xFF00F0FF)),
+                          onPressed: _showQualitySheet,
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.subtitles_rounded, color: Colors.white, size: 20),
-                            tooltip: 'الترجمة',
-                            onPressed: _openSubtitleSettings,
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.subtitles_rounded, color: Colors.white),
+                          onPressed: _openSubtitleSettings,
                         ),
                       ],
                     ),
                     Row(
                       children: [
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
-                            tooltip: 'قفل الشاشة',
-                            onPressed: () => setState(() => _isLocked = true),
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
+                          onPressed: () => setState(() => _isLocked = true),
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.65), shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
-                            tooltip: 'إغلاق المشغل',
-                            onPressed: () => Navigator.pop(context),
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
@@ -2123,19 +2147,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
             if (_isLocked)
               Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE50914),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: const Color(0xFFE50914).withOpacity(0.5), blurRadius: 10)],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
-                    tooltip: 'إلغاء قفل الشاشة',
-                    onPressed: () => setState(() => _isLocked = false),
-                  ),
+                top: 14,
+                right: 14,
+                child: IconButton(
+                  icon: const Icon(Icons.lock_rounded, color: Color(0xFFE50914), size: 28),
+                  onPressed: () => setState(() => _isLocked = false),
                 ),
               ),
           ],
@@ -2146,7 +2162,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
 // =========================================================================
-// 6. الشاشات التابعة (مدير التنزيل، المفضلة، المشاهدة لاحقاً، لوحة المشرف)
+// 7. الشاشات التابعة (المفضلة، المشاهدة لاحقاً، التنزيلات، لوحة المشرف)
 // =========================================================================
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
