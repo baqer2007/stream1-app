@@ -7,14 +7,9 @@ import 'screens/main_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // تفعيل محرك الوسائط libmpv
   MediaKit.ensureInitialized();
-  
-  // تفعيل قاعدة بيانات Hive
   await StorageService.init();
 
-  // تفعيل مؤقت نبضات القلب
   final devId = StorageService.get('device_id', defaultValue: 'dev_${DateTime.now().millisecondsSinceEpoch}');
   StorageService.put('device_id', devId);
   StreamService.sendHeartbeat(devId);
