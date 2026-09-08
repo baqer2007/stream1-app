@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
@@ -14,46 +13,79 @@ class MainHomeScreen extends StatefulWidget {
 }
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
-  final ScrollController _scroll = ScrollController();
-  List<dynamic> _trending = [];
+  final ScrollController _scrollController = ScrollController();
+  List<dynamic> _breaking = [];
   List<dynamic> _gridItems = [];
   int _page = 1;
-  bool _loading = true;
-  bool _hasMore = true;
+  bool _isLoading = false;
+  String _selectedCategory = 'all';
+
+  final List<Map<String, String>> _categories = [
+    {'id': 'all', 'label': 'الكل'},
+    {'id': 'movie', 'label': 'أفلام'},
+    {'id': 'tv', 'label': 'مسلسلات'},
+    {'id': 'top_rated', 'label': 'الأعلى تقييماً'},
+  ];
 
   @override
   void initState() {
     super.initState();
-    _fetch();
-    _scroll.addListener(() {
-      if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 400 && !_loading && _hasMore) {
-        _fetch();
+    _fetchData();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400 && !_isLoading) {
+        _fetchData();
       }
     });
   }
 
-  Future<void> _fetch() async {
-    setState(() => _loading = true);
+  String _buildEndpoint() {
+    if (_selectedCategory == 'movie') return '/movie/popular?page=$_page';
+    if (_selectedCategory == 'tv') return '/tv/popular?page=$_page';
+    if (_selectedCategory == 'top_rated') return '/movie/top_rated?page=$_page';
+    return '/trending/all/day?page=$_page';
+  }
+
+  Future<void> _fetchData() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
     try {
-      final res = await StreamService.fetchTmdb('trending/all/week?language=ar&page=$_page');
-      if (res != null && res.statusCode == 200) {
-        final list = jsonDecode(res.body)['results'] ?? [];
+      final endpoint = _buildEndpoint();
+      final res = await StreamService.fetchTmdb(endpoint);
+      if (res != null && res['results'] != null) {
+        final list = res['results'] as List<dynamic>;
         setState(() {
           if (_page == 1) {
-            _trending = list.take(6).toList();
-            _gridItems = list;
+            _breaking = list.take(5).toList();
+            _gridItems = list.skip(5).toList();
           } else {
             _gridItems.addAll(list);
           }
           _page++;
-          _loading = false;
+          _isLoading = false;
         });
-      } else {
-        setState(() => _loading = false);
+        return;
       }
-    } catch (_) {
-      setState(() => _loading = false);
-    }
+    } catch (_) {}
+
+    setState(() => _isLoading = false);
+  }
+
+  void _onCategorySelected(String id) {
+    if (_selectedCategory == id) return;
+    setState(() {
+      _selectedCategory = id;
+      _page = 1;
+      _gridItems.clear();
+      _breaking.clear();
+    });
+    _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -61,39 +93,89 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        backgroundColor: const Color(0xFF07090E),
         appBar: AppBar(
-          title: const Text('ONEBR TV', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+          backgroundColor: const Color(0xFF07090E),
+          elevation: 0,
+          title: const Text(
+            'ONEBR TV',
+            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Color(0xFFE50914)),
+          ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
+              icon: const Icon(Icons.bookmark_rounded, color: Colors.white70),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WatchLaterScreen())),
             ),
             IconButton(
-              icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981)),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DownloadsScreen())),
+              icon: const Icon(Icons.favorite_rounded, color: Colors.white70),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())),
             ),
           ],
         ),
         body: CustomScrollView(
-          controller: _scroll,
+          controller: _scrollController,
           slivers: [
-            if (_trending.isNotEmpty)
+            // شريط اختيار التصنيف
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 48,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: _categories.length,
+                  itemBuilder: (ctx, i) {
+                    final cat = _categories[i];
+                    final isSel = _selectedCategory == cat['id'];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: ChoiceChip(
+                        label: Text(cat['label']!),
+                        selected: isSel,
+                        selectedColor: const Color(0xFFE50914),
+                        labelStyle: TextStyle(color: isSel ? Colors.white : Colors.white70),
+                        backgroundColor: const Color(0xFF161B26),
+                        onSelected: (_) => _onCategorySelected(cat['id']!),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            if (_breaking.isNotEmpty)
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 200,
+                  height: 220,
                   child: PageView.builder(
-                    itemCount: _trending.length,
+                    itemCount: _breaking.length,
                     itemBuilder: (ctx, i) {
-                      final itm = _trending[i];
-                      final b = itm['backdrop_path'] != null ? 'https://image.tmdb.org/t/p/w780${itm['backdrop_path']}' : '';
-                      return InkWell(
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: itm))),
+                      final itm = _breaking[i];
+                      final poster = itm['backdrop_path'] ?? itm['poster_path'] ?? '';
+                      return GestureDetector(
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailsScreen(media: itm))),
                         child: Container(
-                          margin: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(20)),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: CachedNetworkImage(imageUrl: b, fit: BoxFit.cover),
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            image: DecorationImage(
+                              image: CachedNetworkImageProvider('https://image.tmdb.org/t/p/w780$poster'),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+                              ),
+                            ),
+                            alignment: Alignment.bottomRight,
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              itm['title'] ?? itm['name'] ?? '',
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
                           ),
                         ),
                       );
@@ -101,38 +183,35 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   ),
                 ),
               ),
-            const SliverPadding(
-              padding: EdgeInsets.all(16),
-              sliver: SliverToBoxAdapter(
-                child: Text('🔥 الأكثر تداولاً هذا الأسبوع', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-              ),
-            ),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.all(12),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  childAspectRatio: 0.62,
+                  childAspectRatio: 0.65,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) {
                     final itm = _gridItems[i];
-                    final p = itm['poster_path'] != null ? 'https://image.tmdb.org/t/p/w342${itm['poster_path']}' : '';
-                    return InkWell(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: itm))),
+                    final p = itm['poster_path'] ?? '';
+                    return GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailsScreen(media: itm))),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(10),
                         child: CachedNetworkImage(
-                          imageUrl: p,
+                          imageUrl: 'https://image.tmdb.org/t/p/w500$p',
                           fit: BoxFit.cover,
                           placeholder: (_, __) => Shimmer.fromColors(
-                            baseColor: Colors.grey.shade900,
-                            highlightColor: Colors.grey.shade800,
-                            child: Container(color: Colors.black),
+                            baseColor: const Color(0xFF161B26),
+                            highlightColor: const Color(0xFF222B3D),
+                            child: Container(color: const Color(0xFF161B26)),
                           ),
-                          errorWidget: (_, __, ___) => Container(color: Colors.grey.shade900),
+                          errorWidget: (_, __, ___) => Container(
+                            color: const Color(0xFF161B26),
+                            child: const Icon(Icons.movie, color: Colors.white24),
+                          ),
                         ),
                       ),
                     );
@@ -141,11 +220,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 ),
               ),
             ),
-            if (_loading)
+            if (_isLoading)
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+                  child: Center(child: CircularProgressIndicator(color: Color(0xFFE50914))),
                 ),
               ),
           ],
