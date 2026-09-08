@@ -1,79 +1,120 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/storage_service.dart';
-import '../player/media_player_screen.dart';
+import 'details_screen.dart';
 
-class DownloadsScreen extends StatefulWidget {
-  const DownloadsScreen({super.key});
+class FavoritesScreen extends StatefulWidget {
+  const FavoritesScreen({super.key});
 
   @override
-  State<DownloadsScreen> createState() => _DownloadsScreenState();
+  State<FavoritesScreen> createState() => _FavoritesScreenState();
 }
 
-class _DownloadsScreenState extends State<DownloadsScreen> {
+class _FavoritesScreenState extends State<FavoritesScreen> {
+  List<Map<String, dynamic>> _list = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    setState(() {
+      _list = StorageService.getList('favorites_list');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final list = StorageService.getList('downloaded_works_list');
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('التنزيلات')),
-        body: ListView.builder(
-          itemCount: list.length,
-          itemBuilder: (ctx, i) {
-            final itm = list[i];
-            return ListTile(
-              leading: const Icon(Icons.download_done, color: Colors.green),
-              title: Text(itm['title'] ?? ''),
-              subtitle: Text(itm['size'] ?? ''),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () {
-                  final f = File(itm['path'] ?? '');
-                  if (f.existsSync()) f.deleteSync();
-                  StorageService.removeItem('downloaded_works_list', itm['id']);
-                  setState(() {});
+        backgroundColor: const Color(0xFF07090E),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF07090E),
+          title: const Text('قائمة المفضلة'),
+        ),
+        body: _list.isEmpty
+            ? const Center(child: Text('لا توجد عناصر في المفضلة', style: TextStyle(color: Colors.white54)))
+            : ListView.builder(
+                itemCount: _list.length,
+                itemBuilder: (ctx, i) {
+                  final itm = _list[i];
+                  final p = itm['poster_path'] ?? '';
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: CachedNetworkImage(
+                        imageUrl: 'https://image.tmdb.org/t/p/w185$p',
+                        width: 50,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    title: Text(itm['title'] ?? itm['name'] ?? '', style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(itm['release_date'] ?? itm['first_air_date'] ?? '', style: const TextStyle(color: Colors.white54)),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailsScreen(media: itm))),
+                  );
                 },
               ),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MediaPlayerScreen(
-                    mediaId: itm['id'],
-                    title: itm['title'],
-                    videoUrl: itm['path'],
-                    qualities: const [],
-                    isLocalFile: true,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       ),
     );
   }
 }
 
-class FavoritesScreen extends StatelessWidget {
-  const FavoritesScreen({super.key});
+class WatchLaterScreen extends StatefulWidget {
+  const WatchLaterScreen({super.key});
+
+  @override
+  State<WatchLaterScreen> createState() => _WatchLaterScreenState();
+}
+
+class _WatchLaterScreenState extends State<WatchLaterScreen> {
+  List<Map<String, dynamic>> _list = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    setState(() {
+      _list = StorageService.getList('watch_later_list');
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final p = StorageService.get('active_profile', defaultValue: 'الرئيسي');
-    final list = StorageService.getList('favorites_list_$p');
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('المفضلة')),
-        body: list.isEmpty
-            ? const Center(child: Text('لا توجد عناصر بالمفضلة'))
+        backgroundColor: const Color(0xFF07090E),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF07090E),
+          title: const Text('المشاهدة لاحقاً'),
+        ),
+        body: _list.isEmpty
+            ? const Center(child: Text('لا توجد أعمال مضافة للمشاهدة لاحقاً', style: TextStyle(color: Colors.white54)))
             : ListView.builder(
-                itemCount: list.length,
-                itemBuilder: (ctx, i) => ListTile(
-                  title: Text(list[i]['title'] ?? list[i]['name'] ?? ''),
-                  leading: const Icon(Icons.star, color: Colors.amber),
-                ),
+                itemCount: _list.length,
+                itemBuilder: (ctx, i) {
+                  final itm = _list[i];
+                  final p = itm['poster_path'] ?? '';
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: CachedNetworkImage(
+                        imageUrl: 'https://image.tmdb.org/t/p/w185$p',
+                        width: 50,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    title: Text(itm['title'] ?? itm['name'] ?? '', style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(itm['release_date'] ?? itm['first_air_date'] ?? '', style: const TextStyle(color: Colors.white54)),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailsScreen(media: itm))),
+                  );
+                },
               ),
       ),
     );
