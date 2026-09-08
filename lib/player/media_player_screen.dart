@@ -1,24 +1,15 @@
-import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../services/storage_service.dart';
 import '../services/stream_service.dart';
 
-class SubtitleCue {
-  final Duration start;
-  final Duration end;
-  final String text;
-  SubtitleCue({required this.start, required this.end, required this.text});
-}
-
 class MediaPlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
   final String videoUrl;
-  final List<Map<String, dynamic>> qualities;
-  final VoidCallback? onNextEpisode;
+  final List<dynamic> qualities;
   final bool isLocalFile;
 
   const MediaPlayerScreen({
@@ -26,8 +17,7 @@ class MediaPlayerScreen extends StatefulWidget {
     required this.mediaId,
     required this.title,
     required this.videoUrl,
-    required this.qualities,
-    this.onNextEpisode,
+    this.qualities = const [],
     this.isLocalFile = false,
   });
 
@@ -36,128 +26,215 @@ class MediaPlayerScreen extends StatefulWidget {
 }
 
 class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
-  late final Player _player = Player();
-  late final VideoController _controller = VideoController(_player);
+  late final Player player;
+  late final VideoController controller;
+  bool _isLoading = true;
+  String? _errorMessage;
+  bool _showControls = true;
+  Timer? _hideTimer;
 
-  bool _isLocked = false;
-  bool _subtitlesEnabled = true;
-  final double _subtitleFontSize = 18.0;
-  final Color _subtitleColor = Colors.white;
-  double _subtitleOffset = 0.0;
-  List<SubtitleCue> _subtitles = [];
-  String _activeSub = '';
+  // إعدادات الترجمة
+  double _subSize = 18.0;
+  Color _subTextColor = Colors.white;
+  Color _subBgColor = Colors.transparent;
 
-  String _currentUrl = '';
-  String _activeQuality = 'تلقائي (Auto)';
+  // الوضع العائلي وحجب اللقطات
+  bool _familyMode = false;
+  bool _skipSensitive = false;
+
+  final List<Map<String, dynamic>> _colorOptions = [
+    {'name': 'أبيض', 'color': Colors.white},
+    {'name': 'أصفر', 'color': Colors.yellowAccent},
+    {'name': 'أخضر', 'color': Colors.greenAccent},
+    {'name': 'سماوي', 'color': Colors.cyanAccent},
+  ];
+
+  final List<Map<String, dynamic>> _bgOptions = [
+    {'name': 'شفاف', 'color': Colors.transparent},
+    {'name': 'أسود نصف شفاف', 'color': Colors.black54},
+    {'name': 'أسود معتم', 'color': Colors.black},
+    {'name': 'رمادي داكن', 'color': const Color(0xFF1E1E1E)},
+  ];
 
   @override
   void initState() {
     super.initState();
-    _currentUrl = widget.videoUrl;
-    _initEngine();
-    if (!widget.isLocalFile) _loadSubtitles();
+    player = Player();
+    controller = VideoController(player);
+    _loadPreferences();
+    _initPlayer();
   }
 
-  void _initEngine() async {
-    await _player.open(
-      Media(_currentUrl, httpHeaders: StreamService.stealthHeaders),
-      play: true,
-    );
-
-    final resume = StorageService.get('resume_${widget.mediaId}', defaultValue: 0);
-    if (resume > 5) {
-      await _player.seek(Duration(seconds: resume));
-    }
-
-    _player.stream.position.listen((pos) {
-      if (mounted) {
-        _syncSubtitles(pos);
-        if (pos.inSeconds % 5 == 0) {
-          StorageService.put('resume_${widget.mediaId}', pos.inSeconds);
-        }
-      }
-    });
+  void _loadPreferences() {
+    _familyMode = StorageService.get('family_mode', defaultValue: false);
+    _skipSensitive = StorageService.get('skip_sensitive', defaultValue: false);
+    _subSize = StorageService.get('sub_size', defaultValue: 18.0);
+    int txtVal = StorageService.get('sub_txt_color', defaultValue: Colors.white.value);
+    int bgVal = StorageService.get('sub_bg_color', defaultValue: Colors.transparent.value);
+    _subTextColor = Color(txtVal);
+    _subBgColor = Color(bgVal);
   }
 
-  void _loadSubtitles() async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/${widget.mediaId}'),
-        headers: StreamService.stealthHeaders,
-      ).timeout(const Duration(seconds: 4));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        final subPath = data['arTranslationFilePath'] ?? data['arTranslationFile'] ?? '';
-        if (subPath.isNotEmpty) {
-          final subRes = await http.get(Uri.parse(subPath));
-          if (subRes.statusCode == 200 && mounted) {
-            _parseSrt(utf8.decode(subRes.bodyBytes, allowMalformed: true));
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  void _parseSrt(String srt) {
-    final matches = RegExp(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n([\s\S]*?)(?=\n\n|\r\n\r\n|$)').allMatches(srt);
-    final List<SubtitleCue> list = [];
-    for (var m in matches) {
-      list.add(SubtitleCue(
-        start: _toDuration(m.group(1)!),
-        end: _toDuration(m.group(2)!),
-        text: m.group(3)!.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
-      ));
-    }
-    setState(() => _subtitles = list);
-  }
-
-  Duration _toDuration(String s) {
-    final p = s.replaceAll(',', '.').split(':');
-    final sec = p[2].split('.');
-    return Duration(
-      hours: int.parse(p[0]),
-      minutes: int.parse(p[1]),
-      seconds: int.parse(sec[0]),
-      milliseconds: int.parse(sec[1].padRight(3, '0').substring(0, 3)),
-    );
-  }
-
-  void _syncSubtitles(Duration pos) {
-    if (!_subtitlesEnabled || _subtitles.isEmpty) {
-      if (_activeSub.isNotEmpty) setState(() => _activeSub = '');
+  Future<void> _initPlayer() async {
+    final url = widget.videoUrl.trim();
+    if (url.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'رابط التشغيل غير متاح حالياً';
+      });
       return;
     }
-    final adjusted = pos + Duration(milliseconds: (_subtitleOffset * 1000).round());
-    int low = 0, high = _subtitles.length - 1;
-    String matched = '';
-    while (low <= high) {
-      int mid = (low + high) ~/ 2;
-      if (adjusted < _subtitles[mid].start) {
-        high = mid - 1;
-      } else if (adjusted > _subtitles[mid].end) {
-        low = mid + 1;
-      } else {
-        matched = _subtitles[mid].text;
-        break;
+
+    try {
+      await player.open(Media(url));
+      StreamService.recordWatchHistory(widget.mediaId, widget.title);
+      _startHideTimer();
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'تعذر تشغيل الفيديو: $e';
+        });
       }
     }
-    if (_activeSub != matched) setState(() => _activeSub = matched);
   }
 
-  void _changeQuality(String url, String name) async {
-    final pos = _player.state.position;
-    setState(() {
-      _currentUrl = url;
-      _activeQuality = name;
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _showControls = false);
     });
-    await _player.open(Media(url, httpHeaders: StreamService.stealthHeaders));
-    await _player.seek(pos);
+  }
+
+  void _toggleControls() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startHideTimer();
+  }
+
+  void _openSettingsDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111726),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('إعدادات المشغل والترجمة', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Divider(color: Colors.white12),
+
+                      SwitchListTile(
+                        title: const Text('الوضع العائلي', style: TextStyle(color: Colors.white)),
+                        subtitle: const Text('كتم وحجب المشاهد غير اللائقة تلقائياً', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        value: _familyMode,
+                        activeColor: const Color(0xFFE50914),
+                        onChanged: (val) {
+                          setSheetState(() => _familyMode = val);
+                          setState(() => _familyMode = val);
+                          StorageService.put('family_mode', val);
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('تخطي اللقطات الحساسة', style: TextStyle(color: Colors.white)),
+                        subtitle: const Text('القفز التلقائي عن المشاهد التي تم الإبلاغ عنها', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        value: _skipSensitive,
+                        activeColor: const Color(0xFFE50914),
+                        onChanged: (val) {
+                          setSheetState(() => _skipSensitive = val);
+                          setState(() => _skipSensitive = val);
+                          StorageService.put('skip_sensitive', val);
+                        },
+                      ),
+
+                      const SizedBox(height: 12),
+                      Text('حجم خط الترجمة: ${_subSize.toInt()}px', style: const TextStyle(color: Colors.white70)),
+                      Slider(
+                        value: _subSize,
+                        min: 14.0,
+                        max: 32.0,
+                        activeColor: const Color(0xFFE50914),
+                        onChanged: (val) {
+                          setSheetState(() => _subSize = val);
+                          setState(() => _subSize = val);
+                          StorageService.put('sub_size', val);
+                        },
+                      ),
+
+                      const SizedBox(height: 8),
+                      const Text('لون الخط:', style: TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: _colorOptions.map((opt) {
+                          final isSel = _subTextColor == opt['color'];
+                          return ChoiceChip(
+                            label: Text(opt['name']),
+                            selected: isSel,
+                            selectedColor: const Color(0xFFE50914),
+                            onSelected: (_) {
+                              setSheetState(() => _subTextColor = opt['color']);
+                              setState(() => _subTextColor = opt['color']);
+                              StorageService.put('sub_txt_color', (opt['color'] as Color).value);
+                            },
+                          );
+                        }).toList(),
+                      ),
+
+                      const SizedBox(height: 12),
+                      const Text('لون خلفية الخط:', style: TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: _bgOptions.map((opt) {
+                          final isSel = _subBgColor == opt['color'];
+                          return ChoiceChip(
+                            label: Text(opt['name']),
+                            selected: isSel,
+                            selectedColor: const Color(0xFFE50914),
+                            onSelected: (_) {
+                              setSheetState(() => _subBgColor = opt['color']);
+                              setState(() => _subBgColor = opt['color']);
+                              StorageService.put('sub_bg_color', (opt['color'] as Color).value);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    _hideTimer?.cancel();
+    player.dispose();
     super.dispose();
   }
 
@@ -165,136 +242,94 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
+      body: GestureDetector(
+        onTap: _toggleControls,
         child: Stack(
           children: [
             Center(
-              child: Video(
-                controller: _controller,
-                controls: (state) => const SizedBox.shrink(),
-              ),
+              child: _errorMessage != null
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.redAccent, size: 52),
+                        const SizedBox(height: 12),
+                        Text(_errorMessage!, style: const TextStyle(color: Colors.white70)),
+                      ],
+                    )
+                  : Video(controller: controller),
             ),
-            if (_subtitlesEnabled && _activeSub.isNotEmpty)
-              Positioned(
-                bottom: 80,
-                left: 20,
-                right: 20,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(14)),
-                    child: Text(
-                      _activeSub,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: _subtitleColor, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(color: Color(0xFFE50914)),
+              ),
+            if (_showControls)
+              AnimatedOpacity(
+                opacity: _showControls ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 250),
+                child: Container(
+                  color: Colors.black38,
+                  child: SafeArea(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.title,
+                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (_familyMode)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  margin: const EdgeInsets.only(left: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.greenAccent),
+                                  ),
+                                  child: const Text('عائلي', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.tune_rounded, color: Colors.white),
+                                onPressed: _openSettingsDialog,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _subBgColor,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'معاينة الترجمة التجريبية',
+                              style: TextStyle(
+                                fontSize: _subSize,
+                                color: _subTextColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            if (!_isLocked) ...[
-              Positioned(
-                top: 14,
-                left: 16,
-                right: 16,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.high_quality_rounded, color: Color(0xFF00F0FF)),
-                          onPressed: () => _openQualityPicker(),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.subtitles_rounded, color: Colors.white),
-                          onPressed: () => _openSubConfig(),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
-                          onPressed: () => setState(() => _isLocked = true),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    )
-                  ],
-                ),
-              ),
-            ] else ...[
-              Positioned(
-                top: 16,
-                right: 16,
-                child: FloatingActionButton.small(
-                  backgroundColor: const Color(0xFFE50914),
-                  child: const Icon(Icons.lock_rounded, color: Colors.white),
-                  onPressed: () => setState(() => _isLocked = false),
-                ),
-              ),
-            ]
           ],
-        ),
-      ),
-    );
-  }
-
-  void _openQualityPicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF111726),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: widget.qualities.map((q) => ListTile(
-            title: Text(q['resolution'] ?? 'HD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            trailing: _activeQuality == q['resolution'] ? const Icon(Icons.check, color: Color(0xFF00F0FF)) : null,
-            onTap: () {
-              Navigator.pop(context);
-              _changeQuality(q['url'], q['resolution']);
-            },
-          )).toList(),
-        ),
-      ),
-    );
-  }
-
-  void _openSubConfig() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF111726),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setBtm) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                title: const Text('تشغيل الترجمة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                value: _subtitlesEnabled,
-                onChanged: (v) {
-                  setBtm(() => _subtitlesEnabled = v);
-                  setState(() => _subtitlesEnabled = v);
-                },
-              ),
-              Slider(
-                value: _subtitleOffset, min: -5.0, max: 5.0, divisions: 20,
-                activeColor: const Color(0xFF00F0FF),
-                onChanged: (v) {
-                  setBtm(() => _subtitleOffset = v);
-                  setState(() => _subtitleOffset = v);
-                },
-              ),
-              Text('المزامنة: ${_subtitleOffset.toStringAsFixed(1)} ثانية', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            ],
-          ),
         ),
       ),
     );
