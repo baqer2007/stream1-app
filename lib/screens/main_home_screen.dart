@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import '../services/storage_service.dart';
 import '../services/stream_service.dart';
 import 'details_screen.dart';
 import 'extra_screens.dart';
@@ -36,10 +34,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
   Future<void> _fetch() async {
     setState(() => _loading = true);
-    final key = StreamService.tmdbKey;
     try {
-      final res = await http.get(Uri.parse('https://api.themoviedb.org/3/trending/all/week?api_key=$key&language=ar&page=$_page'));
-      if (res.statusCode == 200) {
+      final res = await StreamService.fetchTmdb('trending/all/week?language=ar&page=$_page');
+      if (res != null && res.statusCode == 200) {
         final list = jsonDecode(res.body)['results'] ?? [];
         setState(() {
           if (_page == 1) {
@@ -51,6 +48,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           _page++;
           _loading = false;
         });
+      } else {
+        setState(() => _loading = false);
       }
     } catch (_) {
       setState(() => _loading = false);
@@ -134,9 +133,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                             child: Container(color: Colors.black),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                   childCount: _gridItems.length,
                 ),
               ),
