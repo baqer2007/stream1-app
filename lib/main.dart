@@ -7,13 +7,31 @@ import 'screens/main_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-  await StorageService.init();
 
-  final devId = StorageService.get('device_id', defaultValue: 'dev_${DateTime.now().millisecondsSinceEpoch}');
-  StorageService.put('device_id', devId);
-  StreamService.sendHeartbeat(devId);
-  Timer.periodic(const Duration(minutes: 4), (_) => StreamService.sendHeartbeat(devId));
+  // تهيئة محرك الفيديو مع حماية لمنع خروج التطبيق
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e) {
+    debugPrint('MediaKit Init Error: $e');
+  }
+
+  // تهيئة قاعدة البيانات المحلية
+  try {
+    await StorageService.init();
+  } catch (e) {
+    debugPrint('StorageService Init Error: $e');
+  }
+
+  // تسجيل معرف الجهاز وإرسال النبضات
+  try {
+    final devId = StorageService.get(
+      'device_id',
+      defaultValue: 'dev_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    await StorageService.put('device_id', devId);
+    StreamService.sendHeartbeat(devId);
+    Timer.periodic(const Duration(minutes: 4), (_) => StreamService.sendHeartbeat(devId));
+  } catch (_) {}
 
   runApp(const OnebrTvApp());
 }
