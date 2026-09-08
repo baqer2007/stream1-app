@@ -132,18 +132,22 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                             highlightColor: Colors.grey.shade800,
                             child: Container(color: Colors.black),
                           ),
+                          errorWidget: (_, __, ___) => Container(color: Colors.grey.shade900),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                   childCount: _gridItems.length,
                 ),
               ),
             ),
             if (_loading)
               const SliverToBoxAdapter(
-                child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))),
-              )
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF))),
+                ),
+              ),
           ],
         ),
       ),
