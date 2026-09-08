@@ -57,7 +57,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       final endpoint = _buildEndpoint();
       final res = await StreamService.fetchTmdb(endpoint);
       if (res != null && res['results'] != null) {
-        final list = (res['results'] as List<dynamic>).where((e) => e['poster_path'] != null).toList();
+        final list = (res['results'] as List<dynamic>)
+            .where((e) => (e['poster_path'] != null || e['backdrop_path'] != null))
+            .toList();
+
         if (mounted) {
           setState(() {
             if (_page == 1) {
@@ -211,22 +214,22 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                                   gradient: LinearGradient(
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+                                    colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
                                   ),
                                 ),
                                 alignment: Alignment.bottomRight,
                                 padding: const EdgeInsets.all(16),
-                              child: Text(
-                                itm['title'] ?? itm['name'] ?? '',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                child: Text(
+                                  itm['title'] ?? itm['name'] ?? '',
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
                 SliverPadding(
                   padding: const EdgeInsets.all(12),
                   sliver: SliverGrid(
