@@ -1,5 +1,5 @@
 name: onebr_tv
-description: "ONEBR TV - Professional Streaming & Offline Player"
+description: "ONEBR TV - Streaming & Media Application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -12,19 +12,14 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # 1. محرك الوسائط الحديث فائق الأداء (libmpv)
   media_kit: ^1.1.10
   media_kit_video: ^1.2.4
   media_kit_libs_android_video: ^1.2.4
 
-  # 2. قاعدة بيانات NoSQL سريعة وبدون تجميد للشاشة
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-
-  # 3. إدارة الملفات والمسارات الآمنة لنظام أندرويد
   path_provider: ^2.1.2
 
-  # 4. الشبكة وتخزين الصور السحابي
   http: ^1.2.0
   cached_network_image: ^3.3.1
   shimmer: ^3.0.0
