@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
@@ -42,8 +41,8 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
 
   bool _isLocked = false;
   bool _subtitlesEnabled = true;
-  double _subtitleFontSize = 18.0;
-  Color _subtitleColor = Colors.white;
+  final double _subtitleFontSize = 18.0;
+  final Color _subtitleColor = Colors.white;
   double _subtitleOffset = 0.0;
   List<SubtitleCue> _subtitles = [];
   String _activeSub = '';
