@@ -7,6 +7,10 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -38,11 +42,8 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-
-              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
               <application
                   android:label="ONEBR TV"
@@ -57,12 +58,10 @@ jobs:
                       android:theme="@style/LaunchTheme"
                       android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                       android:hardwareAccelerated="true"
-                      android:supportsPictureInPicture="true"
                       android:windowSoftInputMode="adjustResize">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
-                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                       </intent-filter>
                   </activity>
                   <meta-data
@@ -74,8 +73,8 @@ jobs:
 
       - name: Set minSdk to 21
         run: |
-          sed -i 's/minSdkVersion = flutter.minSdkVersion/minSdkVersion = 21/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
+          sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
 
       - name: Install dependencies
         run: flutter pub get
@@ -88,3 +87,5 @@ jobs:
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          overwrite: true
