@@ -101,6 +101,26 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
+  void _downloadAction() async {
+    if (_matchedCee == null) return;
+    String id = _matchedCee!['nb'].toString();
+    final title = widget.media['title'] ?? widget.media['name'] ?? 'Video';
+    final data = await StreamService.getVideoSource(id);
+    if (data != null) {
+      final qualities = List<Map<String, dynamic>>.from(data['qualities'] ?? []);
+      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '720p', orElse: () => qualities.first)['url'];
+      DownloadManager.instance.startDownload(
+        targetId: id,
+        title: title,
+        url: dlUrl,
+        poster: widget.media['poster_path'] ?? '',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('بدأ التنزيل...')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = widget.media['title'] ?? widget.media['name'] ?? '';
@@ -156,6 +176,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         const Row(children: [CircularProgressIndicator(strokeWidth: 2), SizedBox(width: 8), Text('جاري الفحص...')])
                       else
                         Text(_matchedCee != null ? '✅ متوفر للمشاهدة' : '❌ غير متوفر بالسيرفر', style: TextStyle(color: _matchedCee != null ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.download_rounded, size: 16),
+                        label: const Text('تنزيل'),
+                        onPressed: _matchedCee != null ? _downloadAction : null,
+                      )
                     ],
                   ),
                 )
