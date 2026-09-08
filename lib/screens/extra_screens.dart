@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/storage_service.dart';
-import '../services/stream_service.dart';
-import '../services/download_manager.dart';
 import '../player/media_player_screen.dart';
 
 class DownloadsScreen extends StatefulWidget {
