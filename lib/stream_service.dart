@@ -8,6 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
+  /// جلب التغذية الرئيسية
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -26,17 +27,17 @@ class StreamService {
     return [];
   }
 
+  /// مسار التصنيفات الرسمي والمطابق لـ DevTools
   static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0, int? videoKind}) async {
     try {
       final offset = page * 30;
-      
       if (videoKind == null) {
-        final urlMovies = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=1&offset=$offset&level=0';
-        final urlSeries = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=2&offset=$offset&level=0';
+        final url1 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=1&offset=$offset&level=0';
+        final url2 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=2&offset=$offset&level=0';
 
         final responses = await Future.wait([
-          http.get(Uri.parse(urlMovies), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
-          http.get(Uri.parse(urlSeries), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse(url1), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse(url2), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
         ]);
 
         List combined = [];
@@ -74,6 +75,7 @@ class StreamService {
     return [];
   }
 
+  /// البحث
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -89,6 +91,7 @@ class StreamService {
     return [];
   }
 
+  /// استخراج الجودات مع جعل 240p هو الخيار الافتراضي
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -145,6 +148,7 @@ class StreamService {
     return null;
   }
 
+  /// استخراج الترجمة
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -160,6 +164,7 @@ class StreamService {
     return '';
   }
 
+  /// جلب حلقات المسلسل
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
