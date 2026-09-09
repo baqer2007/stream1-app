@@ -101,7 +101,7 @@ class DownloadManager extends ChangeNotifier {
           'title': title,
           'filePath': '$saveDir/$safeName',
           'poster': poster,
-          'status': DownloadTaskStatus.enqueued.value,
+          'status': DownloadTaskStatus.enqueued.index,
           'progress': 0,
         });
         notifyListeners();
@@ -150,7 +150,6 @@ void downloadCallback(String id, int status, int progress) {}
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // حماية بدء التشغيل من الانهيار
   try {
     await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
     FlutterDownloader.registerCallback(downloadCallback);
