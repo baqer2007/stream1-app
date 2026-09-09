@@ -60,7 +60,6 @@ class ActiveDownload {
   final String url;
   final String poster;
   double progress;
-  String speed;
   http.Client? client;
   bool isCancelled = false;
 
@@ -70,7 +69,6 @@ class ActiveDownload {
     required this.url,
     required this.poster,
     this.progress = 0.0,
-    this.speed = '',
   });
 }
 
@@ -280,6 +278,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
+  // التصنيفات الرسمية من سينمانا بمعرفاتها الدقيقة
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -347,6 +346,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     return false;
   }
 
+  List<dynamic> _applyFamilyFilter(List<dynamic> items) {
+    if (!AppState.instance.isFamilyMode) return items;
+    final blocked = ['sex', 'nude', 'erotic', 'sensual', 'حمام', 'جنس', 'إباحي', 'عري', 'adult'];
+    return items.where((el) {
+      final text = '${el['title']} ${el['en_title']} ${el['ar_title']} ${el['ar_content']}'.toLowerCase();
+      return !blocked.any((b) => text.contains(b));
+    }).toList();
+  }
+
   Future<void> _fetchContent({bool reset = false}) async {
     if (reset) {
       _page = 0;
@@ -374,10 +382,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         rawList = await StreamService.fetchFeed(isSeries: true, page: _page, perPage: 32);
       }
 
+      final filtered = _applyFamilyFilter(rawList);
       final List<dynamic> uniqueItems = [];
-      for (var item in rawList) {
+      for (var item in filtered) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
+          if (_tabIndex == 1 && checkIsSeries(item)) continue;
+          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
+
           _loadedIds.add(id);
           uniqueItems.add(item);
         }
@@ -409,8 +421,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     final results = await StreamService.searchContent(clean);
 
     _loadedIds.clear();
+    final filtered = _applyFamilyFilter(results);
     final List<dynamic> uniqueList = [];
-    for (var item in results) {
+    for (var item in filtered) {
       final id = (item['nb'] ?? item['id'])?.toString();
       if (id != null && !_loadedIds.contains(id)) {
         _loadedIds.add(id);
@@ -472,6 +485,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               SwitchListTile(
                 secondary: const Icon(Icons.shield_rounded, color: Color(0xFF10B981)),
                 title: const Text('الوضع العائلي', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('حجب المحتوى غير المناسب', style: TextStyle(fontSize: 11, color: Colors.grey)),
                 value: app.isFamilyMode,
                 onChanged: (val) {
                   app.toggleFamilyMode(val);
