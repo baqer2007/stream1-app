@@ -8,6 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
+  /// جلب التغذية الرئيسية مع تحديد videoKind صريحاً
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -26,9 +27,10 @@ class StreamService {
     return [];
   }
 
+  /// جلب أعمال التصنيف المعتمدة من سينمانا بمسار category_id الحقيقي
   static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0}) async {
     try {
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/videoKind/1/sortParam/desc/pageNumber/$page';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/sortParam/desc/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -39,6 +41,7 @@ class StreamService {
     return [];
   }
 
+  /// البحث المباشر
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -53,6 +56,7 @@ class StreamService {
     return [];
   }
 
+  /// استخراج روابط الفيديو المباشرة والجودات
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -109,6 +113,7 @@ class StreamService {
     return null;
   }
 
+  /// استخراج رابط الترجمة العربية
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -124,6 +129,7 @@ class StreamService {
     return '';
   }
 
+  /// جلب حلقات المسلسل
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
