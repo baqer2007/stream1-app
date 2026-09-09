@@ -8,6 +8,23 @@ import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // =========================================================================
+// كائن الترجمة المخصص (Subtitle Model)
+// =========================================================================
+class Subtitle {
+  final int index;
+  final Duration start;
+  final Duration end;
+  final String text;
+
+  Subtitle({
+    required this.index,
+    required this.start,
+    required this.end,
+    required this.text,
+  });
+}
+
+// =========================================================================
 // 1. خدمة الاتصال بسيرفر البث (StreamService)
 // =========================================================================
 class StreamService {
@@ -148,7 +165,7 @@ class StreamService {
 }
 
 // =========================================================================
-// 2. إدارة المفضلة والتخزين المحلي والتنزيلات
+// 2. إدارة التخزين والمفضلة والتنزيلات
 // =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
@@ -458,7 +475,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
-  // التمييز الفعلي والدقيق بين الفيلم والمسلسل
   bool _isItemSeries(Map<String, dynamic> item) {
     final kind = item['kind']?.toString();
     final level = item['level']?.toString();
@@ -501,7 +517,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         results = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 32);
       }
 
-      // إزالة التكرار نهائياً
       final List<dynamic> uniqueItems = [];
       for (var item in results) {
         final id = (item['nb'] ?? item['id'])?.toString();
@@ -912,7 +927,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final en = (widget.media['en_title'] ?? '').toString().toLowerCase();
     final ar = (widget.media['title'] ?? widget.media['ar_title'] ?? '').toString().toLowerCase();
 
-    // تأكيد نوع العمل لمنع خلط الأفلام بالمسلسلات
     if (kind == '1' || level == '1') {
       _isSeries = true;
     } else if (kind == '2' || kind == '0' || level == '0') {
@@ -1167,12 +1181,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _currentStreamUrl = '';
   String _activeQualityName = 'تلقائي';
 
-  // إعدادات الترجمة المتقدمة
   bool _subtitlesEnabled = true;
   double _subtitleFontSize = 18.0;
   Color _subtitleTextColor = Colors.white;
   Color _subtitleBgColor = Colors.black54;
-  double _subtitleBottomPadding = 60.0; // قابلة للرفع حتى 350px
+  double _subtitleBottomPadding = 60.0;
   List<Subtitle> _parsedSubtitles = [];
   String _activeSubtitleText = '';
 
@@ -1338,7 +1351,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Slider(
                   value: _subtitleBottomPadding,
                   min: 10,
-                  max: 350, // مجال واسع جداً يصل لمنتصف الشاشة
+                  max: 350,
                   divisions: 34,
                   activeColor: const Color(0xFF00F0FF),
                   onChanged: (val) {
@@ -1463,7 +1476,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
               ),
 
-              // طبقة الترجمة التفاعلية الثابتة
               if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
                 Positioned(
                   bottom: _subtitleBottomPadding,
@@ -1484,9 +1496,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // عناصر التحكم الكاملة الثابتة عند الدوران
               if (_showControls && !_isLocked) ...[
-                // الشريط العلوي
                 Positioned(
                   top: 10,
                   left: 10,
@@ -1521,7 +1531,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-                // أزرار الوسط (تشغيل / إيقاف / تقديم وتأخير 10 ثوانٍ)
                 Center(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1566,7 +1575,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-                // الشريط السفلي والوقت وتدوير الشاشة
                 if (_controller != null && _controller!.value.isInitialized)
                   Positioned(
                     bottom: 10,
@@ -1617,7 +1625,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
               ],
 
-              // زر فك القفل في حال تم قفل الشاشة
               if (_isLocked)
                 Positioned(
                   top: 14,
