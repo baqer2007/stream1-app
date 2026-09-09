@@ -7,9 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// =========================================================================
-// كائن الترجمة المخصص (Subtitle Model)
-// =========================================================================
 class Subtitle {
   final int index;
   final Duration start;
@@ -25,7 +22,7 @@ class Subtitle {
 }
 
 // =========================================================================
-// 1. خدمة الاتصال بسيرفر البث (StreamService)
+// 1. خدمة الاتصال بسيرفر سينمانا (StreamService)
 // =========================================================================
 class StreamService {
   static Map<String, String> get stealthHeaders => {
@@ -34,7 +31,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  static Future<List<dynamic>> fetchHomeFeed({int level = 0, int page = 0, int perPage = 24}) async {
+  static Future<List<dynamic>> fetchHomeFeed({required int level, int page = 0, int perPage = 28}) async {
     try {
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/pageNumber/$page/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
@@ -51,7 +48,7 @@ class StreamService {
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$level';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
 
       if (res.statusCode == 200) {
@@ -165,7 +162,7 @@ class StreamService {
 }
 
 // =========================================================================
-// 2. إدارة التخزين والمفضلة والتنزيلات
+// 2. التخزين المحلي وإدارة التنزيلات مع الحفظ المسبق
 // =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
@@ -184,7 +181,7 @@ class LocalStorageService {
     await prefs.setString(key, jsonEncode(list));
   }
 
-  static Future<void> appendItem(String key, Map<String, dynamic> item, {int maxLength = 30, String idField = 'nb'}) async {
+  static Future<void> appendItem(String key, Map<String, dynamic> item, {int maxLength = 40, String idField = 'nb'}) async {
     final list = await getList(key);
     list.removeWhere((x) => (x[idField] ?? x['id'])?.toString() == (item[idField] ?? item['id'])?.toString());
     list.insert(0, item);
@@ -292,6 +289,15 @@ class DownloadManager extends ChangeNotifier {
         downloadedBytes = file.lengthSync();
       }
 
+      // تسجيل الملف فورياً في القائمة حتى لو تم إغلاق التطبيق
+      await LocalStorageService.appendItem('downloaded_works_list', {
+        'nb': targetId,
+        'title': title,
+        'path': filePath,
+        'size': 'جاري التنزيل...',
+        'poster': poster,
+      });
+
       final client = http.Client();
       download.client = client;
 
@@ -321,7 +327,7 @@ class DownloadManager extends ChangeNotifier {
 
       await sink.close();
 
-      if (!download.isCancelled && file.existsSync() && file.lengthSync() > 1024 * 512) {
+      if (!download.isCancelled && file.existsSync()) {
         final fileSizeMb = (file.lengthSync() / (1024 * 1024)).toStringAsFixed(1);
         await LocalStorageService.appendItem('downloaded_works_list', {
           'nb': targetId,
@@ -348,7 +354,7 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // =========================================================================
-// 3. حالة التطبيق (AppState)
+// 3. حالة التطبيق
 // =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
@@ -409,7 +415,7 @@ class OnebrTvApp extends StatelessWidget {
 }
 
 // =========================================================================
-// 4. الشاشة الرئيسية مع التصنيفات وإزالة التكرار
+// 4. الشاشة الرئيسية مع التمييز الدقيق بين الأفلام والمسلسلات
 // =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -436,17 +442,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedGenre;
 
-  // تصنيفات دقيقة باللغة العربية مع مرادفات البحث
   final List<Map<String, dynamic>> _genres = [
     {'id': 'all', 'ar': 'الكل', 'query': ''},
-    {'id': 'action', 'ar': 'أكشن', 'query': 'أكشن'},
-    {'id': 'drama', 'ar': 'دراما', 'query': 'دراما'},
-    {'id': 'comedy', 'ar': 'كوميديا', 'query': 'كوميديا'},
-    {'id': 'horror', 'ar': 'رعب', 'query': 'رعب'},
-    {'id': 'crime', 'ar': 'جريمة', 'query': 'جريمة'},
-    {'id': 'adventure', 'ar': 'مغامرة', 'query': 'مغامرة'},
-    {'id': 'anime', 'ar': 'أنمي', 'query': 'أنمي'},
-    {'id': 'romance', 'ar': 'رومانسي', 'query': 'رومانسي'},
+    {'id': 'action', 'ar': 'أكشن', 'query': 'action'},
+    {'id': 'comedy', 'ar': 'كوميديا', 'query': 'comedy'},
+    {'id': 'horror', 'ar': 'رعب', 'query': 'horror'},
+    {'id': 'drama', 'ar': 'دراما', 'query': 'drama'},
+    {'id': 'adventure', 'ar': 'مغامرة', 'query': 'adventure'},
+    {'id': 'anime', 'ar': 'أنمي', 'query': 'anime'},
+    {'id': 'crime', 'ar': 'جريمة', 'query': 'crime'},
+    {'id': 'romance', 'ar': 'رومانسي', 'query': 'romance'},
   ];
 
   @override
@@ -458,7 +463,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         setState(() {
           _tabIndex = _tabController.index;
           _selectedGenre = null;
-          _activeTitle = 'أحدث الإضافات';
+          _activeTitle = _tabIndex == 1 ? 'الأفلام' : (_tabIndex == 2 ? 'المسلسلات' : 'أحدث الإضافات');
         });
         _fetchContent(reset: true);
       }
@@ -476,18 +481,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
-  // التمييز الحقيقي القطعي بين الفيلم والمسلسل في سينمانا
-  static bool checkIsSeries(Map<String, dynamic> item) {
-    if (item['isSeries'] == true || item['isSeries'] == 1 || item['isSeries'] == '1') return true;
+  static bool isStrictSeries(Map<String, dynamic> item) {
     final kind = item['kind']?.toString();
     final level = item['level']?.toString();
     if (kind == '1' || level == '1') return true;
     if (kind == '2' || kind == '0' || level == '0') return false;
+    if (item['isSeries'] == true || item['isSeries'] == 1 || item['isSeries'] == '1') return true;
 
     final en = (item['en_title'] ?? '').toString().toLowerCase();
     final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
-    
-    // إذا كان يحتوي على كلمة فيلم بشكل واضح فهو فيلم 100%
     if (en.contains('movie') || en.contains('film') || ar.contains('فيلم')) return false;
     if (en.contains('season') || ar.contains('الموسم') || ar.contains('مسلسل')) return true;
 
@@ -513,22 +515,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
           StreamService.searchContent(q, level: 1),
         ]);
         results = [...res[0], ...res[1]];
-        // إذا لم يعيد البحث النصي نتائج، نجلب التغذية العامة ونفلتر بالتصنيف
-        if (results.isEmpty) {
-          final feed = await StreamService.fetchHomeFeed(level: 0, page: 0, perPage: 50);
-          results = feed;
-        }
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
           StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 16),
           StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 16),
         ]);
-        results = [...res[0], ...res[1]]..shuffle();
+        results = [...res[0], ...res[1]];
       } else if (_tabIndex == 1) {
-        // قسم الأفلام فقط
         results = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 32);
       } else {
-        // قسم المسلسلات فقط
         results = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 32);
       }
 
@@ -536,10 +531,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       for (var item in results) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
-          // في تبويب الأفلام، تأكد من عدم إدخال المسلسلات
-          if (_tabIndex == 1 && checkIsSeries(item)) continue;
-          // في تبويب المسلسلات، تأكد من عدم إدخال الأفلام
-          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
+          if (_tabIndex == 1 && isStrictSeries(item)) continue;
+          if (_tabIndex == 2 && !isStrictSeries(item)) continue;
 
           _loadedIds.add(id);
           uniqueItems.add(item);
@@ -861,7 +854,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
           final title = item['ar_title'] ?? item['en_title'] ?? item['title'] ?? '';
           final poster = StreamService.extractPoster(item);
           final score = (item['stars'] ?? '7.5').toString();
-          final isSeries = checkIsSeries(item);
+          final isSeries = isStrictSeries(item);
 
           return InkWell(
             onTap: () => _openDetails(item),
@@ -942,13 +935,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   @override
   void initState() {
     super.initState();
-    // استخدام التمييز القطعي
-    _isSeries = _MainHomeScreenState.checkIsSeries(widget.media);
+    _isSeries = _MainHomeScreenState.isStrictSeries(widget.media);
 
     _checkFav();
     LocalStorageService.appendItem('continue_watching_list', widget.media);
 
-    // تحميل الحلقات فقط وفقط إذا كان مسلسلاً حقيقياً
     if (_isSeries) {
       _loadEpisodes();
     }
@@ -1088,7 +1079,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               ),
               const SizedBox(height: 16),
 
-              // زر التشغيل الرئيسي
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -1114,7 +1104,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // عرض الحلقات فقط للمسلسلات الحقيقية إذا وجدت حلقات في السيرفر
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1158,7 +1147,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// 6. المشغل المطور مع عناصر تحكم ثابتة عند الدوران والتحكم بالترجمة
+// 6. المشغل المطور مع عناصر تحكم ثابتة عند الدوران
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1192,7 +1181,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _currentStreamUrl = '';
   String _activeQualityName = 'تلقائي';
 
-  // إعدادات الترجمة المتقدمة
   bool _subtitlesEnabled = true;
   double _subtitleFontSize = 18.0;
   Color _subtitleTextColor = Colors.white;
@@ -1363,7 +1351,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Slider(
                   value: _subtitleBottomPadding,
                   min: 10,
-                  max: 350, // مجال واسع جداً يصل لمنتصف الشاشة
+                  max: 350,
                   divisions: 34,
                   activeColor: const Color(0xFF00F0FF),
                   onChanged: (val) {
@@ -1488,7 +1476,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
               ),
 
-              // طبقة الترجمة الحية التفاعلية
               if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
                 Positioned(
                   bottom: _subtitleBottomPadding,
@@ -1509,7 +1496,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // عناصر التحكم الكاملة الثابتة عند الدوران
               if (_showControls && !_isLocked) ...[
                 Positioned(
                   top: 10,
