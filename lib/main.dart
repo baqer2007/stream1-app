@@ -31,7 +31,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  static Future<List<dynamic>> fetchHomeFeed({required int level, int page = 0, int perPage = 28}) async {
+  static Future<List<dynamic>> fetchHomeFeed({required int level, int page = 0, int perPage = 30}) async {
     try {
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/pageNumber/$page/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
@@ -162,7 +162,7 @@ class StreamService {
 }
 
 // =========================================================================
-// 2. التخزين المحلي وإدارة التنزيلات مع الحفظ المسبق
+// 2. التخزين المحلي وإدارة التنزيلات
 // =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
@@ -289,7 +289,6 @@ class DownloadManager extends ChangeNotifier {
         downloadedBytes = file.lengthSync();
       }
 
-      // تسجيل الملف فورياً في القائمة حتى لو تم إغلاق التطبيق
       await LocalStorageService.appendItem('downloaded_works_list', {
         'nb': targetId,
         'title': title,
@@ -354,14 +353,13 @@ class DownloadManager extends ChangeNotifier {
 }
 
 // =========================================================================
-// 3. حالة التطبيق
+// 3. حالة التطبيق والمشغل الرئيسي
 // =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
   AppState._();
 
   bool isDark = true;
-  String currentProfile = 'الرئيسي';
 
   void toggleTheme() {
     isDark = !isDark;
@@ -415,7 +413,7 @@ class OnebrTvApp extends StatelessWidget {
 }
 
 // =========================================================================
-// 4. الشاشة الرئيسية مع التمييز الدقيق بين الأفلام والمسلسلات
+// 4. الشاشة الرئيسية وتصنيف الأفلام والمسلسلات
 // =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -443,15 +441,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   Map<String, dynamic>? _selectedGenre;
 
   final List<Map<String, dynamic>> _genres = [
-    {'id': 'all', 'ar': 'الكل', 'query': ''},
-    {'id': 'action', 'ar': 'أكشن', 'query': 'action'},
-    {'id': 'comedy', 'ar': 'كوميديا', 'query': 'comedy'},
-    {'id': 'horror', 'ar': 'رعب', 'query': 'horror'},
-    {'id': 'drama', 'ar': 'دراما', 'query': 'drama'},
-    {'id': 'adventure', 'ar': 'مغامرة', 'query': 'adventure'},
-    {'id': 'anime', 'ar': 'أنمي', 'query': 'anime'},
-    {'id': 'crime', 'ar': 'جريمة', 'query': 'crime'},
-    {'id': 'romance', 'ar': 'رومانسي', 'query': 'romance'},
+    {'id': 'all', 'ar': 'الكل', 'keywords': []},
+    {'id': 'action', 'ar': 'أكشن', 'keywords': ['action', 'أكشن', 'قتال']},
+    {'id': 'drama', 'ar': 'دراما', 'keywords': ['drama', 'دراما']},
+    {'id': 'comedy', 'ar': 'كوميديا', 'keywords': ['comedy', 'كوميدي']},
+    {'id': 'horror', 'ar': 'رعب', 'keywords': ['horror', 'رعب']},
+    {'id': 'adventure', 'ar': 'مغامرة', 'keywords': ['adventure', 'مغامر']},
+    {'id': 'anime', 'ar': 'أنمي', 'keywords': ['anime', 'أنمي', 'رسوم متحركة']},
+    {'id': 'crime', 'ar': 'جريمة', 'keywords': ['crime', 'جريمة', 'شرطة']},
+    {'id': 'romance', 'ar': 'رومانسي', 'keywords': ['romance', 'رومانسي']},
   ];
 
   @override
@@ -481,12 +479,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
+  // التمييز الصارم والدقيق: المسلسل هو فقط من يحمل kind == "1"
   static bool isStrictSeries(Map<String, dynamic> item) {
     final kind = item['kind']?.toString();
-    final level = item['level']?.toString();
-    if (kind == '1' || level == '1') return true;
-    if (kind == '2' || kind == '0' || level == '0') return false;
-    if (item['isSeries'] == true || item['isSeries'] == 1 || item['isSeries'] == '1') return true;
+    if (kind == '1') return true;
+    if (kind == '2' || kind == '0') return false;
 
     final en = (item['en_title'] ?? '').toString().toLowerCase();
     final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
@@ -507,28 +504,43 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     }
 
     try {
-      List<dynamic> results = [];
+      List<dynamic> rawList = [];
+
       if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
-        final q = _selectedGenre!['query'];
+        // جلب تغذية من الأفلام والمسلسلات مع الفلترة حسب التصنيف
         final res = await Future.wait([
-          StreamService.searchContent(q, level: 0),
-          StreamService.searchContent(q, level: 1),
+          StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 25),
+          StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 25),
         ]);
-        results = [...res[0], ...res[1]];
+        final combined = [...res[0], ...res[1]];
+        final keywords = List<String>.from(_selectedGenre!['keywords']);
+
+        rawList = combined.where((item) {
+          final content = '${item['title']} ${item['en_title']} ${item['ar_title']} ${item['categories']} ${item['ar_content']}'.toLowerCase();
+          return keywords.any((k) => content.contains(k.toLowerCase()));
+        }).toList();
+
+        // في حال كانت النتيجة محدودة نجري بحثاً مباشراً
+        if (rawList.isEmpty && _page == 0) {
+          final searchRes = await StreamService.searchContent(_selectedGenre!['ar'], level: 0);
+          rawList = searchRes;
+        }
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
           StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 16),
           StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 16),
         ]);
-        results = [...res[0], ...res[1]];
+        rawList = [...res[0], ...res[1]]..shuffle();
       } else if (_tabIndex == 1) {
-        results = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 32);
+        // أفلام حصراً
+        rawList = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 32);
       } else {
-        results = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 32);
+        // مسلسلات حصراً
+        rawList = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 32);
       }
 
       final List<dynamic> uniqueItems = [];
-      for (var item in results) {
+      for (var item in rawList) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
           if (_tabIndex == 1 && isStrictSeries(item)) continue;
@@ -626,7 +638,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   children: [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                     SizedBox(height: 6),
-                    Text('منصة البث المباشر', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('منصة البث', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
@@ -1079,6 +1091,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               ),
               const SizedBox(height: 16),
 
+              // زر التشغيل
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -1104,6 +1117,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
+              // عرض الحلقات حصراً للمسلسل فقط مع الحلقات الحقيقية
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1147,7 +1161,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// 6. المشغل المطور مع عناصر تحكم ثابتة عند الدوران
+// 6. المشغل المطور مع دعم ملء الشاشة الكامل
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1347,7 +1361,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     setState(() => _subtitlesEnabled = val);
                   },
                 ),
-                Text('الموضع العمودي (الارتفاع للأعلى): ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('الموضع العمودي: ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 Slider(
                   value: _subtitleBottomPadding,
                   min: 10,
