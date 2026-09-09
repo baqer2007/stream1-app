@@ -149,14 +149,16 @@ void downloadCallback(String id, int status, int progress) {}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
-    FlutterDownloader.registerCallback(downloadCallback);
-  } catch (_) {}
-
   await AppState.instance.init();
   runApp(const OnebrTvApp());
+
+  // تشغيل تهيئة التنزيل في الخلفية بأمان لمنع انهيار التطبيق عند الفتح
+  Future.microtask(() async {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+      FlutterDownloader.registerCallback(downloadCallback);
+    } catch (_) {}
+  });
 }
 
 class OnebrTvApp extends StatelessWidget {
