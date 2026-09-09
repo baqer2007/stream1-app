@@ -261,7 +261,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // معرفات التصنيفات الحقيقية المستخرجة من شبكة cee.buzz
+  // التصنيفات الرسمية المستخرجة مباشرة من استجابة cee.buzz DevTools
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -272,8 +272,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     {'id': 60, 'ar': 'جريمة'},
     {'id': 78, 'ar': 'خيال علمي'},
     {'id': 77, 'ar': 'رومانسي'},
+    {'id': 80, 'ar': 'إثارة'},
+    {'id': 87, 'ar': 'خارق للطبيعة'},
+    {'id': 76, 'ar': 'غموض'},
+    {'id': 58, 'ar': 'سيرة ذاتية'},
     {'id': 57, 'ar': 'رسوم متحركة'},
+    {'id': 81, 'ar': 'حروب'},
+    {'id': 68, 'ar': 'تاريخي'},
+    {'id': 67, 'ar': 'خيالي'},
     {'id': 65, 'ar': 'عائلي'},
+    {'id': 102, 'ar': 'مدبلج عربي'},
   ];
 
   @override
@@ -303,18 +311,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
-  /// التمييز القاطع المكتشف من السيرفر
   static bool checkIsSeries(Map<String, dynamic> item) {
     if (item['is_series_fixed'] == true) return true;
     if (item['is_series_fixed'] == false) return false;
 
-    // فحص حقل videoKind المباشر من الرابط
     final kind = item['kind']?.toString();
     final season = item['season']?.toString();
     final rootSeries = item['rootSeries']?.toString();
 
     if (season == '0' || rootSeries == '0') return false;
-    if (kind == '1' && season != null && season != '0') return true;
+    if (kind == '2' && (season != null && season != '0')) return true;
 
     final en = (item['en_title'] ?? '').toString().toLowerCase();
     final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
@@ -355,9 +361,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       for (var item in rawList) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
-          if (_tabIndex == 1 && checkIsSeries(item)) continue;
-          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
-
           _loadedIds.add(id);
           uniqueItems.add(item);
         }
@@ -915,7 +918,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   child: _isLaunching
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : Text(
-                          _isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة الفيلم الآن',
+                          _isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة العمل الآن',
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                 ),
@@ -928,7 +931,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // لن تظهر الحلقات إلا إذا كان العمل مسلسلاً فعلياً وقائمة الحلقات غير فارغة
+              // عرض الحلقات الحقيقية فقط للمسلسلات
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -947,7 +950,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         itemCount: _episodes.length,
                         itemBuilder: (ctx, i) {
                           final ep = _episodes[i];
-                          final epNum = ep['episodeNumber'] ?? (i + 1);
+                          final epNum = ep['episodeNumber'] ?? ep['orderNmmer'] ?? (i + 1);
                           return InkWell(
                             onTap: _isLaunching ? null : () => _play(ep),
                             child: Container(
