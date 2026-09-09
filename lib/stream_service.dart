@@ -8,31 +8,11 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  static void startRelayWorker() {}
-  static void sendHeartbeat(String deviceId) {}
-  static void recordWatchEvent(String targetId, String title) {}
-
-  static Future<Map<String, dynamic>> getRealAdminStats() async {
-    return {
-      'active_users': 1,
-      'total_views': 32,
-      'heatmap': {
-        '12-04': 2,
-        '04-08': 1,
-        '08-12': 6,
-        '12-16': 10,
-        '16-20': 18,
-        '20-24': 14,
-      },
-      'recent_plays': [
-        {'title': 'Live Stream', 'time': 'الآن'},
-      ],
-    };
-  }
-
-  static Future<List<dynamic>> fetchHomeFeed({int level = 0, int page = 0, int perPage = 24}) async {
+  /// جلب الأفلام أو المسلسلات عبر المسار الرسمي الدقيق المكتشف
+  static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/pageNumber/$page/level/$level';
+      final level = isSeries ? 1 : 0;
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/1/sortParam/desc/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -44,10 +24,26 @@ class StreamService {
     return [];
   }
 
-  static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
+  /// جلب الأعمال حسب التصنيف الرسمي باستخدام category_id
+  static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0}) async {
+    try {
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/pageNumber/$page';
+      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
+        if (data is List) return data;
+        if (data['articles'] is List) return data['articles'];
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// البحث النصي المباشر
+  static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$level';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/0';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
 
       if (res.statusCode == 200) {
@@ -59,6 +55,7 @@ class StreamService {
     return [];
   }
 
+  /// استخراج روابط الفيديو المباشرة
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -115,6 +112,7 @@ class StreamService {
     return null;
   }
 
+  /// استخراج رابط الترجمة العربية
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -130,6 +128,7 @@ class StreamService {
     return '';
   }
 
+  /// جلب حلقات المسلسل
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
