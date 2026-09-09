@@ -190,11 +190,11 @@ class AppState extends ChangeNotifier {
   AppState._();
 
   bool isDark = true;
-  bool isFamilyMode = true;
+  bool isFamilyMode = false;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    isFamilyMode = prefs.getBool('app_family_mode') ?? true;
+    isFamilyMode = prefs.getBool('app_family_mode') ?? false;
     isDark = prefs.getBool('app_dark_theme') ?? true;
   }
 
@@ -284,7 +284,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // التصنيفات الرسمية
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -352,21 +351,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     return false;
   }
 
-  List<dynamic> _applyFamilyFilter(List<dynamic> items) {
-    if (!AppState.instance.isFamilyMode) return items;
-    final blocked = ['sex', 'nude', 'erotic', 'sensual', 'حمام', 'جنس', 'إباحي', 'عري', 'adult'];
-    return items.where((el) {
-      final text = '${el['title']} ${el['en_title']} ${el['ar_title']} ${el['ar_content']}'.toLowerCase();
-      return !blocked.any((b) => text.contains(b));
-    }).toList();
-  }
-
   Future<void> _fetchContent({bool reset = false}) async {
     if (reset) {
       _page = 0;
       _hasMore = true;
       _loadedIds.clear();
-      setState(() => _isLoadingInitial = true);
+      setState(() {
+        _activeGrid.clear();
+        _isLoadingInitial = true;
+      });
     } else {
       setState(() => _isLoadingMore = true);
     }
@@ -375,10 +368,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       List<dynamic> rawList = [];
 
       if (_selectedCategory != null && _selectedCategory!['id'] != 0) {
+        int? vKind;
+        if (_tabIndex == 1) vKind = 1;
+        if (_tabIndex == 2) vKind = 2;
+
         rawList = await StreamService.fetchByCategory(
           _selectedCategory!['id'],
           page: _page,
-          isSeries: _tabIndex == 2,
+          videoKind: vKind,
         );
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
@@ -392,9 +389,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         rawList = await StreamService.fetchFeed(isSeries: true, page: _page, perPage: 32);
       }
 
-      final filtered = _applyFamilyFilter(rawList);
       final List<dynamic> uniqueItems = [];
-      for (var item in filtered) {
+      for (var item in rawList) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
           _loadedIds.add(id);
@@ -428,9 +424,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     final results = await StreamService.searchContent(clean);
 
     _loadedIds.clear();
-    final filtered = _applyFamilyFilter(results);
     final List<dynamic> uniqueList = [];
-    for (var item in filtered) {
+    for (var item in results) {
       final id = (item['nb'] ?? item['id'])?.toString();
       if (id != null && !_loadedIds.contains(id)) {
         _loadedIds.add(id);
@@ -876,7 +871,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final data = await StreamService.getVideoSource(targetId);
     if (data != null) {
       final qualities = List<Map<String, dynamic>>.from(data['qualities'] ?? []);
-      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '240p', orElse: () => qualities.first)['url'];
+      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '240p', orElse: () => qualities.last)['url'];
 
       DownloadManager.instance.startDownload(
         targetId: targetId,
