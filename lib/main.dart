@@ -185,37 +185,65 @@ class DownloadManager extends ChangeNotifier {
   }
 }
 
-class AppState extends ChangeNotifier {
-  static final AppState instance = AppState._();
-  AppState._();
+class PlayerSettings extends ChangeNotifier {
+  static final PlayerSettings instance = PlayerSettings._();
+  PlayerSettings._();
 
-  bool isDark = true;
-  bool isFamilyMode = false;
+  int seekDuration = 10;
+  String filterLevel = 'الافتراضي'; // الافتراضي، عائلي، أطفال
+  bool skipSensitiveScenes = true;
+  double subFontSize = 18.0;
+  Color subColor = Colors.white;
+  Color subShadowColor = Colors.black87;
+  bool subHasShadow = true;
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    isFamilyMode = prefs.getBool('app_family_mode') ?? false;
-    isDark = prefs.getBool('app_dark_theme') ?? true;
+    final p = await SharedPreferences.getInstance();
+    seekDuration = p.getInt('player_seek_dur') ?? 10;
+    filterLevel = p.getString('player_filter_lvl') ?? 'الافتراضي';
+    skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
+    subFontSize = p.getDouble('player_sub_size') ?? 18.0;
   }
 
-  void toggleTheme() async {
-    isDark = !isDark;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('app_dark_theme', isDark);
+  void updateSeek(int sec) async {
+    seekDuration = sec;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('player_seek_dur', sec);
+  }
+
+  void updateFilter(String lvl) async {
+    filterLevel = lvl;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setString('player_filter_lvl', lvl);
+  }
+
+  void updateSkipScenes(bool val) async {
+    skipSensitiveScenes = val;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('player_skip_sens', val);
+  }
+
+  void updateSubStyle({double? size, Color? color, bool? shadow}) {
+    if (size != null) subFontSize = size;
+    if (color != null) subColor = color;
+    if (shadow != null) subHasShadow = shadow;
     notifyListeners();
   }
 
-  void toggleFamilyMode(bool val) async {
-    isFamilyMode = val;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('app_family_mode', val);
+  void resetSubtitles() {
+    subFontSize = 18.0;
+    subColor = Colors.white;
+    subHasShadow = true;
     notifyListeners();
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppState.instance.init();
+  await PlayerSettings.instance.init();
   runApp(const OnebrTvApp());
 }
 
@@ -224,26 +252,19 @@ class OnebrTvApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: AppState.instance,
-      builder: (context, _) {
-        final state = AppState.instance;
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'سينمانا',
-          theme: ThemeData.dark().copyWith(
-            scaffoldBackgroundColor: const Color(0xFF0F141C),
-            primaryColor: const Color(0xFFE50914),
-            cardColor: const Color(0xFF182232),
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFFE50914),
-              surface: Color(0xFF182232),
-              secondary: Color(0xFFE50914),
-            ),
-          ),
-          home: const MainHomeScreen(),
-        );
-      },
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'ONEBR TV',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0A0E17),
+        primaryColor: const Color(0xFFE50914),
+        cardColor: const Color(0xFF131B2A),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFFE50914),
+          surface: Color(0xFF131B2A),
+        ),
+      ),
+      home: const MainHomeScreen(),
     );
   }
 }
@@ -257,82 +278,104 @@ class MainHomeScreen extends StatefulWidget {
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
   int _currentNavIndex = 0;
+  final ScrollController _scrollController = ScrollController();
 
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
-    {'id': 84, 'ar': 'أكشن'},
+    {'id': 88, 'ar': 'أنمي ياباني'},
+    {'id': 57, 'ar': 'رسوم متحركة'},
+    {'id': 84, 'ar': 'أكشن وإثارة'},
     {'id': 62, 'ar': 'دراما'},
     {'id': 59, 'ar': 'كوميديا'},
     {'id': 70, 'ar': 'رعب'},
     {'id': 56, 'ar': 'مغامرة'},
-    {'id': 60, 'ar': 'جريمة'},
+    {'id': 60, 'ar': 'جريمة وغموض'},
     {'id': 78, 'ar': 'خيال علمي'},
     {'id': 77, 'ar': 'رومانسي'},
-    {'id': 80, 'ar': 'إثارة'},
-    {'id': 89, 'ar': 'حرب'},
-    {'id': 87, 'ar': 'خارق للطبيعة'},
-    {'id': 76, 'ar': 'غموض'},
-    {'id': 58, 'ar': 'سيرة ذاتية'},
-    {'id': 57, 'ar': 'رسوم متحركة'},
-    {'id': 68, 'ar': 'تاريخي'},
-    {'id': 67, 'ar': 'خيالي'},
-    {'id': 65, 'ar': 'عائلي'},
+    {'id': 89, 'ar': 'حروب وتاريخ'},
   ];
 
-  Map<String, dynamic>? _selectedCategory;
-  List<dynamic> _bannerItems = [];
-  List<dynamic> _marvelItems = [];
-  List<dynamic> _featuredItems = [];
-  List<dynamic> _recentItems = [];
-  List<dynamic> _categoryItems = [];
-  bool _isLoading = true;
+  List<dynamic> _heroItems = [];
+  List<dynamic> _streamFeed = [];
+  final Set<String> _uniqueIds = {};
+  int _page = 0;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
-    _loadHomeShelves();
-  }
+    _loadInitialData();
 
-  Future<void> _loadHomeShelves() async {
-    setState(() => _isLoading = true);
-    try {
-      final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 10),
-        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 10),
-        StreamService.fetchFeed(isSeries: false, page: 1, perPage: 10),
-      ]);
-      if (mounted) {
-        setState(() {
-          _bannerItems = [...res[0].take(5)];
-          _marvelItems = res[0];
-          _featuredItems = res[1];
-          _recentItems = res[2];
-          _isLoading = false;
-        });
+    // التحميل التلقائي المستمر كلما نزل المستخدم لأسفل (Infinite Scroll)
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
+        if (!_isLoadingMore && _hasMore) {
+          _fetchMoreWorks();
+        }
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    });
   }
 
-  Future<void> _loadCategory(Map<String, dynamic> cat) async {
-    setState(() {
-      _selectedCategory = cat;
-      _isLoading = true;
-    });
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoadingMore = true);
+    final res = await Future.wait([
+      StreamService.fetchFeed(isSeries: false, page: 0, perPage: 12),
+      StreamService.fetchFeed(isSeries: true, page: 0, perPage: 12),
+      StreamService.fetchByCategory(88, page: 0), // جلب باقة أنمي مباشرة
+    ]);
 
-    if (cat['id'] == 0) {
-      await _loadHomeShelves();
-      return;
+    final List<dynamic> combined = [...res[0], ...res[1], ...res[2]];
+    final List<dynamic> deduplicated = [];
+
+    for (var item in combined) {
+      final id = (item['nb'] ?? item['id'])?.toString();
+      if (id != null && !_uniqueIds.contains(id)) {
+        _uniqueIds.add(id);
+        deduplicated.add(item);
+      }
     }
 
-    final items = await StreamService.fetchByCategory(cat['id']);
     if (mounted) {
       setState(() {
-        _categoryItems = items;
-        _isLoading = false;
+        _heroItems = deduplicated.take(5).toList();
+        _streamFeed = deduplicated;
+        _isLoadingMore = false;
+        _page = 1;
       });
     }
+  }
+
+  Future<void> _fetchMoreWorks() async {
+    setState(() => _isLoadingMore = true);
+    final newItems = await StreamService.fetchFeed(isSeries: _page % 2 == 0, page: _page, perPage: 24);
+
+    final List<dynamic> added = [];
+    for (var item in newItems) {
+      final id = (item['nb'] ?? item['id'])?.toString();
+      if (id != null && !_uniqueIds.contains(id)) {
+        _uniqueIds.add(id);
+        added.add(item);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _streamFeed.addAll(added);
+        _isLoadingMore = false;
+        if (added.isEmpty) _hasMore = false;
+        _page++;
+      });
+    }
+  }
+
+  void _openCategoryView(Map<String, dynamic> cat) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CategoryCatalogScreen(category: cat),
+      ),
+    );
   }
 
   void _openDetails(Map<String, dynamic> item) {
@@ -340,125 +383,145 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F141C),
+        backgroundColor: const Color(0xFF0A0E17),
         appBar: AppBar(
-          backgroundColor: const Color(0xFF0F141C),
+          backgroundColor: const Color(0xFF0A0E17),
           elevation: 0,
           title: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: const Color(0xFFE50914), borderRadius: BorderRadius.circular(6)),
-                child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE50914),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('ONEBR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1.2)),
               ),
               const SizedBox(width: 8),
-              const Text('سينمانا', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+              const Text('سينما بلس', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16)),
             ],
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.cast, color: Colors.white70),
-              onPressed: () {},
+              icon: const Icon(Icons.search_rounded, color: Colors.white),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
             ),
             IconButton(
-              icon: const Icon(Icons.search, color: Colors.white),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
+              icon: const Icon(Icons.download_for_offline_rounded, color: Colors.white70),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DownloadsScreen())),
             ),
           ],
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)))
-            : (_selectedCategory != null && _selectedCategory!['id'] != 0)
-                ? _buildCategoryGrid()
-                : _buildHomeBody(),
+        body: RefreshIndicator(
+          color: const Color(0xFFE50914),
+          onRefresh: () async {
+            _uniqueIds.clear();
+            await _loadInitialData();
+          },
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // شريط التصنيفات الأفقي السريع
+                SizedBox(
+                  height: 42,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _officialCategories.length,
+                    itemBuilder: (ctx, i) {
+                      final c = _officialCategories[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: ActionChip(
+                          backgroundColor: const Color(0xFF182234),
+                          side: BorderSide(color: Colors.white.withOpacity(0.08)),
+                          label: Text(c['ar'], style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          onPressed: () => _openCategoryView(c),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // بانر الواجهة
+                if (_heroItems.isNotEmpty) _buildHeroSlider(),
+
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('أحدث الإصدارات المضافة', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      Icon(Icons.auto_awesome, color: Color(0xFFE50914), size: 18),
+                    ],
+                  ),
+                ),
+
+                // شبكة أعمال تتسع وتزداد كلما نزل المستخدم بدون تكرار
+                _buildDynamicCatalogGrid(),
+
+                if (_isLoadingMore)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator(color: Color(0xFFE50914), strokeWidth: 2)),
+                  ),
+                const SizedBox(height: 50),
+              ],
+            ),
+          ),
+        ),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentNavIndex,
-          backgroundColor: const Color(0xFF141A24),
-          selectedItemColor: Colors.white,
+          backgroundColor: const Color(0xFF101726),
+          selectedItemColor: const Color(0xFFE50914),
           unselectedItemColor: Colors.white38,
           type: BottomNavigationBarType.fixed,
           onTap: (i) {
             setState(() => _currentNavIndex = i);
-            if (i == 1) _openCategoriesDrawer();
+            if (i == 1) _showCategoriesModal();
             if (i == 2) Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
-            if (i == 3) Navigator.push(context, MaterialPageRoute(builder: (_) => const DownloadsScreen()));
+            if (i == 3) Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsCenterScreen()));
           },
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'الرئيسية'),
-            BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'الأقسام'),
-            BottomNavigationBarItem(icon: Icon(Icons.search), label: 'بحث'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'الحساب'),
+            BottomNavigationBarItem(icon: Icon(Icons.movie_creation_outlined), activeIcon: Icon(Icons.movie_creation_rounded), label: 'الرئيسية'),
+            BottomNavigationBarItem(icon: Icon(Icons.category_outlined), activeIcon: Icon(Icons.category_rounded), label: 'التصنيفات'),
+            BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'بحث'),
+            BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings_rounded), label: 'الإعدادات'),
           ],
         ),
       ),
     );
   }
 
-  void _openCategoriesDrawer() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF182232),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('الأقسام والتصنيفات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-            ..._officialCategories.map((cat) => ListTile(
-                  title: Text(cat['ar'], style: const TextStyle(color: Colors.white)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white38),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _loadCategory(cat);
-                  },
-                )),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHomeBody() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_bannerItems.isNotEmpty) _buildHeroBanner(),
-          const SizedBox(height: 14),
-          _buildHorizontalShelf('عالم مارفل 4K', _marvelItems),
-          _buildHorizontalShelf('الأفلام المميزة', _featuredItems),
-          _buildHorizontalShelf('أضيف مؤخراً', _recentItems),
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroBanner() {
-    final item = _bannerItems.first;
+  Widget _buildHeroSlider() {
+    final item = _heroItems.first;
     final poster = StreamService.extractPoster(item);
     final title = item['ar_title'] ?? item['en_title'] ?? '';
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      height: 185,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      height: 200,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         image: poster.isNotEmpty ? DecorationImage(image: NetworkImage(poster), fit: BoxFit.cover) : null,
       ),
       child: Stack(
         children: [
           Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               gradient: const LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -467,9 +530,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             ),
           ),
           Positioned(
-            bottom: 16,
-            right: 16,
-            left: 16,
+            bottom: 16, right: 16, left: 16,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -479,11 +540,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE50914),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () => _openDetails(item),
-                  icon: const Icon(Icons.play_arrow, color: Colors.white, size: 18),
-                  label: const Text('شاهد الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                  label: const Text('تشغيل', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -493,123 +554,185 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     );
   }
 
-  Widget _buildHorizontalShelf(String title, List<dynamic> items) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-              const Text('المزيد', style: TextStyle(color: Colors.white38, fontSize: 12)),
-            ],
-          ),
+  Widget _buildDynamicCatalogGrid() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 14,
+          childAspectRatio: 0.58,
         ),
-        SizedBox(
-          height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            itemCount: items.length,
-            itemBuilder: (ctx, i) {
-              final item = items[i];
-              final poster = StreamService.extractPoster(item);
-              final name = item['ar_title'] ?? item['en_title'] ?? '';
-              final score = (item['stars'] ?? '7.0').toString();
+        itemCount: _streamFeed.length,
+        itemBuilder: (ctx, i) {
+          final item = _streamFeed[i];
+          final poster = StreamService.extractPoster(item);
+          final title = item['ar_title'] ?? item['en_title'] ?? '';
+          final score = (item['stars'] ?? '7.0').toString();
 
-              return InkWell(
-                onTap: () => _openDetails(item),
-                child: Container(
-                  width: 105,
-                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, height: 150, width: 105, fit: BoxFit.cover)
-                            : Container(height: 150, width: 105, color: const Color(0xFF182232)),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(color: Colors.amber.shade700, borderRadius: BorderRadius.circular(3)),
-                            child: const Text('IMDb', style: TextStyle(fontSize: 8, color: Colors.black, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(score, style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                        ],
-                      ),
-                    ],
+          return InkWell(
+            onTap: () => _openDetails(item),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: poster.isNotEmpty
+                        ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                        : Container(color: const Color(0xFF131B2A)),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-      ],
+                const SizedBox(height: 6),
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    const Icon(Icons.star_rounded, color: Colors.amber, size: 12),
+                    const SizedBox(width: 3),
+                    Text(score, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildCategoryGrid() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('تصنيف: ${_selectedCategory!['ar']}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => _loadCategory({'id': 0, 'ar': 'الكل'}),
-              ),
-            ],
-          ),
+  void _showCategoriesModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF131B2A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('الأقسام والتصنيفات', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ..._officialCategories.map((cat) => ListTile(
+                  title: Text(cat['ar'], style: const TextStyle(color: Colors.white70)),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openCategoryView(cat);
+                  },
+                )),
+          ],
         ),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.58,
-            ),
-            itemCount: _categoryItems.length,
-            itemBuilder: (ctx, i) {
-              final item = _categoryItems[i];
-              final poster = StreamService.extractPoster(item);
-              final name = item['ar_title'] ?? item['en_title'] ?? '';
+      ),
+    );
+  }
+}
 
-              return InkWell(
-                onTap: () => _openDetails(item),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
-                            : Container(color: const Color(0xFF182232)),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              );
-            },
-          ),
+// =========================================================================
+// صفحة عرض أعمال التصنيف عند الضغط على "المزيد" أو اختيار التصنيف
+// =========================================================================
+class CategoryCatalogScreen extends StatefulWidget {
+  final Map<String, dynamic> category;
+  const CategoryCatalogScreen({super.key, required this.category});
+
+  @override
+  State<CategoryCatalogScreen> createState() => _CategoryCatalogScreenState();
+}
+
+class _CategoryCatalogScreenState extends State<CategoryCatalogScreen> {
+  final ScrollController _scrollController = ScrollController();
+  final List<dynamic> _items = [];
+  final Set<String> _unique = {};
+  int _page = 0;
+  bool _isLoading = false;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+        if (!_isLoading && _hasMore) _fetch();
+      }
+    });
+  }
+
+  Future<void> _fetch() async {
+    setState(() => _isLoading = true);
+    final res = await StreamService.fetchByCategory(widget.category['id'], page: _page);
+    final List<dynamic> fresh = [];
+    for (var it in res) {
+      final id = (it['nb'] ?? it['id'])?.toString();
+      if (id != null && !_unique.contains(id)) {
+        _unique.add(id);
+        fresh.add(it);
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _items.addAll(fresh);
+        _isLoading = false;
+        if (fresh.isEmpty) _hasMore = false;
+        _page++;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E17),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0A0E17),
+          title: Text(widget.category['ar'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
-      ],
+        body: GridView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(12),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 14,
+            childAspectRatio: 0.58,
+          ),
+          itemCount: _items.length,
+          itemBuilder: (ctx, i) {
+            final it = _items[i];
+            final poster = StreamService.extractPoster(it);
+            final title = it['ar_title'] ?? it['en_title'] ?? '';
+
+            return InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: poster.isNotEmpty
+                          ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                          : Container(color: const Color(0xFF131B2A)),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -660,12 +783,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           builder: (_) => PlayerScreen(
             mediaId: targetId,
             title: title,
-            subtitleTextHeader: _isSeries ? 'الموسم 1 الحلقة ${epIndex ?? 1}' : '',
+            subtitleTextHeader: _isSeries ? 'الموسم 1 - الحلقة $epIndex' : '',
             videoUrl: source['video_url'],
             subtitleUrl: subUrl,
             qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
-            episodes: _episodes,
-            currentEpIndex: epIndex ?? 1,
           ),
         ),
       );
@@ -681,7 +802,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F141C),
+        backgroundColor: const Color(0xFF0A0E17),
         appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
         body: ListView(
           padding: const EdgeInsets.all(16),
@@ -690,7 +811,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   child: poster.isNotEmpty ? Image.network(poster, width: 115, height: 165, fit: BoxFit.cover) : Container(width: 115, height: 165, color: Colors.grey.shade900),
                 ),
                 const SizedBox(width: 14),
@@ -699,41 +820,41 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(_isSeries ? 'مسلسل' : 'فيلم', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFE50914),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: _isLaunching ? null : () => _play(_isSeries && _episodes.isNotEmpty ? _episodes.first : null, 1),
-                        icon: const Icon(Icons.play_arrow, color: Colors.white),
-                        label: Text(_isSeries ? 'مشاهدة الحلقة 1' : 'مشاهدة الآن', style: const TextStyle(color: Colors.white)),
+                        icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                        label: Text(_isSeries ? 'مشاهدة الحلقة 1' : 'مشاهدة الآن', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             if (story.isNotEmpty) ...[
-              const Text('القصة', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+              const Text('نبذة عن العمل', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              Text(story, style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.5)),
+              Text(story, style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.6)),
             ],
             if (_isSeries && _episodes.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text('الحلقات (${_episodes.length})', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
+              const SizedBox(height: 24),
+              Text('قائمة الحلقات (${_episodes.length})', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
               ..._episodes.asMap().entries.map((e) {
                 final ep = e.value;
                 final idx = e.key + 1;
                 return ListTile(
-                  leading: const Icon(Icons.play_circle_fill, color: Color(0xFFE50914)),
+                  leading: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFFE50914)),
                   title: Text('الحلقة $idx', style: const TextStyle(color: Colors.white, fontSize: 13)),
                   trailing: IconButton(
-                    icon: const Icon(Icons.download, color: Colors.white54),
+                    icon: const Icon(Icons.download_rounded, color: Colors.white54),
                     onPressed: () {
                       final targetId = (ep['nb'] ?? ep['id']).toString();
                       StreamService.getVideoSource(targetId).then((src) {
@@ -759,6 +880,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
+// =========================================================================
+// مشغل الفيديو المتكامل والمطور وفق الصور 1000018617 / 1000018618 / 1000018627
+// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -766,8 +890,6 @@ class PlayerScreen extends StatefulWidget {
   final String videoUrl;
   final String subtitleUrl;
   final List<Map<String, dynamic>> qualities;
-  final List<dynamic> episodes;
-  final int currentEpIndex;
 
   const PlayerScreen({
     super.key,
@@ -777,8 +899,6 @@ class PlayerScreen extends StatefulWidget {
     required this.videoUrl,
     this.subtitleUrl = '',
     required this.qualities,
-    this.episodes = const [],
-    this.currentEpIndex = 1,
   });
 
   @override
@@ -792,7 +912,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideTimer;
 
   String _activeQuality = '240p';
-  bool _filterScenes = true;
   BoxFit _videoFit = BoxFit.contain;
 
   List<Subtitle> _subtitles = [];
@@ -897,10 +1016,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _openSettingsBottomSheet() {
+    final settings = PlayerSettings.instance;
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF141A24),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      backgroundColor: const Color(0xFF131B2A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
         child: Padding(
@@ -909,7 +1030,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.settings, color: Colors.white70),
+                leading: const Icon(Icons.settings_outlined, color: Colors.white70),
                 title: const Text('دقة الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
                 trailing: Text(_activeQuality, style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 onTap: () {
@@ -919,15 +1040,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
               const Divider(color: Colors.white10, height: 1),
               ListTile(
-                leading: const Icon(Icons.closed_caption, color: Colors.white70),
-                title: const Text('الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
-                trailing: const Text('عربي', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                leading: const Icon(Icons.closed_caption_outlined, color: Colors.white70),
+                title: const Text('إعدادات الترجمة المتقدمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
+                },
               ),
               const Divider(color: Colors.white10, height: 1),
               ListTile(
-                leading: const Icon(Icons.aspect_ratio, color: Colors.white70),
+                leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
                 title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13)),
-                trailing: const Text('ممتلئ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                trailing: Text(_videoFit == BoxFit.cover ? 'ممتلئ' : 'أصلي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 onTap: () {
                   setState(() {
                     _videoFit = _videoFit == BoxFit.contain ? BoxFit.cover : BoxFit.contain;
@@ -936,24 +1061,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
               ),
               const Divider(color: Colors.white10, height: 1),
-              const ListTile(
-                leading: const Icon(Icons.fast_forward, color: Colors.white70),
-                title: Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
-                trailing: Text('10 ثواني', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              ),
-              const Divider(color: Colors.white10, height: 1),
-              const ListTile(
-                leading: const Icon(Icons.speed, color: Colors.white70),
-                title: Text('سرعة العرض', style: TextStyle(color: Colors.white, fontSize: 13)),
-                trailing: Text('الافتراضي', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              ListTile(
+                leading: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
+                title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
+                trailing: Text('${settings.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSeekPicker();
+                },
               ),
               const Divider(color: Colors.white10, height: 1),
               SwitchListTile(
-                title: const Text('حذف المشاهد الغير ملائمة', style: TextStyle(color: Colors.white, fontSize: 13)),
-                value: _filterScenes,
+                title: const Text('حذف وتخطي المشاهد غير الملائمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+                value: settings.skipSensitiveScenes,
                 activeColor: const Color(0xFFE50914),
                 onChanged: (val) {
-                  setState(() => _filterScenes = val);
+                  settings.updateSkipScenes(val);
                   Navigator.pop(context);
                 },
               ),
@@ -964,10 +1087,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  void _showSeekPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF131B2A),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [5, 10, 15, 30].map((s) => ListTile(
+          title: Text('$s ثوانٍ', style: const TextStyle(color: Colors.white)),
+          onTap: () {
+            PlayerSettings.instance.updateSeek(s);
+            Navigator.pop(context);
+          },
+        )).toList(),
+      ),
+    );
+  }
+
   void _showQualityPicker() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF141A24),
+      backgroundColor: const Color(0xFF131B2A),
       builder: (_) => ListView(
         shrinkWrap: true,
         children: widget.qualities.map((q) {
@@ -989,6 +1129,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = PlayerSettings.instance;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -1010,25 +1152,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : const CircularProgressIndicator(color: Color(0xFFE50914)),
               ),
 
+              // النص المترجم القابل للتخصيص
               if (_currentSubText.isNotEmpty)
                 Positioned(
-                  bottom: 60,
-                  left: 20,
-                  right: 20,
+                  bottom: 60, left: 20, right: 20,
                   child: Center(
                     child: Text(
                       _currentSubText,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 8, color: Colors.black)]),
+                      style: TextStyle(
+                        color: settings.subColor,
+                        fontSize: settings.subFontSize,
+                        fontWeight: FontWeight.bold,
+                        shadows: settings.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
+                      ),
                     ),
                   ),
                 ),
 
               if (_showControls) ...[
                 Positioned(
-                  top: 10,
-                  left: 14,
-                  right: 14,
+                  top: 10, left: 14, right: 14,
                   child: Directionality(
                     textDirection: TextDirection.rtl,
                     child: Row(
@@ -1043,7 +1187,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           ],
                         ),
                         IconButton(
-                          icon: const Icon(Icons.tune, color: Colors.white),
+                          icon: const Icon(Icons.tune_rounded, color: Colors.white),
                           onPressed: _openSettingsBottomSheet,
                         ),
                       ],
@@ -1057,16 +1201,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     children: [
                       IconButton(
                         iconSize: 34,
-                        icon: const Icon(Icons.fast_rewind, color: Colors.white),
+                        icon: const Icon(Icons.fast_rewind_rounded, color: Colors.white),
                         onPressed: () {
-                          final p = _controller!.value.position - const Duration(seconds: 10);
+                          final p = _controller!.value.position - Duration(seconds: settings.seekDuration);
                           _controller!.seekTo(p < Duration.zero ? Duration.zero : p);
                         },
                       ),
                       const SizedBox(width: 24),
                       IconButton(
                         iconSize: 48,
-                        icon: Icon(_controller != null && _controller!.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                        icon: Icon(_controller != null && _controller!.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.white),
                         onPressed: () {
                           setState(() {
                             _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
@@ -1076,9 +1220,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       const SizedBox(width: 24),
                       IconButton(
                         iconSize: 34,
-                        icon: const Icon(Icons.fast_forward, color: Colors.white),
+                        icon: const Icon(Icons.fast_forward_rounded, color: Colors.white),
                         onPressed: () {
-                          final p = _controller!.value.position + const Duration(seconds: 10);
+                          final p = _controller!.value.position + Duration(seconds: settings.seekDuration);
                           _controller!.seekTo(p);
                         },
                       ),
@@ -1088,9 +1232,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                 if (_controller != null && _controller!.value.isInitialized)
                   Positioned(
-                    bottom: 12,
-                    left: 16,
-                    right: 16,
+                    bottom: 12, left: 16, right: 16,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1126,7 +1268,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                           ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
                                           : [DeviceOrientation.portraitUp]);
                                     },
-                                    child: const Icon(Icons.fullscreen, color: Colors.white, size: 20),
+                                    child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 20),
                                   ),
                                 ],
                               ),
@@ -1139,6 +1281,183 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// شاشة إعدادات الترجمة المتقدمة (مطابقة للصورة 1000018629)
+// =========================================================================
+class SubtitleSettingsScreen extends StatefulWidget {
+  const SubtitleSettingsScreen({super.key});
+
+  @override
+  State<SubtitleSettingsScreen> createState() => _SubtitleSettingsScreenState();
+}
+
+class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final s = PlayerSettings.instance;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E17),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0A0E17),
+          title: const Text('إعدادات الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // شاشة المعاينة الحية للترجمة
+            Container(
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                image: const DecorationImage(
+                  image: NetworkImage('https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=600'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  'ابقَ أصدقائك قريبين، ولكن أعداءك أقرب\nKeep your friends close, but your enemies closer',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: s.subColor,
+                    fontSize: s.subFontSize,
+                    fontWeight: FontWeight.bold,
+                    shadows: s.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              title: const Text('حجم خط الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: DropdownButton<double>(
+                dropdownColor: const Color(0xFF131B2A),
+                value: s.subFontSize,
+                items: const [
+                  DropdownMenuItem(value: 14.0, child: Text('صغير', style: TextStyle(color: Colors.white))),
+                  DropdownMenuItem(value: 18.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
+                  DropdownMenuItem(value: 24.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
+                ],
+                onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            ListTile(
+              title: const Text('لون الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
+                  _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
+                  _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            SwitchListTile(
+              title: const Text('ظل حواف الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
+              value: s.subHasShadow,
+              activeColor: const Color(0xFFE50914),
+              onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
+            ),
+            const SizedBox(height: 30),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+              onPressed: () => setState(() => s.resetSubtitles()),
+              child: const Text('إعادة ضبط إعدادات الترجمة', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
+    return GestureDetector(
+      onTap: tap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        width: 24, height: 24,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          border: isSelected ? Border.all(color: const Color(0xFFE50914), width: 2.5) : null,
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// مركز الإعدادات والتصفية (مطابق للصورة 1000018627 و 1000018628)
+// =========================================================================
+class SettingsCenterScreen extends StatefulWidget {
+  const SettingsCenterScreen({super.key});
+
+  @override
+  State<SettingsCenterScreen> createState() => _SettingsCenterScreenState();
+}
+
+class _SettingsCenterScreenState extends State<SettingsCenterScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final s = PlayerSettings.instance;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E17),
+        appBar: AppBar(title: const Text('الإعدادات العامة'), backgroundColor: const Color(0xFF0A0E17)),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('تصفية المحتوى', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Row(
+              children: ['الافتراضي', 'عائلي', 'أطفال'].map((lvl) {
+                final isSel = s.filterLevel == lvl;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isSel ? const Color(0xFFE50914) : const Color(0xFF131B2A),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => setState(() => s.updateFilter(lvl)),
+                      child: Text(lvl, style: const TextStyle(fontSize: 12, color: Colors.white)),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
+            SwitchListTile(
+              title: const Text('حذف وتخطي المشاهد غير الملائمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+              value: s.skipSensitiveScenes,
+              activeColor: const Color(0xFFE50914),
+              onChanged: (v) => setState(() => s.updateSkipScenes(v)),
+            ),
+            const Divider(color: Colors.white10, height: 32),
+            ListTile(
+              title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: Text('${s.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white54)),
+            ),
+            ListTile(
+              title: const Text('إعدادات مظهر الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen())),
+            ),
+          ],
         ),
       ),
     );
@@ -1174,15 +1493,15 @@ class _SearchScreenState extends State<SearchScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F141C),
+        backgroundColor: const Color(0xFF0A0E17),
         appBar: AppBar(
-          backgroundColor: const Color(0xFF0F141C),
+          backgroundColor: const Color(0xFF0A0E17),
           elevation: 0,
           title: TextField(
             controller: _searchCtrl,
             autofocus: true,
             style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(hintText: 'ابحث عن فيلم أو مسلسل...', hintStyle: TextStyle(color: Colors.white38), border: InputBorder.none),
+            decoration: const InputDecoration(hintText: 'ابحث عن فيلم أو أنمي أو مسلسل...', hintStyle: TextStyle(color: Colors.white38), border: InputBorder.none),
             onSubmitted: _search,
           ),
         ),
@@ -1232,8 +1551,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F141C),
-        appBar: AppBar(title: const Text('التنزيلات'), backgroundColor: const Color(0xFF0F141C), elevation: 0),
+        backgroundColor: const Color(0xFF0A0E17),
+        appBar: AppBar(title: const Text('التنزيلات'), backgroundColor: const Color(0xFF0A0E17), elevation: 0),
         body: _completed.isEmpty
             ? const Center(child: Text('لا توجد ملفات مكتملة', style: TextStyle(color: Colors.white54)))
             : ListView.builder(
