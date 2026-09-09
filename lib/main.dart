@@ -120,7 +120,7 @@ class DownloadManager extends ChangeNotifier {
         'nb': targetId,
         'title': title,
         'path': filePath,
-        'size': 'جاري التنزيل',
+        'size': 'قيد التنزيل',
         'poster': poster,
       });
 
@@ -254,14 +254,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   List<Map<String, dynamic>> _continueWatchingList = [];
 
   int _page = 0;
-  int _tabIndex = 0; // 0: الكل, 1: أفلام, 2: مسلسلات
+  int _tabIndex = 0;
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // التصنيفات الرسمية المستخرجة من DevTools بدقة
+  // معرفات التصنيفات الحقيقية المستخرجة من شبكة cee.buzz
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -272,7 +272,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     {'id': 60, 'ar': 'جريمة'},
     {'id': 78, 'ar': 'خيال علمي'},
     {'id': 77, 'ar': 'رومانسي'},
-    {'id': 57, 'ar': 'رسوم متحركة (أنمي)'},
+    {'id': 57, 'ar': 'رسوم متحركة'},
     {'id': 65, 'ar': 'عائلي'},
   ];
 
@@ -303,21 +303,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
-  /// التمييز الحقيقي القاطع المكتشف من DevTools:
-  /// إذا كانت season == "0" أو rootSeries == "0" أو episodeNummer == "0" فهو فيلم 100%
-  static bool isStrictSeries(Map<String, dynamic> item) {
+  /// التمييز القاطع المكتشف من السيرفر
+  static bool checkIsSeries(Map<String, dynamic> item) {
+    if (item['is_series_fixed'] == true) return true;
+    if (item['is_series_fixed'] == false) return false;
+
+    // فحص حقل videoKind المباشر من الرابط
+    final kind = item['kind']?.toString();
     final season = item['season']?.toString();
     final rootSeries = item['rootSeries']?.toString();
-    final epNum = (item['episodeNummer'] ?? item['episodeNumber'])?.toString();
 
-    if (season == '0' || rootSeries == '0' || epNum == '0') {
-      return false;
-    }
+    if (season == '0' || rootSeries == '0') return false;
+    if (kind == '1' && season != null && season != '0') return true;
 
-    final kind = item['kind']?.toString();
-    final level = item['level']?.toString();
-    if (kind == '1' && (season != null && season != '0')) return true;
-    if (level == '1') return true;
+    final en = (item['en_title'] ?? '').toString().toLowerCase();
+    final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
+    if (en.contains('movie') || en.contains('film') || ar.contains('فيلم')) return false;
+    if (en.contains('season') || ar.contains('الموسم') || ar.contains('مسلسل')) return true;
 
     return false;
   }
@@ -353,8 +355,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       for (var item in rawList) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
-          if (_tabIndex == 1 && isStrictSeries(item)) continue;
-          if (_tabIndex == 2 && !isStrictSeries(item)) continue;
+          if (_tabIndex == 1 && checkIsSeries(item)) continue;
+          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
 
           _loadedIds.add(id);
           uniqueItems.add(item);
@@ -671,7 +673,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
           final title = item['ar_title'] ?? item['en_title'] ?? item['title'] ?? '';
           final poster = StreamService.extractPoster(item);
           final score = (item['stars'] ?? '7.5').toString();
-          final isSeries = isStrictSeries(item);
+          final isSeries = checkIsSeries(item);
 
           return InkWell(
             onTap: () => _openDetails(item),
@@ -731,9 +733,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   }
 }
 
-// =========================================================================
-// 5. شاشة التفاصيل والتشغيل
-// =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   const MediaDetailScreen({super.key, required this.media});
@@ -752,7 +751,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _isSeries = _MainHomeScreenState.isStrictSeries(widget.media);
+    _isSeries = _MainHomeScreenState.checkIsSeries(widget.media);
     _checkFav();
     LocalStorageService.appendItem('continue_watching_list', widget.media);
 
@@ -929,7 +928,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // لن تظهر الحلقات إطلاقاً إلا إذا كان العمل مسلسلاً حقيقياً وقائمة حلقاته من السيرفر ليست فارغة
+              // لن تظهر الحلقات إلا إذا كان العمل مسلسلاً فعلياً وقائمة الحلقات غير فارغة
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -972,9 +971,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// 6. المشغل المطور مع عناصر تحكم ثابتة عند الدوران
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -1173,7 +1169,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     setState(() => _subtitlesEnabled = val);
                   },
                 ),
-                Text('الموضع العمودي (الارتفاع للأعلى): ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('الموضع العمودي: ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 Slider(
                   value: _subtitleBottomPadding,
                   min: 10,
@@ -1359,7 +1355,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                 Center(
                   child: Row(
-                    mainAxisSize: enlargementWidth(context),
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
                         iconSize: 36,
@@ -1466,13 +1462,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
-
-  MainAxisSize enlargementWidth(BuildContext context) => MainAxisSize.min;
 }
 
-// =========================================================================
-// 7. شاشات التنزيلات والمفضلة والمشاهدة لاحقاً
-// =========================================================================
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
 
