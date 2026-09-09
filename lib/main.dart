@@ -60,6 +60,7 @@ class ActiveDownload {
   final String url;
   final String poster;
   double progress;
+  String speed;
   http.Client? client;
   bool isCancelled = false;
 
@@ -69,6 +70,7 @@ class ActiveDownload {
     required this.url,
     required this.poster,
     this.progress = 0.0,
+    this.speed = '',
   });
 }
 
@@ -345,15 +347,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     return false;
   }
 
-  List<dynamic> _applyFamilyFilter(List<dynamic> items) {
-    if (!AppState.instance.isFamilyMode) return items;
-    final blocked = ['sex', 'nude', 'erotic', 'sensual', 'حمام', 'جنس', 'إباحي', 'عري', 'adult'];
-    return items.where((el) {
-      final text = '${el['title']} ${el['en_title']} ${el['ar_title']} ${el['ar_content']}'.toLowerCase();
-      return !blocked.any((b) => text.contains(b));
-    }).toList();
-  }
-
   Future<void> _fetchContent({bool reset = false}) async {
     if (reset) {
       _page = 0;
@@ -381,14 +374,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         rawList = await StreamService.fetchFeed(isSeries: true, page: _page, perPage: 32);
       }
 
-      final filtered = _applyFamilyFilter(rawList);
       final List<dynamic> uniqueItems = [];
-      for (var item in filtered) {
+      for (var item in rawList) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
-          if (_tabIndex == 1 && checkIsSeries(item)) continue;
-          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
-
           _loadedIds.add(id);
           uniqueItems.add(item);
         }
@@ -420,9 +409,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     final results = await StreamService.searchContent(clean);
 
     _loadedIds.clear();
-    final filtered = _applyFamilyFilter(results);
     final List<dynamic> uniqueList = [];
-    for (var item in filtered) {
+    for (var item in results) {
       final id = (item['nb'] ?? item['id'])?.toString();
       if (id != null && !_loadedIds.contains(id)) {
         _loadedIds.add(id);
@@ -484,7 +472,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               SwitchListTile(
                 secondary: const Icon(Icons.shield_rounded, color: Color(0xFF10B981)),
                 title: const Text('الوضع العائلي', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('حجب المحتوى غير المناسب', style: TextStyle(fontSize: 11, color: Colors.grey)),
                 value: app.isFamilyMode,
                 onChanged: (val) {
                   app.toggleFamilyMode(val);
@@ -847,7 +834,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             videoUrl: source['video_url'],
             subtitleUrl: subUrl,
             qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
-            introSkipData: widget.media['introSkipping'],
           ),
         ),
       );
@@ -858,9 +844,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _triggerDownload() async {
-    final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? 'Video';
+  void _triggerDownload({Map<String, dynamic>? epData, int? epIndex}) async {
+    final targetId = epData != null
+        ? (epData['nb'] ?? epData['id']).toString()
+        : (widget.media['nb'] ?? widget.media['id']).toString();
+
+    final baseTitle = widget.media['ar_title'] ?? widget.media['en_title'] ?? 'Video';
+    final title = epIndex != null ? '$baseTitle - حلقة $epIndex' : baseTitle;
 
     final data = await StreamService.getVideoSource(targetId);
     if (data != null) {
@@ -935,11 +925,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         const SizedBox(height: 6),
                         Text(_isSeries ? 'مسلسل' : 'فيلم', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                         const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: _triggerDownload,
-                          icon: const Icon(Icons.download_rounded, size: 16),
-                          label: const Text('تنزيل', style: TextStyle(fontSize: 12)),
-                        ),
+                        if (!_isSeries)
+                          OutlinedButton.icon(
+                            onPressed: () => _triggerDownload(),
+                            icon: const Icon(Icons.download_rounded, size: 16),
+                            label: const Text('تنزيل الفيلم', style: TextStyle(fontSize: 12)),
+                          ),
                       ],
                     ),
                   ),
@@ -978,30 +969,28 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 const SizedBox(height: 10),
                 _isLoadingEpisodes
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
-                    : GridView.builder(
+                    : ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 5,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.2,
-                        ),
                         itemCount: _episodes.length,
                         itemBuilder: (ctx, i) {
                           final ep = _episodes[i];
                           final int epDisplayNumber = i + 1;
 
-                          return InkWell(
-                            onTap: _isLaunching ? null : () => _play(ep, epDisplayNumber),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).cardColor,
-                                borderRadius: BorderRadius.circular(10),
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: ListTile(
+                              leading: const Icon(Icons.play_circle_outline, color: Color(0xFF00F0FF)),
+                              title: Text('الحلقة $epDisplayNumber', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981)),
+                                onPressed: () => _triggerDownload(epData: ep, epIndex: epDisplayNumber),
                               ),
-                              child: Center(
-                                child: Text('حلقة $epDisplayNumber', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                              ),
+                              onTap: _isLaunching ? null : () => _play(ep, epDisplayNumber),
                             ),
                           );
                         },
@@ -1022,7 +1011,6 @@ class PlayerScreen extends StatefulWidget {
   final String subtitleUrl;
   final List<Map<String, dynamic>> qualities;
   final bool isLocalFile;
-  final dynamic introSkipData;
 
   const PlayerScreen({
     super.key,
@@ -1032,7 +1020,6 @@ class PlayerScreen extends StatefulWidget {
     this.subtitleUrl = '',
     required this.qualities,
     this.isLocalFile = false,
-    this.introSkipData,
   });
 
   @override
@@ -1056,9 +1043,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _subtitleBottomPadding = 60.0;
   List<Subtitle> _parsedSubtitles = [];
   String _activeSubtitleText = '';
-
-  bool _canSkipIntro = false;
-  double _skipTargetSeconds = 0.0;
 
   @override
   void initState() {
@@ -1131,24 +1115,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           );
           if (sub.text != _activeSubtitleText && mounted) {
             setState(() => _activeSubtitleText = sub.text);
-          }
-        }
-
-        // فحص ظهور زر تخطي المقدمة / اللقطة
-        if (widget.introSkipData is List && (widget.introSkipData as List).isNotEmpty) {
-          final skipMap = widget.introSkipData[0];
-          final start = double.tryParse(skipMap['start']?.toString() ?? '0') ?? 0.0;
-          final end = double.tryParse(skipMap['end']?.toString() ?? '0') ?? 0.0;
-          final sec = pos.inMilliseconds / 1000.0;
-          if (sec >= start && sec <= end) {
-            if (!_canSkipIntro && mounted) {
-              setState(() {
-                _canSkipIntro = true;
-                _skipTargetSeconds = end;
-              });
-            }
-          } else if (_canSkipIntro && mounted) {
-            setState(() => _canSkipIntro = false);
           }
         }
       }
@@ -1388,28 +1354,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // زر تخطي اللقطة / المقدمة التفاعلي
-              if (_canSkipIntro)
-                Positioned(
-                  bottom: 75,
-                  left: 20,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black87,
-                      side: const BorderSide(color: Colors.white30),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () {
-                      if (_controller != null) {
-                        _controller!.seekTo(Duration(seconds: _skipTargetSeconds.toInt()));
-                        setState(() => _canSkipIntro = false);
-                      }
-                    },
-                    icon: const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 18),
-                    label: const Text('تخطي', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-
               if (_showControls && !_isLocked) ...[
                 Positioned(
                   top: 10,
@@ -1570,6 +1514,17 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   void initState() {
     super.initState();
     _loadCompleted();
+    DownloadManager.instance.addListener(_onDownloadProgress);
+  }
+
+  void _onDownloadProgress() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    DownloadManager.instance.removeListener(_onDownloadProgress);
+    super.dispose();
   }
 
   void _loadCompleted() async {
@@ -1590,39 +1545,85 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeDownloads = DownloadManager.instance.activeDownloads.values.toList();
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(title: const Text('التنزيلات'), backgroundColor: Colors.transparent, elevation: 0),
-        body: _completed.isEmpty
-            ? const Center(child: Text('لا توجد ملفات مكتملة'))
-            : ListView.builder(
-                itemCount: _completed.length,
-                itemBuilder: (ctx, i) {
-                  final item = _completed[i];
-                  return ListTile(
-                    leading: const Icon(Icons.play_circle_fill, color: Color(0xFF10B981)),
-                    title: Text(item['title'] ?? ''),
-                    subtitle: Text(item['size'] ?? ''),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                      onPressed: () => _deleteCompleted(i),
-                    ),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PlayerScreen(
-                          mediaId: item['nb'],
-                          title: item['title'],
-                          videoUrl: item['path'],
-                          qualities: const [],
-                          isLocalFile: true,
-                        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (activeDownloads.isNotEmpty) ...[
+              const Text('التنزيلات الحالية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 8),
+              ...activeDownloads.map((dl) => Card(
+                    color: Theme.of(context).cardColor,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(dl.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
+                                onPressed: () => DownloadManager.instance.cancelDownload(dl.id),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          LinearProgressIndicator(
+                            value: dl.progress,
+                            backgroundColor: Colors.white12,
+                            color: const Color(0xFF00F0FF),
+                          ),
+                          const SizedBox(height: 6),
+                          Text('${(dl.progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        ],
                       ),
                     ),
-                  );
-                },
-              ),
+                  )),
+              const Divider(height: 24),
+            ],
+            const Text('الملفات المكتملة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 8),
+            if (_completed.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: Text('لا توجد ملفات مكتملة')),
+              )
+            else
+              ..._completed.asMap().entries.map((entry) {
+                final item = entry.value;
+                return ListTile(
+                  leading: const Icon(Icons.play_circle_fill, color: Color(0xFF10B981)),
+                  title: Text(item['title'] ?? ''),
+                  subtitle: Text(item['size'] ?? ''),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    onPressed: () => _deleteCompleted(entry.key),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PlayerScreen(
+                        mediaId: item['nb'],
+                        title: item['title'],
+                        videoUrl: item['path'],
+                        qualities: const [],
+                        isLocalFile: true,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        ),
       ),
     );
   }
