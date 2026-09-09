@@ -39,7 +39,7 @@ class LocalStorageService {
     await prefs.setString(key, jsonEncode(list));
   }
 
-  static Future<void> appendItem(String key, Map<String, dynamic> item, {int maxLength = 40, String idField = 'nb'}) async {
+  static Future<void> appendItem(String key, Map<String, dynamic> item, {int maxLength = 50, String idField = 'nb'}) async {
     final list = await getList(key);
     list.removeWhere((x) => (x[idField] ?? x['id'])?.toString() == (item[idField] ?? item['id'])?.toString());
     list.insert(0, item);
@@ -60,6 +60,8 @@ class ActiveDownload {
   final String url;
   final String poster;
   double progress;
+  int downloadedBytes;
+  int totalBytes;
   http.Client? client;
   bool isCancelled = false;
 
@@ -69,6 +71,8 @@ class ActiveDownload {
     required this.url,
     required this.poster,
     this.progress = 0.0,
+    this.downloadedBytes = 0,
+    this.totalBytes = 0,
   });
 }
 
@@ -120,7 +124,7 @@ class DownloadManager extends ChangeNotifier {
         'nb': targetId,
         'title': title,
         'path': filePath,
-        'size': 'قيد التنزيل',
+        'size': 'قيد التنزيل...',
         'poster': poster,
       });
 
@@ -134,7 +138,8 @@ class DownloadManager extends ChangeNotifier {
       }
 
       final response = await client.send(request);
-      final totalBytes = (response.contentLength ?? 0) + downloadedBytes;
+      final total = (response.contentLength ?? 0) + downloadedBytes;
+      download.totalBytes = total;
 
       final sink = file.openWrite(mode: FileMode.append);
 
@@ -144,9 +149,10 @@ class DownloadManager extends ChangeNotifier {
           return;
         }
         downloadedBytes += chunk.length;
+        download.downloadedBytes = downloadedBytes;
         sink.add(chunk);
-        if (totalBytes > 0) {
-          download.progress = (downloadedBytes / totalBytes).clamp(0.0, 1.0);
+        if (total > 0) {
+          download.progress = (downloadedBytes / total).clamp(0.0, 1.0);
           notifyListeners();
         }
       }).asFuture();
@@ -278,7 +284,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // التصنيفات الرسمية من سينمانا بمعرفاتها الدقيقة
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -359,7 +364,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (reset) {
       _page = 0;
       _hasMore = true;
-      _loadedIds.clear();
+      _loadedIds.clear(); // تفريغ حقيقي لفرض تحديث المحتوى
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
@@ -369,7 +374,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       List<dynamic> rawList = [];
 
       if (_selectedCategory != null && _selectedCategory!['id'] != 0) {
-        rawList = await StreamService.fetchByCategory(_selectedCategory!['id'], page: _page);
+        rawList = await StreamService.fetchByCategory(
+          _selectedCategory!['id'],
+          page: _page,
+          isSeries: _tabIndex == 2,
+        );
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
           StreamService.fetchFeed(isSeries: false, page: _page, perPage: 16),
@@ -879,7 +888,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('بدأ التنزيل: $title')),
+        SnackBar(content: Text('بدأ تنزيل: $title')),
       );
     }
   }
@@ -977,6 +986,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
+              // قائمة الحلقات الفعلية مع أزرار تشغيل وتنزيل منفصلة لكل حلقة
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1597,7 +1607,16 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                             color: const Color(0xFF00F0FF),
                           ),
                           const SizedBox(height: 6),
-                          Text('${(dl.progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('${(dl.progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                              Text(
+                                '${(dl.downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} MB / ${(dl.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
