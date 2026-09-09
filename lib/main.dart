@@ -10,9 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'stream_service.dart';
 import 'favorites_service.dart';
 
-// =========================================================================
-// 1. التخزين المحلي الموحد (LocalStorageService)
-// =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -45,9 +42,6 @@ class LocalStorageService {
   }
 }
 
-// =========================================================================
-// 2. مدير التنزيل الداخلي مع دعم الاستئناف في الخلفية (DownloadManager)
-// =========================================================================
 class ActiveDownload {
   final String id;
   final String title;
@@ -165,9 +159,6 @@ class DownloadManager extends ChangeNotifier {
   }
 }
 
-// =========================================================================
-// 3. إدارة الحالة الشاملة والخدمات (AppState)
-// =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
   AppState._();
@@ -179,7 +170,7 @@ class AppState extends ChangeNotifier {
   String username = '';
   String deviceId = '';
 
-  bool isFamilyMode = true;
+  bool isFamilyMode = false;
   List<String> profiles = ['الرئيسي', 'أنمي', 'أطفال'];
   String currentProfile = 'الرئيسي';
 
@@ -187,13 +178,12 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     deviceId = prefs.getString('app_device_id') ?? '';
     if (deviceId.isEmpty) {
-      deviceId = 'usr_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (DateTime.now().microsecond % 9000))}';
+      deviceId = 'usr_${DateTime.now().millisecondsSinceEpoch}';
       await prefs.setString('app_device_id', deviceId);
     }
     currentProfile = prefs.getString('active_profile') ?? 'الرئيسي';
-    isFamilyMode = prefs.getBool('app_family_mode') ?? true;
+    isFamilyMode = prefs.getBool('app_family_mode') ?? false;
     StreamService.sendHeartbeat(deviceId);
-    Timer.periodic(const Duration(minutes: 4), (_) => StreamService.sendHeartbeat(deviceId));
   }
 
   Future<void> toggleFamilyMode(bool val) async {
@@ -213,25 +203,6 @@ class AppState extends ChangeNotifier {
 
   void toggleTheme() {
     isDark = !isDark;
-    notifyListeners();
-  }
-
-  void setLanguage(String newLang) {
-    lang = newLang;
-    notifyListeners();
-  }
-
-  void login(String user, String pass) {
-    username = user;
-    isLoggedIn = true;
-    isAdmin = (user.trim().toLowerCase() == 'admin' && pass.trim() == 'admin123');
-    notifyListeners();
-  }
-
-  void logout() {
-    isLoggedIn = false;
-    isAdmin = false;
-    username = '';
     notifyListeners();
   }
 
@@ -275,10 +246,6 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
                 surface: Color(0xFF111726),
                 secondary: Color(0xFF00F0FF),
               ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                backgroundColor: const Color(0xFF111726),
-              ),
             )
           : ThemeData.light().copyWith(
               scaffoldBackgroundColor: const Color(0xFFF1F5F9),
@@ -289,19 +256,12 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
                 surface: Colors.white,
                 secondary: Color(0xFF0284C7),
               ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                backgroundColor: Colors.white,
-              ),
             ),
       home: const MainHomeScreen(),
     );
   }
 }
 
-// =========================================================================
-// 4. الشاشة الرئيسية والقائمة الجانبية الكاملة (MainHomeScreen)
-// =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -318,6 +278,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   bool _isSearchExpanded = false;
   List<dynamic> _bannerList = [];
   List<dynamic> _activeGrid = [];
+  final Set<String> _loadedIds = {};
   List<Map<String, dynamic>> _continueWatchingList = [];
   List<String> _recentSearches = [];
 
@@ -329,19 +290,19 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  String _activeTitle = '🔥 أحدث الإضافات بالسيرفر';
+  String _activeTitle = 'أحدث الأعمال المضافة';
   Map<String, dynamic>? _selectedGenre;
 
   final List<Map<String, dynamic>> _genres = [
     {'id': 'all', 'ar': 'الكل', 'en': 'All'},
-    {'id': 'anime', 'ar': 'أنمي ورسوم متحركة', 'en': 'Anime & Animation'},
-    {'id': 'action', 'ar': 'أكشن', 'en': 'Action'},
-    {'id': 'adventure', 'ar': 'مغامرة', 'en': 'Adventure'},
-    {'id': 'comedy', 'ar': 'كوميديا', 'en': 'Comedy'},
-    {'id': 'crime', 'ar': 'جريمة', 'en': 'Crime'},
-    {'id': 'drama', 'ar': 'دراما', 'en': 'Drama'},
-    {'id': 'horror', 'ar': 'رعب', 'en': 'Horror'},
-    {'id': 'scifi', 'ar': 'خيال علمي', 'en': 'Sci-Fi'},
+    {'id': 'anime', 'ar': 'أنمي', 'query': 'anime'},
+    {'id': 'action', 'ar': 'أكشن', 'query': 'action'},
+    {'id': 'adventure', 'ar': 'مغامرة', 'query': 'adventure'},
+    {'id': 'comedy', 'ar': 'كوميديا', 'query': 'comedy'},
+    {'id': 'crime', 'ar': 'جريمة', 'query': 'crime'},
+    {'id': 'drama', 'ar': 'دراما', 'query': 'drama'},
+    {'id': 'horror', 'ar': 'رعب', 'query': 'horror'},
+    {'id': 'scifi', 'ar': 'خيال علمي', 'query': 'sci-fi'},
   ];
 
   @override
@@ -353,6 +314,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         setState(() {
           _tabIndex = _tabController.index;
           _selectedGenre = null;
+          _activeTitle = 'أحدث الأعمال المضافة';
         });
         _fetchContent(reset: true);
       }
@@ -406,6 +368,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (reset) {
       _page = 0;
       _hasMore = true;
+      _loadedIds.clear();
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
@@ -414,32 +377,46 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     try {
       List<dynamic> results = [];
       if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
-        results = await StreamService.searchContent(_selectedGenre!['ar']);
+        final q = _selectedGenre!['query'] ?? _selectedGenre!['ar'];
+        final res = await Future.wait([
+          StreamService.searchContent(q, level: 0),
+          StreamService.searchContent(q, level: 1),
+        ]);
+        results = [...res[0], ...res[1]];
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
-          StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 12),
-          StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 12),
+          StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 16),
+          StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 16),
         ]);
-        results = [...res[0], ...res[1]]..shuffle();
+        results = [...res[0], ...res[1]];
       } else if (_tabIndex == 1) {
-        results = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 24);
+        results = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 30);
       } else {
-        results = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 24);
+        results = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 30);
       }
 
       final filtered = _filterStrictFamily(results);
+      final List<dynamic> uniqueNewItems = [];
+
+      for (var item in filtered) {
+        final id = (item['nb'] ?? item['id'])?.toString();
+        if (id != null && !_loadedIds.contains(id)) {
+          _loadedIds.add(id);
+          uniqueNewItems.add(item);
+        }
+      }
 
       if (mounted) {
         setState(() {
           if (reset) {
-            _activeGrid = filtered;
-            if (_bannerList.isEmpty && filtered.isNotEmpty) {
-              _bannerList = filtered.take(6).toList();
+            _activeGrid = uniqueNewItems;
+            if (_bannerList.isEmpty && uniqueNewItems.isNotEmpty) {
+              _bannerList = uniqueNewItems.take(6).toList();
             }
           } else {
-            _activeGrid.addAll(filtered);
+            _activeGrid.addAll(uniqueNewItems);
           }
-          if (results.isEmpty) _hasMore = false;
+          if (uniqueNewItems.isEmpty) _hasMore = false;
           _page++;
           _isLoadingInitial = false;
           _isLoadingMore = false;
@@ -452,11 +429,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
 
   void _filterGenre(Map<String, dynamic> genre) {
     _selectedGenre = genre;
-    final app = AppState.instance;
     setState(() {
       _activeTitle = genre['id'] == 'all'
-          ? app.tr('🔥 أحدث الإضافات بالسيرفر', '🔥 Latest Releases')
-          : app.tr('تصنيف: ${genre['ar']}', 'Category: ${genre['en']}');
+          ? 'أحدث الأعمال المضافة'
+          : 'تصنيف: ${genre['ar']}';
     });
     _fetchContent(reset: true);
   }
@@ -482,13 +458,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       StreamService.searchContent(clean, level: 1),
     ]);
 
+    _loadedIds.clear();
     final all = _filterStrictFamily([...res[0], ...res[1]]);
+    final List<dynamic> uniqueList = [];
+    for (var item in all) {
+      final id = (item['nb'] ?? item['id'])?.toString();
+      if (id != null && !_loadedIds.contains(id)) {
+        _loadedIds.add(id);
+        uniqueList.add(item);
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _activeGrid = all;
+        _activeGrid = uniqueList;
         _isLoadingInitial = false;
         _hasMore = false;
-        _activeTitle = 'نتائج البحث عن: $clean';
+        _activeTitle = 'نتائج البحث: $clean';
       });
     }
   }
@@ -515,10 +501,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
-    final isRtl = app.lang == 'ar';
 
     return Directionality(
-      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: TextDirection.rtl,
       child: Scaffold(
         drawer: Drawer(
           backgroundColor: Theme.of(context).cardColor,
@@ -539,36 +524,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
-                          child: const Icon(Icons.tv_rounded, color: Colors.white, size: 28),
-                        ),
-                        const SizedBox(width: 12),
-                        const Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
-                      child: Text('الملف: ${app.currentProfile} ${app.isFamilyMode ? "• عائلي 🛡️" : ""}',
-                          style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.bold)),
-                    ),
+                    const Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                    const SizedBox(height: 8),
+                    Text('الحساب: ${app.currentProfile}', style: const TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
               SwitchListTile(
-                secondary: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.shield_rounded, color: Color(0xFF10B981), size: 20),
-                ),
-                title: Text(app.tr('الوضع العائلي الصارم', 'Strict Family Mode'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: Text(app.tr('حجب تام للمحتوى الحساس', 'Block sensitive titles'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                title: const Text('الوضع العائلي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 value: app.isFamilyMode,
                 onChanged: (val) {
                   app.toggleFamilyMode(val);
@@ -576,58 +539,24 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                 },
               ),
               ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF00F0FF).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.switch_account_rounded, color: Color(0xFF00F0FF), size: 20),
-                ),
-                title: Text(app.tr('تبديل الهوية', 'Switch Profile'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                trailing: DropdownButton<String>(
-                  value: app.currentProfile,
-                  underline: const SizedBox(),
-                  borderRadius: BorderRadius.circular(16),
-                  dropdownColor: Theme.of(context).cardColor,
-                  items: app.profiles.map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 12)))).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      app.switchProfile(val);
-                      _loadContinueWatching();
-                      _fetchContent(reset: true);
-                    }
-                  },
-                ),
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.download_done_rounded, color: Color(0xFF10B981), size: 20),
-                ),
-                title: Text(app.tr('التنزيلات', 'Downloads'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                leading: const Icon(Icons.download_rounded, color: Color(0xFF10B981)),
+                title: const Text('التنزيلات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const DownloadsScreen()));
                 },
               ),
               ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B), size: 20),
-                ),
-                title: Text(app.tr('المفضلة', 'Favorites'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                leading: const Icon(Icons.bookmark_rounded, color: Color(0xFFF59E0B)),
+                title: const Text('المفضلة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen()));
                 },
               ),
               ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF00F0FF).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.watch_later_rounded, color: Color(0xFF00F0FF), size: 20),
-                ),
-                title: Text(app.tr('المشاهدة لاحقاً', 'Watch Later'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                leading: const Icon(Icons.watch_later_rounded, color: Color(0xFF00F0FF)),
+                title: const Text('المشاهدة لاحقاً', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const WatchLaterScreen()));
@@ -635,41 +564,27 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               ),
               if (app.isAdmin)
                 ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: Colors.amber.withOpacity(0.15), shape: BoxShape.circle),
-                    child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.amber, size: 20),
-                  ),
-                  title: Text(app.tr('👑 لوحة المشرف', '👑 Admin Dashboard'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  leading: const Icon(Icons.admin_panel_settings_rounded, color: Colors.amber),
+                  title: const Text('لوحة الإدارة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboardScreen()));
                   },
                 ),
-              const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(height: 24)),
+              const Divider(),
               SwitchListTile(
-                secondary: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.purple.withOpacity(0.15), shape: BoxShape.circle),
-                  child: Icon(app.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, color: Colors.purpleAccent, size: 20),
-                ),
-                title: Text(app.tr('المظهر الداكن', 'Dark Theme'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                title: const Text('المظهر الداكن', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 value: app.isDark,
                 onChanged: (_) => app.toggleTheme(),
               ),
-              const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(height: 24)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                child: Text(app.tr('التصنيفات:', 'Categories:'), style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
+              const Divider(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                child: Text('التصنيفات', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
               ),
               ..._genres.map((g) => ListTile(
                     dense: true,
-                    leading: Icon(
-                      g['id'] == 'anime' ? Icons.animation_rounded : Icons.movie_creation_outlined,
-                      size: 18,
-                      color: g['id'] == 'anime' ? const Color(0xFF00F0FF) : Colors.grey,
-                    ),
-                    title: Text(isRtl ? g['ar'] : g['en'], style: const TextStyle(fontSize: 13)),
+                    title: Text(g['ar'], style: const TextStyle(fontSize: 13)),
                     onTap: () {
                       Navigator.pop(context);
                       _filterGenre(g);
@@ -694,34 +609,25 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                     autofocus: true,
                     onSubmitted: _search,
                     decoration: const InputDecoration(
-                      hintText: 'ابحث بالاسم...',
+                      hintText: 'بحث...',
                       border: InputBorder.none,
                       hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
                     ),
                   ),
                 )
-              : const Text('ONEBR TV', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFFE50914), letterSpacing: 1)),
+              : const Text('ONEBR TV', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFFE50914))),
           actions: [
             IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(color: Theme.of(context).cardColor, shape: BoxShape.circle),
-                child: Icon(_isSearchExpanded ? Icons.close : Icons.search, color: const Color(0xFF00F0FF), size: 19),
-              ),
+              icon: Icon(_isSearchExpanded ? Icons.close : Icons.search, color: const Color(0xFF00F0FF)),
               onPressed: () {
                 setState(() => _isSearchExpanded = !_isSearchExpanded);
                 if (!_isSearchExpanded) _fetchContent(reset: true);
               },
             ),
             IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(color: Theme.of(context).cardColor, shape: BoxShape.circle),
-                child: const Icon(Icons.download_for_offline_rounded, color: Color(0xFF10B981), size: 19),
-              ),
+              icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981)),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DownloadsScreen())),
             ),
-            const SizedBox(width: 8),
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(48),
@@ -734,7 +640,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                 indicator: BoxDecoration(
                   color: const Color(0xFFE50914),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: const Color(0xFFE50914).withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))],
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: Colors.white,
@@ -759,24 +664,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_isSearchExpanded && _recentSearches.isNotEmpty) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Wrap(
-                            spacing: 8,
-                            children: _recentSearches.map((s) => ActionChip(
-                              backgroundColor: Theme.of(context).cardColor,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              label: Text(s, style: const TextStyle(fontSize: 11, color: Colors.white70)),
-                              onPressed: () {
-                                _searchController.text = s;
-                                _search(s);
-                              },
-                            )).toList(),
-                          ),
-                        ),
-                      ],
-
                       if (_tabIndex == 0 && _selectedGenre == null && _bannerList.isNotEmpty && !_isSearchExpanded)
                         _buildHeroBanner(),
 
@@ -813,7 +700,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -837,7 +723,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                         gradient: LinearGradient(
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
-                          colors: [Color(0xDD07090E), Colors.transparent],
+                          colors: [Color(0xEE07090E), Colors.transparent],
                         ),
                       ),
                     ),
@@ -857,15 +743,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                             ),
                           ),
                           const SizedBox(width: 8),
-                          ElevatedButton.icon(
+                          ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFE50914),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             ),
                             onPressed: () => _openDetails(item),
-                            icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
-                            label: const Text('مشاهدة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            child: const Text('عرض', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -873,15 +757,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   ],
                 );
               },
-            ),
-            Positioned(
-              top: 12,
-              left: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(16)),
-                child: Text('${_currentBannerPage + 1}/${_bannerList.length}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
             ),
           ],
         ),
@@ -898,13 +773,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.play_circle_filled_rounded, color: Color(0xFF00F0FF), size: 18),
-                  SizedBox(width: 6),
-                  Text('متابعة المشاهدة', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00F0FF))),
-                ],
-              ),
+              const Text('متابعة المشاهدة', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00F0FF))),
               TextButton(
                 onPressed: () async {
                   final p = AppState.instance.currentProfile;
@@ -912,7 +781,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   await prefs.remove('continue_watching_list_$p');
                   setState(() => _continueWatchingList.clear());
                 },
-                child: const Text('مسح الكل', style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+                child: const Text('مسح السجل', style: TextStyle(color: Colors.redAccent, fontSize: 11)),
               ),
             ],
           ),
@@ -931,10 +800,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               return Container(
                 width: 155,
                 margin: const EdgeInsets.symmetric(horizontal: 5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))],
-                ),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(18)),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: Stack(
@@ -988,7 +854,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(18),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 6, offset: const Offset(0, 3))],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1011,7 +876,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                               color: isSeries ? const Color(0xFF00F0FF) : const Color(0xFFE50914),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(isSeries ? 'مسلسل' : 'فيلم', style: const TextStyle(fontSize: 8.5, color: Colors.black, fontWeight: FontWeight.w900)),
+                            child: Text(isSeries ? 'مسلسل' : 'فيلم', style: const TextStyle(fontSize: 8.5, color: Colors.black, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -1024,7 +889,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                       children: [
                         Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 2),
-                        Text('⭐ $score', style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.w900)),
+                        Text(score, style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -1038,9 +903,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   }
 }
 
-// =========================================================================
-// 5. تفاصيل العمل وزر المشاهدة والحلقات (MediaDetailScreen)
-// =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   const MediaDetailScreen({super.key, required this.media});
@@ -1116,7 +978,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         : (widget.media['nb'] ?? widget.media['id']).toString();
 
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
-    final fullTitle = episodeData != null ? '$title - حلقة ${episodeData['episodeNumber'] ?? ''}' : title;
+    final fullTitle = episodeData != null ? '$title - الحلقة ${episodeData['episodeNumber'] ?? ''}' : title;
 
     final source = await StreamService.getVideoSource(targetId);
     final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
@@ -1138,7 +1000,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تجهيز الرابط المباشر من السيرفر'), backgroundColor: Colors.redAccent),
+        const SnackBar(content: Text('تعذر تحميل رابط التشغيل')),
       );
     }
   }
@@ -1160,11 +1022,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Text('بدأ تنزيل $title بنجاح في الخلفية!'),
-          backgroundColor: const Color(0xFF10B981),
-        ),
+        SnackBar(content: Text('بدأ التنزيل: $title')),
       );
     }
   }
@@ -1174,7 +1032,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
     final subTitle = widget.media['en_title'] ?? '';
     final poster = StreamService.extractPoster(widget.media);
-    final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? widget.media['content'] ?? 'لا يوجد وصف متوفر.';
+    final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? widget.media['content'] ?? '';
     final score = (widget.media['stars'] ?? '7.5').toString();
 
     return Directionality(
@@ -1203,102 +1061,72 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: poster.isNotEmpty ? Image.network(poster, width: 110, height: 160, fit: BoxFit.cover) : Container(width: 110, height: 160, color: Colors.grey.shade900),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                          if (subTitle != title && subTitle.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(subTitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          ],
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-                                child: Text('⭐ $score', style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, fontSize: 11)),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-                                child: const Text('جاهز للتشغيل ✅', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 10)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          if (!_isSeries)
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF10B981)),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              ),
-                              onPressed: _triggerDownload,
-                              icon: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 16),
-                              label: const Text('تنزيل في التطبيق', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
-                            ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: poster.isNotEmpty ? Image.network(poster, width: 110, height: 160, fit: BoxFit.cover) : Container(width: 110, height: 160, color: Colors.grey.shade900),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        if (subTitle != title && subTitle.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(subTitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                         ],
-                      ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Text(score, style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(width: 12),
+                            Text(_isSeries ? 'مسلسل' : 'فيلم', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _triggerDownload,
+                          icon: const Icon(Icons.download_rounded, size: 16),
+                          label: const Text('تنزيل', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
               SizedBox(
                 width: double.infinity,
                 height: 48,
-                child: ElevatedButton.icon(
+                child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE50914),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    elevation: 6,
                   ),
                   onPressed: _isLaunching ? null : () => _play(_episodes.isNotEmpty ? _episodes.first : null),
-                  icon: _isLaunching
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.play_arrow_rounded, color: Colors.white),
-                  label: Text(
-                    _isSeries ? 'مشاهدة الحلقة الأولى ⚡' : 'مشاهدة الفيلم الآن ⚡',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
-                  ),
+                  child: _isLaunching
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(
+                          _isSeries ? 'مشاهدة الحلقة الأولى' : 'مشاهدة الآن',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
                 ),
               ),
 
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(20)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('قصة العمل:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 6),
-                    Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
-                  ],
-                ),
-              ),
+              if (story.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text('القصة', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
+              ],
 
               if (_isSeries) ...[
                 const SizedBox(height: 20),
-                Text('قائمة الحلقات (${_episodes.length}):', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
                 _isLoadingEpisodes
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF00F0FF)))
@@ -1339,9 +1167,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// 6. المشغل السريع والترجمة الثابتة عند الدوران (PlayerScreen)
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -1371,14 +1196,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _isLocked = false;
 
   String _currentStreamUrl = '';
-  String _activeQualityName = 'تلقائي (Auto)';
+  String _activeQualityName = 'تلقائي';
   bool _isAutoBitrate = true;
 
   bool _subtitlesEnabled = true;
-  double _subtitleFontSize = 19.0;
+  double _subtitleFontSize = 18.0;
   Color _subtitleTextColor = Colors.white;
   Color _subtitleBgColor = Colors.black54;
-  double _subtitleBottomPadding = 40.0;
+  double _subtitleBottomPadding = 48.0;
   List<Subtitle> _parsedSubtitles = [];
   String _activeSubtitleText = '';
 
@@ -1466,6 +1291,34 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       allowFullScreen: true,
       deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
       deviceOrientationsOnEnterFullScreen: [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+      overlay: ValueListenableBuilder(
+        valueListenable: _videoPlayerController!,
+        builder: (ctx, VideoPlayerValue val, child) {
+          if (!_subtitlesEnabled || _activeSubtitleText.isEmpty) return const SizedBox();
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: _subtitleBottomPadding, left: 24, right: 24),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _subtitleBgColor,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _activeSubtitleText,
+                  style: TextStyle(
+                    color: _subtitleTextColor,
+                    fontSize: _subtitleFontSize,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
 
     if (mounted) setState(() => _isReady = true);
@@ -1481,17 +1334,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 12),
             ListTile(
               leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF00F0FF)),
-              title: const Text('تلقائي (Auto)'),
-              trailing: _isAutoBitrate ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F0FF)) : null,
+              title: const Text('تلقائي'),
+              trailing: _isAutoBitrate ? const Icon(Icons.check, color: Color(0xFF00F0FF)) : null,
               onTap: () {
                 Navigator.pop(context);
                 setState(() {
                   _isAutoBitrate = true;
-                  _activeQualityName = 'تلقائي (Auto)';
+                  _activeQualityName = 'تلقائي';
                 });
               },
             ),
@@ -1504,7 +1355,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               return ListTile(
                 leading: const Icon(Icons.hd_outlined, color: Colors.white70),
                 title: Text(res, style: TextStyle(color: isCurrent ? const Color(0xFF00F0FF) : Colors.white)),
-                trailing: isCurrent ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F0FF)) : null,
+                trailing: isCurrent ? const Icon(Icons.check, color: Color(0xFF00F0FF)) : null,
                 onTap: () {
                   Navigator.pop(context);
                   if (url != _currentStreamUrl && url.isNotEmpty) {
@@ -1536,25 +1387,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('إعدادات الترجمة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('إعدادات الترجمة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
               SwitchListTile(
-                title: const Text('تشغيل الترجمة', style: TextStyle(color: Colors.white)),
+                title: const Text('تفعيل الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
                 value: _subtitlesEnabled,
                 onChanged: (val) {
                   setSheet(() => _subtitlesEnabled = val);
                   setState(() => _subtitlesEnabled = val);
                 },
               ),
-              Text('ارتفاع الترجمة عن الأسفل: ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              Text('الموضع (الارتفاع): ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
               Slider(
-                value: _subtitleBottomPadding, min: 10, max: 120, divisions: 11,
+                value: _subtitleBottomPadding, min: 10, max: 140, divisions: 13,
                 activeColor: const Color(0xFF00F0FF),
                 onChanged: (val) {
                   setSheet(() => _subtitleBottomPadding = val);
                   setState(() => _subtitleBottomPadding = val);
                 },
               ),
-              Text('حجم الخط: ${_subtitleFontSize.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              Text('الحجم: ${_subtitleFontSize.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
               Slider(
                 value: _subtitleFontSize, min: 14, max: 32, divisions: 9,
                 activeColor: const Color(0xFF00F0FF),
@@ -1563,9 +1414,64 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   setState(() => _subtitleFontSize = val);
                 },
               ),
+              Row(
+                children: [
+                  const Text('اللون: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  _colorOption(Colors.white, () {
+                    setSheet(() => _subtitleTextColor = Colors.white);
+                    setState(() => _subtitleTextColor = Colors.white);
+                  }),
+                  _colorOption(const Color(0xFFFDE047), () {
+                    setSheet(() => _subtitleTextColor = const Color(0xFFFDE047));
+                    setState(() => _subtitleTextColor = const Color(0xFFFDE047));
+                  }),
+                  _colorOption(const Color(0xFF00F0FF), () {
+                    setSheet(() => _subtitleTextColor = const Color(0xFF00F0FF));
+                    setState(() => _subtitleTextColor = const Color(0xFF00F0FF));
+                  }),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('الخلفية: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  TextButton(
+                    onPressed: () {
+                      setSheet(() => _subtitleBgColor = Colors.transparent);
+                      setState(() => _subtitleBgColor = Colors.transparent);
+                    },
+                    child: const Text('شفاف'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setSheet(() => _subtitleBgColor = Colors.black54);
+                      setState(() => _subtitleBgColor = Colors.black54);
+                    },
+                    child: const Text('شبه شفاف'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setSheet(() => _subtitleBgColor = Colors.black);
+                      setState(() => _subtitleBgColor = Colors.black);
+                    },
+                    child: const Text('معتم'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _colorOption(Color c, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 6),
+        width: 22, height: 22,
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
       ),
     );
   }
@@ -1591,26 +1497,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ? Chewie(controller: _chewieController!)
                   : const CircularProgressIndicator(color: Color(0xFF00F0FF)),
             ),
-
-            if (_subtitlesEnabled && _activeSubtitleText.isNotEmpty)
-              Positioned(
-                bottom: _subtitleBottomPadding,
-                left: 20,
-                right: 20,
-                child: IgnorePointer(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(color: _subtitleBgColor, borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        _activeSubtitleText,
-                        style: TextStyle(color: _subtitleTextColor, fontSize: _subtitleFontSize, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
 
             if (!_isLocked)
               Positioned(
@@ -1664,9 +1550,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 }
 
-// =========================================================================
-// 7. الشاشات التابعة (التنزيلات، المفضلة، المشاهدة لاحقاً، لوحة المشرف)
-// =========================================================================
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
 
@@ -1705,17 +1588,24 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('📥 التنزيلات'), backgroundColor: Colors.transparent, elevation: 0),
+        appBar: AppBar(
+          title: const Text('التنزيلات'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             if (active.isNotEmpty) ...[
-              const Text('⏳ جاري التنزيل في الخلفية:', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF00F0FF), fontSize: 14)),
+              const Text('جاري التنزيل', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF00F0FF))),
               const SizedBox(height: 10),
               ...active.map((d) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(18)),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(18),
+                ),
                 child: Column(
                   children: [
                     Row(
@@ -1732,19 +1622,22 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   ],
                 ),
               )),
-              const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
+              const Divider(),
             ],
-            const Text('✅ الفيديوهات المنزلة الجاهزة للمشاهدة بدون إنترنت:', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF10B981), fontSize: 14)),
+            const Text('الملفات المكتملة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(height: 10),
             if (_completed.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(32.0),
-                child: Center(child: Text('لا توجد عناصر منزلة بعد')),
+                child: Center(child: Text('لا توجد ملفات مكتملة')),
               )
             else
               ..._completed.asMap().entries.map((e) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(18)),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(18),
+                ),
                 child: ListTile(
                   leading: const Icon(Icons.play_circle_fill, color: Color(0xFF10B981), size: 28),
                   title: Text(e.value['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -1781,9 +1674,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('⭐ المفضلة'), backgroundColor: Colors.transparent, elevation: 0),
+        appBar: AppBar(title: const Text('المفضلة'), backgroundColor: Colors.transparent, elevation: 0),
         body: _favorites.isEmpty
-            ? const Center(child: Text('لا توجد عناصر في المفضلة'))
+            ? const Center(child: Text('القائمة فارغة'))
             : ListView.builder(
                 itemCount: _favorites.length,
                 itemBuilder: (ctx, i) {
@@ -1827,9 +1720,9 @@ class _WatchLaterScreenState extends State<WatchLaterScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('🕒 المشاهدة لاحقاً'), backgroundColor: Colors.transparent, elevation: 0),
+        appBar: AppBar(title: const Text('المشاهدة لاحقاً'), backgroundColor: Colors.transparent, elevation: 0),
         body: _items.isEmpty
-            ? const Center(child: Text('لا توجد عناصر في قائمة المشاهدة لاحقاً'))
+            ? const Center(child: Text('القائمة فارغة'))
             : ListView.builder(
                 itemCount: _items.length,
                 itemBuilder: (ctx, i) {
@@ -1872,7 +1765,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final heatmap = Map<String, int>.from(_stats['heatmap'] ?? {});
-    final recent = List<Map<String, dynamic>>.from(_stats['recent_plays'] ?? []);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1880,10 +1772,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: const Text('👑 لوحة تحكم المشرف (Admin)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-          actions: [
-            IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-          ],
+          title: const Text('لوحة الإدارة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -1892,61 +1781,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   Row(
                     children: [
-                      _statCard('المستخدمين المتصلين', '${_stats['active_users'] ?? 0}', Icons.wifi_tethering_rounded, const Color(0xFF10B981)),
+                      _statCard('المستخدمون النشطون', '${_stats['active_users'] ?? 0}'),
                       const SizedBox(width: 10),
-                      _statCard('إجمالي المشاهدات', '${_stats['total_views'] ?? 0}', Icons.play_circle_filled_rounded, const Color(0xFFF59E0B)),
+                      _statCard('المشاهدات', '${_stats['total_views'] ?? 0}'),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  const Text('🔥 الخريطة الحرارية للمشاهدين (Heatmap):', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+                  const Text('مخطط النشاط', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(16)),
                     child: Column(
                       children: heatmap.entries.map((e) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           children: [
-                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-                            Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: (e.value / 10).clamp(0.1, 1.0), color: const Color(0xFFE50914), minHeight: 6))),
+                            SizedBox(width: 60, child: Text(e.key, style: const TextStyle(fontSize: 12))),
+                            Expanded(child: LinearProgressIndicator(value: (e.value / 20).clamp(0.05, 1.0), color: const Color(0xFFE50914))),
                             const SizedBox(width: 10),
-                            Text('${e.value}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            Text('${e.value}', style: const TextStyle(fontSize: 11)),
                           ],
                         ),
                       )).toList(),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const Text('📺 أحدث المشاهدات الحية:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  ...recent.map((r) => Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(16)),
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.live_tv_rounded, color: Color(0xFFE50914)),
-                      title: Text(r['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      trailing: Text(r['time'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                    ),
-                  )),
                 ],
               ),
       ),
     );
   }
 
-  Widget _statCard(String title, String val, IconData icon, Color color) {
+  Widget _statCard(String title, String val) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(16)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(val, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: color)),
+            Text(val, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF00F0FF))),
             const SizedBox(height: 2),
             Text(title, style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
