@@ -8,7 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب التغذية الرئيسية مع تحديد videoKind صريحاً
+  /// جلب الأفلام (videoKind: 1) والمسلسلات (videoKind: 2) حرفياً كما في صورة DevTools
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -27,15 +27,20 @@ class StreamService {
     return [];
   }
 
-  /// جلب أعمال التصنيف المعتمدة من سينمانا بمسار category_id الحقيقي
-  static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0}) async {
+  /// مسار جلب التصنيفات الحقيقي المعتمد في سينمانا
+  static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0, bool isSeries = false}) async {
     try {
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/sortParam/desc/pageNumber/$page';
+      final vKind = isSeries ? 2 : 1;
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/videoKind/$vKind/sortParam/desc/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        return (data is List) ? data : (data['articles'] ?? []);
+        List list = (data is List) ? data : (data['articles'] ?? []);
+        for (var item in list) {
+          item['is_series_fixed'] = isSeries;
+        }
+        return list;
       }
     } catch (_) {}
     return [];
@@ -113,7 +118,7 @@ class StreamService {
     return null;
   }
 
-  /// استخراج رابط الترجمة العربية
+  /// استخراج الترجمة
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -129,7 +134,7 @@ class StreamService {
     return '';
   }
 
-  /// جلب حلقات المسلسل
+  /// مسار حلقات المسلسل الحقيقي من صورة DevTools
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
