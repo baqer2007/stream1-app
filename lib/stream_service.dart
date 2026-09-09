@@ -12,7 +12,6 @@ class StreamService {
   static void sendHeartbeat(String deviceId) {}
   static void recordWatchEvent(String targetId, String title) {}
 
-  /// إحصائيات لوحة تحكم المشرف المفقودة في البناء السابق
   static Future<Map<String, dynamic>> getRealAdminStats() async {
     return {
       'active_users': 1,
@@ -26,13 +25,11 @@ class StreamService {
         '20-24': 14,
       },
       'recent_plays': [
-        {'title': 'ONEBR Live Session', 'time': 'الآن'},
+        {'title': 'Live Stream', 'time': 'الآن'},
       ],
     };
   }
 
-  /// جلب قوائم الأفلام والمسلسلات مباشرة للصفحة الرئيسية
-  /// level = 0 (أفلام) | level = 1 (مسلسلات)
   static Future<List<dynamic>> fetchHomeFeed({int level = 0, int page = 0, int perPage = 24}) async {
     try {
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/pageNumber/$page/level/$level';
@@ -47,7 +44,6 @@ class StreamService {
     return [];
   }
 
-  /// البحث المباشر في سيرفر سينمانا
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -63,7 +59,6 @@ class StreamService {
     return [];
   }
 
-  /// استخراج روابط الفيديو المباشرة والجودات
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -120,7 +115,6 @@ class StreamService {
     return null;
   }
 
-  /// استخراج رابط الترجمة العربية
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -136,7 +130,6 @@ class StreamService {
     return '';
   }
 
-  /// جلب حلقات المسلسل مباشرة
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
@@ -153,7 +146,6 @@ class StreamService {
     return [];
   }
 
-  /// مساعدة لاستخراج رابط البوستر
   static String extractPoster(Map<String, dynamic> item) {
     if (item['imgMediumThumbObjUrl'] != null && item['imgMediumThumbObjUrl'].toString().isNotEmpty) {
       return item['imgMediumThumbObjUrl'].toString();
