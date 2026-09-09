@@ -8,7 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب التغذية الرئيسية
+  /// جلب التغذية مع الترقيم المستمر
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -27,10 +27,12 @@ class StreamService {
     return [];
   }
 
-  /// مسار التصنيفات الرسمي والمطابق لـ DevTools
+  /// مسار التصنيفات والأنمي
   static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0, int? videoKind}) async {
     try {
       final offset = page * 30;
+      
+      // في حال كان التصنيف هو الأنمي والرسوم المتحركة، يتم سحب النوعين (أفلام ومسلسلات) لضمان ظهور كل الأعمال
       if (videoKind == null) {
         final url1 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=1&offset=$offset&level=0';
         final url2 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=2&offset=$offset&level=0';
@@ -44,14 +46,14 @@ class StreamService {
         for (int i = 0; i < responses.length; i++) {
           if (responses[i].statusCode == 200) {
             dynamic data = jsonDecode(utf8.decode(responses[i].bodyBytes, allowMalformed: true));
-            List list = (data is Map && data['info'] is List) ? data['info'] : [];
+            List list = (data is Map && data['info'] is List) ? data['info'] : (data is List ? data : []);
             for (var item in list) {
               item['is_series_fixed'] = (i == 1);
             }
             combined.addAll(list);
           }
         }
-        return combined..shuffle();
+        return combined;
       }
 
       final url = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=$videoKind&offset=$offset&level=0';
@@ -64,6 +66,8 @@ class StreamService {
           list = data['info'];
         } else if (data is List) {
           list = data;
+        } else if (data is Map && data['articles'] is List) {
+          list = data['articles'];
         }
 
         for (var item in list) {
@@ -91,7 +95,7 @@ class StreamService {
     return [];
   }
 
-  /// استخراج الجودات مع جعل 240p هو الخيار الافتراضي
+  /// روابط الفيديو - تشغيل 240p كأولوية
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -148,7 +152,7 @@ class StreamService {
     return null;
   }
 
-  /// استخراج الترجمة
+  /// رابط الترجمة
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -164,7 +168,7 @@ class StreamService {
     return '';
   }
 
-  /// جلب حلقات المسلسل
+  /// حلقات المسلسلات
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
