@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'stream_service.dart';
 
 class Subtitle {
   final int index;
@@ -21,149 +22,6 @@ class Subtitle {
   });
 }
 
-// =========================================================================
-// 1. خدمة الاتصال بسيرفر سينمانا (StreamService)
-// =========================================================================
-class StreamService {
-  static Map<String, String> get stealthHeaders => {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Referer': 'https://cee.buzz/',
-  };
-
-  static Future<List<dynamic>> fetchHomeFeed({required int level, int page = 0, int perPage = 30}) async {
-    try {
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/pageNumber/$page/level/$level';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
-
-      if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        if (data is List) return data;
-        if (data['articles'] is List) return data['articles'];
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
-    try {
-      final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$level';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
-
-      if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        if (data is List) return data;
-        if (data['articles'] is List) return data['articles'];
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
-    try {
-      final transRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/transcoddedFiles/id/$videoId'),
-        headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 8));
-
-      List<Map<String, dynamic>> qualities = [];
-      String mainVideoUrl = '';
-
-      if (transRes.statusCode == 200) {
-        dynamic filesData = jsonDecode(utf8.decode(transRes.bodyBytes, allowMalformed: true));
-        List list = (filesData is List) ? filesData : [];
-
-        for (var item in list) {
-          final res = item['resolution']?.toString() ?? '720p';
-          final url = item['videoUrl']?.toString() ?? '';
-          if (url.isNotEmpty) {
-            qualities.add({'resolution': res, 'url': url});
-          }
-        }
-
-        if (qualities.isNotEmpty) {
-          final defaultQuality = qualities.firstWhere(
-            (q) => q['resolution'] == '720p',
-            orElse: () => qualities.last,
-          );
-          mainVideoUrl = defaultQuality['url'];
-        }
-      }
-
-      if (mainVideoUrl.isEmpty) {
-        final infoRes = await http.get(
-          Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
-          headers: stealthHeaders,
-        ).timeout(const Duration(seconds: 6));
-
-        if (infoRes.statusCode == 200) {
-          dynamic infoData = jsonDecode(utf8.decode(infoRes.bodyBytes, allowMalformed: true));
-          mainVideoUrl = infoData['videoUrl']?.toString() ?? '';
-          if (mainVideoUrl.isNotEmpty) {
-            qualities.add({'resolution': '720p', 'url': mainVideoUrl});
-          }
-        }
-      }
-
-      if (mainVideoUrl.isNotEmpty) {
-        return {
-          'video_url': mainVideoUrl,
-          'qualities': qualities,
-        };
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  static Future<String> getArabicSubtitleUrl(String videoId) async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
-        headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 6));
-
-      if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        return data['arTranslationFilePath']?.toString() ?? data['arTranslationFile']?.toString() ?? '';
-      }
-    } catch (_) {}
-    return '';
-  }
-
-  static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
-    try {
-      final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/250/parent_id/$seriesId/itemsPerPage/250/pageNumber/0/level/2'),
-        headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 7));
-
-      if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        if (data is List) return data;
-        if (data['articles'] is List) return data['articles'];
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static String extractPoster(Map<String, dynamic> item) {
-    if (item['imgMediumThumbObjUrl'] != null && item['imgMediumThumbObjUrl'].toString().isNotEmpty) {
-      return item['imgMediumThumbObjUrl'].toString();
-    }
-    if (item['imgThumbObjUrl'] != null && item['imgThumbObjUrl'].toString().isNotEmpty) {
-      return item['imgThumbObjUrl'].toString();
-    }
-    if (item['img'] != null && item['img'].toString().isNotEmpty) {
-      return 'https://cnth2.cee.buzz/vascin-poster-images/${item['img']}';
-    }
-    return '';
-  }
-}
-
-// =========================================================================
-// 2. التخزين المحلي وإدارة التنزيلات
-// =========================================================================
 class LocalStorageService {
   static Future<List<Map<String, dynamic>>> getList(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -193,37 +51,6 @@ class LocalStorageService {
     final list = await getList(key);
     list.removeWhere((x) => (x[idField] ?? x['id'])?.toString() == id);
     await setList(key, list);
-  }
-}
-
-class FavoritesService {
-  static const String _favKey = 'user_favorites_list';
-
-  static Future<List<Map<String, dynamic>>> getFavorites() async {
-    return await LocalStorageService.getList(_favKey);
-  }
-
-  static Future<bool> isFavorited(String id) async {
-    final list = await getFavorites();
-    return list.any((item) => (item['nb'] ?? item['id'])?.toString() == id);
-  }
-
-  static Future<bool> toggleFavorite(Map<String, dynamic> media, String type) async {
-    final list = await getFavorites();
-    final id = (media['nb'] ?? media['id'])?.toString();
-    final exists = list.any((item) => (item['nb'] ?? item['id'])?.toString() == id);
-
-    if (exists) {
-      list.removeWhere((item) => (item['nb'] ?? item['id'])?.toString() == id);
-      await LocalStorageService.setList(_favKey, list);
-      return false;
-    } else {
-      final toSave = Map<String, dynamic>.from(media);
-      toSave['media_type'] = type;
-      list.insert(0, toSave);
-      await LocalStorageService.setList(_favKey, list);
-      return true;
-    }
   }
 }
 
@@ -293,7 +120,7 @@ class DownloadManager extends ChangeNotifier {
         'nb': targetId,
         'title': title,
         'path': filePath,
-        'size': 'جاري التنزيل...',
+        'size': 'جاري التنزيل',
         'poster': poster,
       });
 
@@ -332,7 +159,7 @@ class DownloadManager extends ChangeNotifier {
           'nb': targetId,
           'title': title,
           'path': filePath,
-          'size': '$fileSizeMb MB',
+          'size': '$fileSizeMb ميغابايت',
           'poster': poster,
         });
       }
@@ -352,9 +179,6 @@ class DownloadManager extends ChangeNotifier {
   }
 }
 
-// =========================================================================
-// 3. حالة التطبيق والمشغل الرئيسي
-// =========================================================================
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
   AppState._();
@@ -412,9 +236,6 @@ class OnebrTvApp extends StatelessWidget {
   }
 }
 
-// =========================================================================
-// 4. الشاشة الرئيسية وتصنيف الأفلام والمسلسلات
-// =========================================================================
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
 
@@ -433,23 +254,26 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   List<Map<String, dynamic>> _continueWatchingList = [];
 
   int _page = 0;
-  int _tabIndex = 0;
+  int _tabIndex = 0; // 0: الكل, 1: أفلام, 2: مسلسلات
   bool _isLoadingInitial = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String _activeTitle = 'أحدث الإضافات';
-  Map<String, dynamic>? _selectedGenre;
+  Map<String, dynamic>? _selectedCategory;
 
-  final List<Map<String, dynamic>> _genres = [
-    {'id': 'all', 'ar': 'الكل', 'keywords': []},
-    {'id': 'action', 'ar': 'أكشن', 'keywords': ['action', 'أكشن', 'قتال']},
-    {'id': 'drama', 'ar': 'دراما', 'keywords': ['drama', 'دراما']},
-    {'id': 'comedy', 'ar': 'كوميديا', 'keywords': ['comedy', 'كوميدي']},
-    {'id': 'horror', 'ar': 'رعب', 'keywords': ['horror', 'رعب']},
-    {'id': 'adventure', 'ar': 'مغامرة', 'keywords': ['adventure', 'مغامر']},
-    {'id': 'anime', 'ar': 'أنمي', 'keywords': ['anime', 'أنمي', 'رسوم متحركة']},
-    {'id': 'crime', 'ar': 'جريمة', 'keywords': ['crime', 'جريمة', 'شرطة']},
-    {'id': 'romance', 'ar': 'رومانسي', 'keywords': ['romance', 'رومانسي']},
+  // التصنيفات الرسمية المستخرجة من DevTools بدقة
+  final List<Map<String, dynamic>> _officialCategories = [
+    {'id': 0, 'ar': 'الكل'},
+    {'id': 84, 'ar': 'أكشن'},
+    {'id': 62, 'ar': 'دراما'},
+    {'id': 59, 'ar': 'كوميديا'},
+    {'id': 70, 'ar': 'رعب'},
+    {'id': 56, 'ar': 'مغامرة'},
+    {'id': 60, 'ar': 'جريمة'},
+    {'id': 78, 'ar': 'خيال علمي'},
+    {'id': 77, 'ar': 'رومانسي'},
+    {'id': 57, 'ar': 'رسوم متحركة (أنمي)'},
+    {'id': 65, 'ar': 'عائلي'},
   ];
 
   @override
@@ -460,7 +284,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       if (!_tabController.indexIsChanging) {
         setState(() {
           _tabIndex = _tabController.index;
-          _selectedGenre = null;
+          _selectedCategory = null;
           _activeTitle = _tabIndex == 1 ? 'الأفلام' : (_tabIndex == 2 ? 'المسلسلات' : 'أحدث الإضافات');
         });
         _fetchContent(reset: true);
@@ -479,16 +303,21 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     });
   }
 
-  // التمييز الصارم والدقيق: المسلسل هو فقط من يحمل kind == "1"
+  /// التمييز الحقيقي القاطع المكتشف من DevTools:
+  /// إذا كانت season == "0" أو rootSeries == "0" أو episodeNummer == "0" فهو فيلم 100%
   static bool isStrictSeries(Map<String, dynamic> item) {
-    final kind = item['kind']?.toString();
-    if (kind == '1') return true;
-    if (kind == '2' || kind == '0') return false;
+    final season = item['season']?.toString();
+    final rootSeries = item['rootSeries']?.toString();
+    final epNum = (item['episodeNummer'] ?? item['episodeNumber'])?.toString();
 
-    final en = (item['en_title'] ?? '').toString().toLowerCase();
-    final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
-    if (en.contains('movie') || en.contains('film') || ar.contains('فيلم')) return false;
-    if (en.contains('season') || ar.contains('الموسم') || ar.contains('مسلسل')) return true;
+    if (season == '0' || rootSeries == '0' || epNum == '0') {
+      return false;
+    }
+
+    final kind = item['kind']?.toString();
+    final level = item['level']?.toString();
+    if (kind == '1' && (season != null && season != '0')) return true;
+    if (level == '1') return true;
 
     return false;
   }
@@ -506,37 +335,18 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     try {
       List<dynamic> rawList = [];
 
-      if (_selectedGenre != null && _selectedGenre!['id'] != 'all') {
-        // جلب تغذية من الأفلام والمسلسلات مع الفلترة حسب التصنيف
-        final res = await Future.wait([
-          StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 25),
-          StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 25),
-        ]);
-        final combined = [...res[0], ...res[1]];
-        final keywords = List<String>.from(_selectedGenre!['keywords']);
-
-        rawList = combined.where((item) {
-          final content = '${item['title']} ${item['en_title']} ${item['ar_title']} ${item['categories']} ${item['ar_content']}'.toLowerCase();
-          return keywords.any((k) => content.contains(k.toLowerCase()));
-        }).toList();
-
-        // في حال كانت النتيجة محدودة نجري بحثاً مباشراً
-        if (rawList.isEmpty && _page == 0) {
-          final searchRes = await StreamService.searchContent(_selectedGenre!['ar'], level: 0);
-          rawList = searchRes;
-        }
+      if (_selectedCategory != null && _selectedCategory!['id'] != 0) {
+        rawList = await StreamService.fetchByCategory(_selectedCategory!['id'], page: _page);
       } else if (_tabIndex == 0) {
         final res = await Future.wait([
-          StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 16),
-          StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 16),
+          StreamService.fetchFeed(isSeries: false, page: _page, perPage: 16),
+          StreamService.fetchFeed(isSeries: true, page: _page, perPage: 16),
         ]);
         rawList = [...res[0], ...res[1]]..shuffle();
       } else if (_tabIndex == 1) {
-        // أفلام حصراً
-        rawList = await StreamService.fetchHomeFeed(level: 0, page: _page, perPage: 32);
+        rawList = await StreamService.fetchFeed(isSeries: false, page: _page, perPage: 32);
       } else {
-        // مسلسلات حصراً
-        rawList = await StreamService.fetchHomeFeed(level: 1, page: _page, perPage: 32);
+        rawList = await StreamService.fetchFeed(isSeries: true, page: _page, perPage: 32);
       }
 
       final List<dynamic> uniqueItems = [];
@@ -574,16 +384,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (clean.isEmpty) return;
 
     setState(() => _isLoadingInitial = true);
-
-    final res = await Future.wait([
-      StreamService.searchContent(clean, level: 0),
-      StreamService.searchContent(clean, level: 1),
-    ]);
+    final results = await StreamService.searchContent(clean);
 
     _loadedIds.clear();
-    final all = [...res[0], ...res[1]];
     final List<dynamic> uniqueList = [];
-    for (var item in all) {
+    for (var item in results) {
       final id = (item['nb'] ?? item['id'])?.toString();
       if (id != null && !_loadedIds.contains(id)) {
         _loadedIds.add(id);
@@ -638,7 +443,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   children: [
                     Text('ONEBR TV', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                     SizedBox(height: 6),
-                    Text('منصة البث', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('منصة البث المباشر', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),
@@ -675,16 +480,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               const Divider(),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                child: Text('التصنيفات', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
+                child: Text('التصنيفات الرسمية', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
               ),
-              ..._genres.map((g) => ListTile(
+              ..._officialCategories.map((cat) => ListTile(
                     dense: true,
-                    title: Text(g['ar']),
+                    title: Text(cat['ar']),
                     onTap: () {
                       Navigator.pop(context);
                       setState(() {
-                        _selectedGenre = g;
-                        _activeTitle = g['id'] == 'all' ? 'أحدث الإضافات' : 'تصنيف: ${g['ar']}';
+                        _selectedCategory = cat;
+                        _activeTitle = cat['id'] == 0 ? 'أحدث الإضافات' : 'تصنيف: ${cat['ar']}';
                       });
                       _fetchContent(reset: true);
                     },
@@ -707,7 +512,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                     autofocus: true,
                     onSubmitted: _search,
                     decoration: const InputDecoration(
-                      hintText: 'بحث...',
+                      hintText: 'بحث عن عمل...',
                       border: InputBorder.none,
                       hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
                     ),
@@ -948,7 +753,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void initState() {
     super.initState();
     _isSeries = _MainHomeScreenState.isStrictSeries(widget.media);
-
     _checkFav();
     LocalStorageService.appendItem('continue_watching_list', widget.media);
 
@@ -959,7 +763,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   void _checkFav() async {
     final id = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
-    final isFav = await FavoritesService.isFavorited(id);
+    final list = await LocalStorageService.getList('user_favorites_list');
+    final isFav = list.any((item) => (item['nb'] ?? item['id'])?.toString() == id);
     if (mounted) setState(() => _isFav = isFav);
   }
 
@@ -1050,8 +855,16 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             IconButton(
               icon: Icon(_isFav ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: const Color(0xFFF59E0B)),
               onPressed: () async {
-                final state = await FavoritesService.toggleFavorite(widget.media, _isSeries ? 'tv' : 'movie');
-                setState(() => _isFav = state);
+                final id = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
+                final list = await LocalStorageService.getList('user_favorites_list');
+                final exists = list.any((item) => (item['nb'] ?? item['id'])?.toString() == id);
+                if (exists) {
+                  await LocalStorageService.removeItem('user_favorites_list', id);
+                  setState(() => _isFav = false);
+                } else {
+                  await LocalStorageService.appendItem('user_favorites_list', widget.media);
+                  setState(() => _isFav = true);
+                }
               },
             ),
           ],
@@ -1091,7 +904,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               ),
               const SizedBox(height: 16),
 
-              // زر التشغيل
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -1117,7 +929,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // عرض الحلقات حصراً للمسلسل فقط مع الحلقات الحقيقية
+              // لن تظهر الحلقات إطلاقاً إلا إذا كان العمل مسلسلاً حقيقياً وقائمة حلقاته من السيرفر ليست فارغة
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1161,7 +973,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// 6. المشغل المطور مع دعم ملء الشاشة الكامل
+// 6. المشغل المطور مع عناصر تحكم ثابتة عند الدوران
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -1361,7 +1173,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     setState(() => _subtitlesEnabled = val);
                   },
                 ),
-                Text('الموضع العمودي: ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('الموضع العمودي (الارتفاع للأعلى): ${_subtitleBottomPadding.toInt()}px', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 Slider(
                   value: _subtitleBottomPadding,
                   min: 10,
@@ -1547,7 +1359,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                 Center(
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: enlargementWidth(context),
                     children: [
                       IconButton(
                         iconSize: 36,
@@ -1654,6 +1466,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
+
+  MainAxisSize enlargementWidth(BuildContext context) => MainAxisSize.min;
 }
 
 // =========================================================================
@@ -1744,7 +1558,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   void initState() {
     super.initState();
-    FavoritesService.getFavorites().then((list) => setState(() => _favorites = list));
+    LocalStorageService.getList('user_favorites_list').then((list) => setState(() => _favorites = list));
   }
 
   @override
