@@ -258,7 +258,6 @@ class MainHomeScreen extends StatefulWidget {
 class _MainHomeScreenState extends State<MainHomeScreen> {
   int _currentNavIndex = 0;
 
-  // معرفات التصنيفات الحقيقية من شبكة سينمانا
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -453,7 +452,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       height: 185,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        image: poster.isNotEmpty ? DecorationImage(image: NetworkNetworkImageProvider(poster), fit: BoxFit.cover) : null,
+        image: poster.isNotEmpty ? DecorationImage(image: NetworkImage(poster), fit: BoxFit.cover) : null,
       ),
       child: Stack(
         children: [
@@ -760,9 +759,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// المشغل الجديد المطابق لصور التصميم (1000018617 / 1000018618 / 1000018621)
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -1014,7 +1010,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : const CircularProgressIndicator(color: Color(0xFFE50914)),
               ),
 
-              // الترجمة
               if (_currentSubText.isNotEmpty)
                 Positioned(
                   bottom: 60,
@@ -1029,9 +1024,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // أدوات التحكم المتطابقة مع الصورة 1000018617 و 1000018620
               if (_showControls) ...[
-                // شريط العنوان العلوي
                 Positioned(
                   top: 10,
                   left: 14,
@@ -1058,7 +1051,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-                // أزرار المنتصف (تقديم وترجيع وتشغيل)
                 Center(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1094,7 +1086,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-                // شريط التقدم السفلي والوقتين
                 if (_controller != null && _controller!.value.isInitialized)
                   Positioned(
                     bottom: 12,
