@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 import 'stream_service.dart';
 
 class Subtitle {
@@ -54,33 +55,9 @@ class LocalStorageService {
   }
 }
 
-class ActiveDownload {
-  final String id;
-  final String title;
-  final String url;
-  final String poster;
-  double progress;
-  int downloadedBytes;
-  int totalBytes;
-  http.Client? client;
-  bool isCancelled = false;
-
-  ActiveDownload({
-    required this.id,
-    required this.title,
-    required this.url,
-    required this.poster,
-    this.progress = 0.0,
-    this.downloadedBytes = 0,
-    this.totalBytes = 0,
-  });
-}
-
 class DownloadManager extends ChangeNotifier {
   static final DownloadManager instance = DownloadManager._();
   DownloadManager._();
-
-  final Map<String, ActiveDownload> activeDownloads = {};
 
   Future<String> _getAppStoragePath() async {
     final paths = [
@@ -103,85 +80,39 @@ class DownloadManager extends ChangeNotifier {
     required String url,
     required String poster,
   }) async {
-    if (activeDownloads.containsKey(targetId)) return;
-
-    final download = ActiveDownload(id: targetId, title: title, url: url, poster: poster);
-    activeDownloads[targetId] = download;
-    notifyListeners();
-
     try {
-      final basePath = await _getAppStoragePath();
-      final safeName = targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-      final filePath = '$basePath/$safeName.mp4';
-      final file = File(filePath);
+      final saveDir = await _getAppStoragePath();
+      final safeName = '${title.replaceAll(RegExp(r'[^\w\s\u0600-\u06FF-]'), '_')}_$targetId.mp4';
 
-      int downloadedBytes = 0;
-      if (file.existsSync()) {
-        downloadedBytes = file.lengthSync();
-      }
+      final taskId = await FlutterDownloader.enqueue(
+        url: url,
+        headers: StreamService.stealthHeaders,
+        savedDir: saveDir,
+        fileName: safeName,
+        showNotification: true,
+        openFileFromNotification: true,
+        saveInPublicStorage: true,
+      );
 
-      await LocalStorageService.appendItem('downloaded_works_list', {
-        'nb': targetId,
-        'title': title,
-        'path': filePath,
-        'size': 'قيد التنزيل...',
-        'poster': poster,
-      });
-
-      final client = http.Client();
-      download.client = client;
-
-      final request = http.Request('GET', Uri.parse(url));
-      request.headers.addAll(StreamService.stealthHeaders);
-      if (downloadedBytes > 0) {
-        request.headers['Range'] = 'bytes=$downloadedBytes-';
-      }
-
-      final response = await client.send(request);
-      final total = (response.contentLength ?? 0) + downloadedBytes;
-      download.totalBytes = total;
-
-      final sink = file.openWrite(mode: FileMode.append);
-
-      await response.stream.listen((chunk) {
-        if (download.isCancelled) {
-          sink.close();
-          return;
-        }
-        downloadedBytes += chunk.length;
-        download.downloadedBytes = downloadedBytes;
-        sink.add(chunk);
-        if (total > 0) {
-          download.progress = (downloadedBytes / total).clamp(0.0, 1.0);
-          notifyListeners();
-        }
-      }).asFuture();
-
-      await sink.close();
-
-      if (!download.isCancelled && file.existsSync()) {
-        final fileSizeMb = (file.lengthSync() / (1024 * 1024)).toStringAsFixed(1);
-        await LocalStorageService.appendItem('downloaded_works_list', {
+      if (taskId != null) {
+        await LocalStorageService.appendItem('downloaded_tasks_records', {
+          'taskId': taskId,
           'nb': targetId,
           'title': title,
-          'path': filePath,
-          'size': '$fileSizeMb ميغابايت',
+          'filePath': '$saveDir/$safeName',
           'poster': poster,
+          'status': DownloadTaskStatus.enqueued.value,
+          'progress': 0,
         });
+        notifyListeners();
       }
     } catch (_) {}
-
-    activeDownloads.remove(targetId);
-    notifyListeners();
   }
 
-  void cancelDownload(String targetId) {
-    if (activeDownloads.containsKey(targetId)) {
-      activeDownloads[targetId]!.isCancelled = true;
-      activeDownloads[targetId]!.client?.close();
-      activeDownloads.remove(targetId);
-      notifyListeners();
-    }
+  Future<void> cancelDownload(String taskId) async {
+    await FlutterDownloader.cancel(taskId: taskId);
+    await LocalStorageService.removeItem('downloaded_tasks_records', taskId, idField: 'taskId');
+    notifyListeners();
   }
 }
 
@@ -213,8 +144,18 @@ class AppState extends ChangeNotifier {
   }
 }
 
+@pragma('vm:entry-point')
+void downloadCallback(String id, int status, int progress) {}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // حماية بدء التشغيل من الانهيار
+  try {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+    FlutterDownloader.registerCallback(downloadCallback);
+  } catch (_) {}
+
   await AppState.instance.init();
   runApp(const OnebrTvApp());
 }
@@ -284,7 +225,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // التصنيفات الرسمية من سينمانا
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -365,7 +305,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (reset) {
       _page = 0;
       _hasMore = true;
-      _loadedIds.clear(); // تفريغ كامل لمنع خلط نتائج التصنيف القديم
+      _loadedIds.clear();
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
@@ -375,7 +315,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       List<dynamic> rawList = [];
 
       if (_selectedCategory != null && _selectedCategory!['id'] != 0) {
-        // استدعاء endpoint التصنيفات الرسمي مع videoKind
         rawList = await StreamService.fetchByCategory(
           _selectedCategory!['id'],
           page: _page,
@@ -877,19 +816,20 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final data = await StreamService.getVideoSource(targetId);
     if (data != null) {
       final qualities = List<Map<String, dynamic>>.from(data['qualities'] ?? []);
-      // تنزيل دقة 240p تلقائياً لتوفير البيانات والسرعة
-      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '240p', orElse: () => qualities.last)['url'];
+      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '240p', orElse: () => qualities.first)['url'];
 
-      DownloadManager.instance.startDownload(
+      await DownloadManager.instance.startDownload(
         targetId: targetId,
         title: title,
         url: dlUrl,
         poster: StreamService.extractPoster(widget.media),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('بدأ تنزيل: $title')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('بدأ تنزيل: $title عبر مدير تنزيل النظام')),
+        );
+      }
     }
   }
 
@@ -986,7 +926,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // قائمة الحلقات مع تنزيل كل حلقة منفصلة
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1524,44 +1463,49 @@ class DownloadsScreen extends StatefulWidget {
 }
 
 class _DownloadsScreenState extends State<DownloadsScreen> {
-  List<Map<String, dynamic>> _completed = [];
+  List<DownloadTask> _tasks = [];
+  Map<String, Map<String, dynamic>> _records = {};
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadCompleted();
-    DownloadManager.instance.addListener(_onDownloadProgress);
-  }
-
-  void _onDownloadProgress() {
-    if (mounted) setState(() {});
+    _loadTasks();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) => _loadTasks());
   }
 
   @override
   void dispose() {
-    DownloadManager.instance.removeListener(_onDownloadProgress);
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
-  void _loadCompleted() async {
-    final list = await LocalStorageService.getList('downloaded_works_list');
-    if (mounted) setState(() => _completed = list);
+  Future<void> _loadTasks() async {
+    final tasks = await FlutterDownloader.loadTasks();
+    final recList = await LocalStorageService.getList('downloaded_tasks_records');
+    final Map<String, Map<String, dynamic>> recMap = {};
+    for (var r in recList) {
+      if (r['taskId'] != null) recMap[r['taskId']] = r;
+    }
+
+    if (mounted) {
+      setState(() {
+        _tasks = tasks ?? [];
+        _records = recMap;
+      });
+    }
   }
 
-  void _deleteCompleted(int index) async {
-    final item = _completed[index];
-    final path = item['path'];
-    if (path != null) {
-      final f = File(path);
-      if (f.existsSync()) f.deleteSync();
-    }
-    await LocalStorageService.removeItem('downloaded_works_list', item['nb'].toString());
-    _loadCompleted();
+  void _deleteTask(DownloadTask task) async {
+    await FlutterDownloader.remove(taskId: task.taskId, shouldDeleteContent: true);
+    await LocalStorageService.removeItem('downloaded_tasks_records', task.taskId, idField: 'taskId');
+    _loadTasks();
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeDownloads = DownloadManager.instance.activeDownloads.values.toList();
+    final active = _tasks.where((t) => t.status == DownloadTaskStatus.running || t.status == DownloadTaskStatus.enqueued).toList();
+    final completed = _tasks.where((t) => t.status == DownloadTaskStatus.complete).toList();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1570,76 +1514,75 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (activeDownloads.isNotEmpty) ...[
+            if (active.isNotEmpty) ...[
               const Text('التنزيلات الحالية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               const SizedBox(height: 8),
-              ...activeDownloads.map((dl) => Card(
-                    color: Theme.of(context).cardColor,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(dl.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
-                                onPressed: () => DownloadManager.instance.cancelDownload(dl.id),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          LinearProgressIndicator(
-                            value: dl.progress,
-                            backgroundColor: Colors.white12,
-                            color: const Color(0xFF00F0FF),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('${(dl.progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                              Text(
-                                '${(dl.downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} MB / ${(dl.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
-                                style: const TextStyle(fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+              ...active.map((task) {
+                final rec = _records[task.taskId];
+                final title = rec?['title'] ?? task.filename ?? 'جاري التنزيل';
+
+                return Card(
+                  color: Theme.of(context).cardColor,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
+                              onPressed: () => _deleteTask(task),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(
+                          value: task.progress / 100.0,
+                          backgroundColor: Colors.white12,
+                          color: const Color(0xFF00F0FF),
+                        ),
+                        const SizedBox(height: 6),
+                        Text('${task.progress}% - عبر مدير النظام', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
                     ),
-                  )),
+                  ),
+                );
+              }),
               const Divider(height: 24),
             ],
             const Text('الملفات المكتملة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 8),
-            if (_completed.isEmpty)
+            if (completed.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: Text('لا توجد ملفات مكتملة')),
               )
             else
-              ..._completed.asMap().entries.map((entry) {
-                final item = entry.value;
+              ...completed.map((task) {
+                final rec = _records[task.taskId];
+                final title = rec?['title'] ?? task.filename ?? '';
+                final path = rec?['filePath'] ?? '${task.savedDir}/${task.filename}';
+
                 return ListTile(
                   leading: const Icon(Icons.play_circle_fill, color: Color(0xFF10B981)),
-                  title: Text(item['title'] ?? ''),
-                  subtitle: Text(item['size'] ?? ''),
+                  title: Text(title),
+                  subtitle: const Text('مكتمل', style: TextStyle(color: Color(0xFF10B981), fontSize: 11)),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    onPressed: () => _deleteCompleted(entry.key),
+                    onPressed: () => _deleteTask(task),
                   ),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => PlayerScreen(
-                        mediaId: item['nb'],
-                        title: item['title'],
-                        videoUrl: item['path'],
+                        mediaId: rec?['nb'] ?? '',
+                        title: title,
+                        videoUrl: path,
                         qualities: const [],
                         isLocalFile: true,
                       ),
