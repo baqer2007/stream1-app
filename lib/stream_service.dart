@@ -8,7 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب الأفلام (videoKind: 1) أو المسلسلات (videoKind: 2) بدقة 100% من سينمانا
+  /// جلب الأفلام (videoKind: 1) والمسلسلات (videoKind: 2)
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -18,7 +18,6 @@ class StreamService {
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
         List list = (data is List) ? data : (data['articles'] ?? []);
-        // حقن نوع العمل داخل الكائن لضمان عدم الخلط إطلاقاً
         for (var item in list) {
           item['is_series_fixed'] = isSeries;
         }
@@ -28,10 +27,10 @@ class StreamService {
     return [];
   }
 
-  /// جلب أعمال التصنيف المعتمدة من سينمانا برقم الفئة الحقيقي
+  /// جلب الأعمال حسب التصنيف الرسمي
   static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0}) async {
     try {
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/sortParam/desc/pageNumber/$page';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/category_id/$categoryId/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -42,7 +41,7 @@ class StreamService {
     return [];
   }
 
-  /// البحث النصي المباشر
+  /// البحث المباشر
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -130,18 +129,22 @@ class StreamService {
     return '';
   }
 
-  /// جلب حلقات المسلسلات
+  /// مسار جلب الحلقات الحقيقي من سينمانا
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/250/parent_id/$seriesId/itemsPerPage/250/pageNumber/0/level/2'),
+        Uri.parse('https://cee.buzz/api/android/videoSeason/id/$seriesId'),
         headers: stealthHeaders,
       ).timeout(const Duration(seconds: 7));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
         if (data is List) return data;
-        if (data['articles'] is List) return data['articles'];
+        if (data is Map) {
+          for (var key in ['episodes', 'articles', 'videos', 'seasons']) {
+            if (data[key] is List && data[key].isNotEmpty) return data[key];
+          }
+        }
       }
     } catch (_) {}
     return [];
