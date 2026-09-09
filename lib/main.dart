@@ -284,6 +284,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
+  // التصنيفات الرسمية من سينمانا
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -295,11 +296,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     {'id': 78, 'ar': 'خيال علمي'},
     {'id': 77, 'ar': 'رومانسي'},
     {'id': 80, 'ar': 'إثارة'},
+    {'id': 89, 'ar': 'حرب'},
     {'id': 87, 'ar': 'خارق للطبيعة'},
     {'id': 76, 'ar': 'غموض'},
     {'id': 58, 'ar': 'سيرة ذاتية'},
     {'id': 57, 'ar': 'رسوم متحركة'},
-    {'id': 81, 'ar': 'حروب'},
     {'id': 68, 'ar': 'تاريخي'},
     {'id': 67, 'ar': 'خيالي'},
     {'id': 65, 'ar': 'عائلي'},
@@ -364,7 +365,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (reset) {
       _page = 0;
       _hasMore = true;
-      _loadedIds.clear(); // تفريغ حقيقي لفرض تحديث المحتوى
+      _loadedIds.clear(); // تفريغ كامل لمنع خلط نتائج التصنيف القديم
       setState(() => _isLoadingInitial = true);
     } else {
       setState(() => _isLoadingMore = true);
@@ -374,6 +375,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       List<dynamic> rawList = [];
 
       if (_selectedCategory != null && _selectedCategory!['id'] != 0) {
+        // استدعاء endpoint التصنيفات الرسمي مع videoKind
         rawList = await StreamService.fetchByCategory(
           _selectedCategory!['id'],
           page: _page,
@@ -396,9 +398,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
       for (var item in filtered) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
-          if (_tabIndex == 1 && checkIsSeries(item)) continue;
-          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
-
           _loadedIds.add(id);
           uniqueItems.add(item);
         }
@@ -878,7 +877,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final data = await StreamService.getVideoSource(targetId);
     if (data != null) {
       final qualities = List<Map<String, dynamic>>.from(data['qualities'] ?? []);
-      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '720p', orElse: () => qualities.first)['url'];
+      // تنزيل دقة 240p تلقائياً لتوفير البيانات والسرعة
+      final dlUrl = qualities.firstWhere((q) => q['resolution'] == '240p', orElse: () => qualities.last)['url'];
 
       DownloadManager.instance.startDownload(
         targetId: targetId,
@@ -986,7 +986,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // قائمة الحلقات الفعلية مع أزرار تشغيل وتنزيل منفصلة لكل حلقة
+              // قائمة الحلقات مع تنزيل كل حلقة منفصلة
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1058,7 +1058,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideControlsTimer;
 
   String _currentStreamUrl = '';
-  String _activeQualityName = 'تلقائي';
+  String _activeQualityName = '240p';
 
   bool _subtitlesEnabled = true;
   double _subtitleFontSize = 18.0;
@@ -1173,22 +1173,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF00F0FF)),
-              title: const Text('تلقائي'),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _activeQualityName = 'تلقائي');
-              },
-            ),
-            const Divider(color: Colors.white12),
             ...widget.qualities.map((q) {
-              final res = q['resolution'] ?? '720p';
+              final res = q['resolution'] ?? '240p';
               final url = q['url'] ?? '';
 
               return ListTile(
                 leading: const Icon(Icons.hd_outlined, color: Colors.white70),
                 title: Text(res),
+                trailing: _currentStreamUrl == url ? const Icon(Icons.check, color: Color(0xFF00F0FF)) : null,
                 onTap: () {
                   Navigator.pop(context);
                   if (url != _currentStreamUrl && url.isNotEmpty) {
