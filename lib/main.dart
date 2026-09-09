@@ -1,4 +1,4 @@
-import 'dart:async';
+ةimport 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -184,15 +184,32 @@ class AppState extends ChangeNotifier {
   AppState._();
 
   bool isDark = true;
+  bool isFamilyMode = true;
 
-  void toggleTheme() {
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    isFamilyMode = prefs.getBool('app_family_mode') ?? true;
+    isDark = prefs.getBool('app_dark_theme') ?? true;
+  }
+
+  void toggleTheme() async {
     isDark = !isDark;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('app_dark_theme', isDark);
+    notifyListeners();
+  }
+
+  void toggleFamilyMode(bool val) async {
+    isFamilyMode = val;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('app_family_mode', val);
     notifyListeners();
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppState.instance.init();
   runApp(const OnebrTvApp());
 }
 
@@ -261,7 +278,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
   String _activeTitle = 'أحدث الإضافات';
   Map<String, dynamic>? _selectedCategory;
 
-  // التصنيفات الرسمية المستخرجة مباشرة من استجابة cee.buzz DevTools
   final List<Map<String, dynamic>> _officialCategories = [
     {'id': 0, 'ar': 'الكل'},
     {'id': 84, 'ar': 'أكشن'},
@@ -281,7 +297,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     {'id': 68, 'ar': 'تاريخي'},
     {'id': 67, 'ar': 'خيالي'},
     {'id': 65, 'ar': 'عائلي'},
-    {'id': 102, 'ar': 'مدبلج عربي'},
   ];
 
   @override
@@ -315,12 +330,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (item['is_series_fixed'] == true) return true;
     if (item['is_series_fixed'] == false) return false;
 
-    final kind = item['kind']?.toString();
     final season = item['season']?.toString();
     final rootSeries = item['rootSeries']?.toString();
-
     if (season == '0' || rootSeries == '0') return false;
-    if (kind == '2' && (season != null && season != '0')) return true;
+
+    final kind = item['kind']?.toString();
+    if (kind == '2' && season != null && season != '0') return true;
 
     final en = (item['en_title'] ?? '').toString().toLowerCase();
     final ar = (item['title'] ?? item['ar_title'] ?? '').toString().toLowerCase();
@@ -328,6 +343,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     if (en.contains('season') || ar.contains('الموسم') || ar.contains('مسلسل')) return true;
 
     return false;
+  }
+
+  List<dynamic> _applyFamilyFilter(List<dynamic> items) {
+    if (!AppState.instance.isFamilyMode) return items;
+    final blocked = ['sex', 'nude', 'erotic', 'sensual', 'حمام', 'جنس', 'إباحي', 'عري', 'adult'];
+    return items.where((el) {
+      final text = '${el['title']} ${el['en_title']} ${el['ar_title']} ${el['ar_content']}'.toLowerCase();
+      return !blocked.any((b) => text.contains(b));
+    }).toList();
   }
 
   Future<void> _fetchContent({bool reset = false}) async {
@@ -357,10 +381,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
         rawList = await StreamService.fetchFeed(isSeries: true, page: _page, perPage: 32);
       }
 
+      final filtered = _applyFamilyFilter(rawList);
       final List<dynamic> uniqueItems = [];
-      for (var item in rawList) {
+      for (var item in filtered) {
         final id = (item['nb'] ?? item['id'])?.toString();
         if (id != null && !_loadedIds.contains(id)) {
+          if (_tabIndex == 1 && checkIsSeries(item)) continue;
+          if (_tabIndex == 2 && !checkIsSeries(item)) continue;
+
           _loadedIds.add(id);
           uniqueItems.add(item);
         }
@@ -392,8 +420,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
     final results = await StreamService.searchContent(clean);
 
     _loadedIds.clear();
+    final filtered = _applyFamilyFilter(results);
     final List<dynamic> uniqueList = [];
-    for (var item in results) {
+    for (var item in filtered) {
       final id = (item['nb'] ?? item['id'])?.toString();
       if (id != null && !_loadedIds.contains(id)) {
         _loadedIds.add(id);
@@ -452,6 +481,16 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
                   ],
                 ),
               ),
+              SwitchListTile(
+                secondary: const Icon(Icons.shield_rounded, color: Color(0xFF10B981)),
+                title: const Text('الوضع العائلي', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('حجب المحتوى غير المناسب', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                value: app.isFamilyMode,
+                onChanged: (val) {
+                  app.toggleFamilyMode(val);
+                  _fetchContent(reset: true);
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.download_rounded, color: Color(0xFF10B981)),
                 title: const Text('التنزيلات', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -478,6 +517,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> with SingleTickerProvid
               ),
               const Divider(),
               SwitchListTile(
+                secondary: const Icon(Icons.dark_mode_rounded),
                 title: const Text('المظهر الداكن', style: TextStyle(fontWeight: FontWeight.bold)),
                 value: app.isDark,
                 onChanged: (_) => app.toggleTheme(),
@@ -782,15 +822,15 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _play(Map<String, dynamic>? episodeData) async {
+  void _play(Map<String, dynamic>? episodeData, int? epDisplayIndex) async {
     setState(() => _isLaunching = true);
 
     final targetId = episodeData != null
-        ? (episodeData['nb'] ?? episodeData['id']).toString()
+        ? (episodeData['nb'] ?? episodeData['id'] ?? widget.media['nb']).toString()
         : (widget.media['nb'] ?? widget.media['id']).toString();
 
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
-    final fullTitle = episodeData != null ? '$title - حلقة ${episodeData['episodeNumber'] ?? ''}' : title;
+    final fullTitle = epDisplayIndex != null ? '$title - حلقة $epDisplayIndex' : title;
 
     final source = await StreamService.getVideoSource(targetId);
     final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
@@ -807,6 +847,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             videoUrl: source['video_url'],
             subtitleUrl: subUrl,
             qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
+            introSkipData: widget.media['introSkipping'],
           ),
         ),
       );
@@ -914,7 +955,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     backgroundColor: const Color(0xFFE50914),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
-                  onPressed: _isLaunching ? null : () => _play(_isSeries && _episodes.isNotEmpty ? _episodes.first : null),
+                  onPressed: _isLaunching ? null : () => _play(_isSeries && _episodes.isNotEmpty ? _episodes.first : null, _isSeries ? 1 : null),
                   child: _isLaunching
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : Text(
@@ -931,7 +972,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 Text(story, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
               ],
 
-              // عرض الحلقات الحقيقية فقط للمسلسلات
               if (_isSeries && _episodes.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text('الحلقات (${_episodes.length})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -950,16 +990,17 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         itemCount: _episodes.length,
                         itemBuilder: (ctx, i) {
                           final ep = _episodes[i];
-                          final epNum = ep['episodeNumber'] ?? ep['orderNmmer'] ?? (i + 1);
+                          final int epDisplayNumber = i + 1;
+
                           return InkWell(
-                            onTap: _isLaunching ? null : () => _play(ep),
+                            onTap: _isLaunching ? null : () => _play(ep, epDisplayNumber),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Center(
-                                child: Text('حلقة $epNum', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                                child: Text('حلقة $epDisplayNumber', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                               ),
                             ),
                           );
@@ -981,6 +1022,7 @@ class PlayerScreen extends StatefulWidget {
   final String subtitleUrl;
   final List<Map<String, dynamic>> qualities;
   final bool isLocalFile;
+  final dynamic introSkipData;
 
   const PlayerScreen({
     super.key,
@@ -990,6 +1032,7 @@ class PlayerScreen extends StatefulWidget {
     this.subtitleUrl = '',
     required this.qualities,
     this.isLocalFile = false,
+    this.introSkipData,
   });
 
   @override
@@ -1013,6 +1056,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _subtitleBottomPadding = 60.0;
   List<Subtitle> _parsedSubtitles = [];
   String _activeSubtitleText = '';
+
+  bool _canSkipIntro = false;
+  double _skipTargetSeconds = 0.0;
 
   @override
   void initState() {
@@ -1075,14 +1121,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _controller!.play();
 
     _controller!.addListener(() {
-      if (_subtitlesEnabled && _parsedSubtitles.isNotEmpty && _controller!.value.isInitialized) {
+      if (_controller != null && _controller!.value.isInitialized) {
         final pos = _controller!.value.position;
-        final sub = _parsedSubtitles.firstWhere(
-          (s) => pos >= s.start && pos <= s.end,
-          orElse: () => Subtitle(index: -1, start: Duration.zero, end: Duration.zero, text: ''),
-        );
-        if (sub.text != _activeSubtitleText && mounted) {
-          setState(() => _activeSubtitleText = sub.text);
+
+        if (_subtitlesEnabled && _parsedSubtitles.isNotEmpty) {
+          final sub = _parsedSubtitles.firstWhere(
+            (s) => pos >= s.start && pos <= s.end,
+            orElse: () => Subtitle(index: -1, start: Duration.zero, end: Duration.zero, text: ''),
+          );
+          if (sub.text != _activeSubtitleText && mounted) {
+            setState(() => _activeSubtitleText = sub.text);
+          }
+        }
+
+        // فحص ظهور زر تخطي المقدمة / اللقطة
+        if (widget.introSkipData is List && (widget.introSkipData as List).isNotEmpty) {
+          final skipMap = widget.introSkipData[0];
+          final start = double.tryParse(skipMap['start']?.toString() ?? '0') ?? 0.0;
+          final end = double.tryParse(skipMap['end']?.toString() ?? '0') ?? 0.0;
+          final sec = pos.inMilliseconds / 1000.0;
+          if (sec >= start && sec <= end) {
+            if (!_canSkipIntro && mounted) {
+              setState(() {
+                _canSkipIntro = true;
+                _skipTargetSeconds = end;
+              });
+            }
+          } else if (_canSkipIntro && mounted) {
+            setState(() => _canSkipIntro = false);
+          }
         }
       }
       if (mounted) setState(() {});
@@ -1318,6 +1385,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                     ),
+                  ),
+                ),
+
+              // زر تخطي اللقطة / المقدمة التفاعلي
+              if (_canSkipIntro)
+                Positioned(
+                  bottom: 75,
+                  left: 20,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black87,
+                      side: const BorderSide(color: Colors.white30),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () {
+                      if (_controller != null) {
+                        _controller!.seekTo(Duration(seconds: _skipTargetSeconds.toInt()));
+                        setState(() => _canSkipIntro = false);
+                      }
+                    },
+                    icon: const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 18),
+                    label: const Text('تخطي', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ),
 
