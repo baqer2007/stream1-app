@@ -8,8 +8,8 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب التغذية مع الترقيم المستمر
-  static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
+  /// جلب التغذية العامة
+  static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 24}) async {
     try {
       final vKind = isSeries ? 2 : 1;
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/0/videoKind/$vKind/sortParam/desc/pageNumber/$page';
@@ -27,19 +27,19 @@ class StreamService {
     return [];
   }
 
-  /// مسار التصنيفات والأنمي
+  /// مسار جلب التصنيفات الدقيق من سينمانا
   static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0, int? videoKind}) async {
     try {
       final offset = page * 30;
-      
-      // في حال كان التصنيف هو الأنمي والرسوم المتحركة، يتم سحب النوعين (أفلام ومسلسلات) لضمان ظهور كل الأعمال
+
+      // إذا لم يحدد نوع الفيديو، نطلب الأفلام (1) والمسلسلات/الأنمي (2) لدمج أعمال التصنيف كاملة
       if (videoKind == null) {
-        final url1 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=1&offset=$offset&level=0';
-        final url2 = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=2&offset=$offset&level=0';
+        final urlMovies = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=1&offset=$offset&level=0';
+        final urlSeries = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=2&offset=$offset&level=0';
 
         final responses = await Future.wait([
-          http.get(Uri.parse(url1), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
-          http.get(Uri.parse(url2), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse(urlMovies), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
+          http.get(Uri.parse(urlSeries), headers: stealthHeaders).timeout(const Duration(seconds: 8)),
         ]);
 
         List combined = [];
@@ -79,7 +79,6 @@ class StreamService {
     return [];
   }
 
-  /// البحث
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -95,7 +94,6 @@ class StreamService {
     return [];
   }
 
-  /// روابط الفيديو - تشغيل 240p كأولوية
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -152,7 +150,6 @@ class StreamService {
     return null;
   }
 
-  /// رابط الترجمة
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -168,7 +165,6 @@ class StreamService {
     return '';
   }
 
-  /// حلقات المسلسلات
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
