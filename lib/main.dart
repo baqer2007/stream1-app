@@ -290,6 +290,13 @@ class AppSettings extends ChangeNotifier {
     appFilterMode = p.getInt('app_filter_mode') ?? 0;
   }
 
+  void updateSeek(int sec) async {
+    seekDuration = sec;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('player_seek_dur', sec);
+  }
+
   void updateFilterMode(int mode) async {
     appFilterMode = mode;
     notifyListeners();
@@ -1133,10 +1140,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               padding: const EdgeInsets.all(8),
                               child: Row(
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.arrow_downward_rounded, color: Colors.white54, size: 20),
-                                    onPressed: () => _showDownloadQualitySheet(targetId, '$title - حلقة $idx', poster),
-                                  ),
+                                  IconButton(icon: const Icon(Icons.arrow_downward_rounded, color: Colors.white54, size: 20), onPressed: () => _showDownloadQualitySheet(targetId, '$title - حلقة $idx', poster)),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Column(
