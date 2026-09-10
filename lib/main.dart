@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:carousel_slider/carousel_slider.dart';
 import 'stream_service.dart';
 
 class AppColors {
@@ -22,19 +24,11 @@ class AppColors {
   static const Color border = Color(0x1AFFFFFF);
 }
 
-class AppSpacing {
-  static const double xs = 4.0;
-  static const double sm = 8.0;
-  static const double md = 16.0;
-  static const double lg = 24.0;
-  static const double xl = 32.0;
-}
-
 class AppRadius {
-  static const double card = 12.0;
-  static const double chip = 10.0;
-  static const double sheet = 20.0;
-  static const double button = 12.0;
+  static const double card = 16.0;
+  static const double chip = 14.0;
+  static const double sheet = 24.0;
+  static const double button = 24.0;
 }
 
 class Subtitle {
@@ -275,16 +269,17 @@ class DownloadManager extends ChangeNotifier {
   }
 }
 
-class PlayerSettings extends ChangeNotifier {
-  static final PlayerSettings instance = PlayerSettings._();
-  PlayerSettings._();
+class AppSettings extends ChangeNotifier {
+  static final AppSettings instance = AppSettings._();
+  AppSettings._();
 
   int seekDuration = 10;
   bool skipSensitiveScenes = true;
   double subFontSize = 18.0;
   Color subColor = Colors.white;
   bool subHasShadow = true;
-  double subBottomPadding = 60.0; // التحكم بمكان الترجمة
+  double subBottomPadding = 60.0;
+  int appFilterMode = 0; // 0: افتراضي, 1: عائلي, 2: أطفال
 
   Future<void> init() async {
     final p = await SharedPreferences.getInstance();
@@ -292,13 +287,14 @@ class PlayerSettings extends ChangeNotifier {
     skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
     subFontSize = p.getDouble('player_sub_size') ?? 18.0;
     subBottomPadding = p.getDouble('player_sub_bottom') ?? 60.0;
+    appFilterMode = p.getInt('app_filter_mode') ?? 0;
   }
 
-  void updateSeek(int sec) async {
-    seekDuration = sec;
+  void updateFilterMode(int mode) async {
+    appFilterMode = mode;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setInt('player_seek_dur', sec);
+    await p.setInt('app_filter_mode', mode);
   }
 
   void updateSkipScenes(bool val) async {
@@ -330,7 +326,7 @@ class PlayerSettings extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await PlayerSettings.instance.init();
+  await AppSettings.instance.init();
   runApp(const OnebrTvApp());
 }
 
@@ -346,6 +342,7 @@ class OnebrTvApp extends StatelessWidget {
         scaffoldBackgroundColor: AppColors.background,
         primaryColor: AppColors.primary,
         cardColor: AppColors.surface,
+        textTheme: GoogleFonts.cairoTextTheme(ThemeData.dark().textTheme),
         colorScheme: const ColorScheme.dark(
           primary: AppColors.primary,
           surface: AppColors.surface,
@@ -370,7 +367,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
     const HomeScreenContent(),
     const CategoriesScreen(),
     const SearchScreen(),
-    const DownloadsScreen(),
+    const LibraryScreen(),
   ];
 
   @override
@@ -384,7 +381,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
         ),
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(
-            color: Color(0xFF0B101A),
+            color: Color(0xFF090D15),
             border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
           ),
           child: BottomNavigationBar(
@@ -399,9 +396,9 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
             onTap: (i) => setState(() => _currentIndex = i),
             items: const [
               BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'الرئيسية'),
-              BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'التصنيفات'),
+              BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'الأقسام'),
               BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'بحث'),
-              BottomNavigationBarItem(icon: Icon(Icons.bookmark_rounded), label: 'المكتبة'),
+              BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'الحساب والمكتبة'),
             ],
           ),
         ),
@@ -410,9 +407,6 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 }
 
-// =========================================================================
-// الصفحة الرئيسية (بانر غير مقصوص + تصغير البوسترات لأكثر من 3 في السطر)
-// =========================================================================
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
 
@@ -422,55 +416,44 @@ class HomeScreenContent extends StatefulWidget {
 
 class _HomeScreenContentState extends State<HomeScreenContent> {
   final ScrollController _scrollController = ScrollController();
-  List<dynamic> _items = [];
   List<dynamic> _heroItems = [];
+  List<dynamic> _marvelItems = [];
+  List<dynamic> _featuredItems = [];
+  List<dynamic> _recentItems = [];
   List<Map<String, dynamic>> _resumeList = [];
-  final Set<String> _uniqueIds = {};
-
-  int _page = 0;
-  bool _isLoading = false;
-  bool _hasMore = true;
+  int _currentHeroIdx = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
-
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
-        if (!_isLoading && _hasMore) {
-          _fetchMore();
-        }
-      }
-    });
+    _loadFeed();
   }
 
-  Future<void> _loadInitialData() async {
+  Future<void> _loadFeed() async {
     setState(() => _isLoading = true);
     _resumeList = await LocalStorageService.getList('resume_playback_list');
 
     try {
       final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 18),
-        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 18),
+        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 15),
+        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 15),
       ]);
-      final fresh = [...res[0], ...res[1]]..shuffle();
 
-      final List<dynamic> deduplicated = [];
-      for (var it in fresh) {
-        final id = (it['nb'] ?? it['id'])?.toString();
-        if (id != null && !_uniqueIds.contains(id)) {
-          _uniqueIds.add(id);
-          deduplicated.add(it);
-        }
-      }
+      final all = [...res[0], ...res[1]];
 
       if (mounted) {
         setState(() {
-          _heroItems = deduplicated.take(5).toList();
-          _items = deduplicated;
+          _heroItems = all.take(5).toList();
+          _marvelItems = all.where((it) {
+            final t = (it['ar_title'] ?? it['en_title'] ?? '').toString().toLowerCase();
+            return t.contains('iron') || t.contains('thor') || t.contains('avengers') || t.contains('hulk') || t.contains('captain');
+          }).toList();
+          if (_marvelItems.isEmpty) _marvelItems = all.sublist(0, (all.length / 3).floor());
+
+          _featuredItems = all.reversed.take(12).toList();
+          _recentItems = all.skip(5).take(12).toList();
           _isLoading = false;
-          _page = 1;
         });
       }
     } catch (_) {
@@ -478,55 +461,21 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  Future<void> _fetchMore() async {
-    setState(() => _isLoading = true);
-    final res = await StreamService.fetchFeed(isSeries: _page % 2 == 0, page: _page, perPage: 28);
-    final List<dynamic> deduplicated = [];
-    for (var it in res) {
-      final id = (it['nb'] ?? it['id'])?.toString();
-      if (id != null && !_uniqueIds.contains(id)) {
-        _uniqueIds.add(id);
-        deduplicated.add(it);
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _items.addAll(deduplicated);
-        _isLoading = false;
-        if (deduplicated.isEmpty) _hasMore = false;
-        _page++;
-      });
-    }
-  }
-
   void _openDetails(Map<String, dynamic> item) {
     Navigator.push(
       context,
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: const Duration(milliseconds: 250),
         pageBuilder: (_, anim, __) => FadeTransition(opacity: anim, child: MediaDetailScreen(media: item)),
       ),
-    ).then((_) => _loadResumeState());
-  }
-
-  void _loadResumeState() async {
-    final list = await LocalStorageService.getList('resume_playback_list');
-    if (mounted) setState(() => _resumeList = list);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
+    ).then((_) async {
+      final l = await LocalStorageService.getList('resume_playback_list');
+      if (mounted) setState(() => _resumeList = l);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // تصغير البوسترات بحيث يعرض 4 بوسترات على الأقل في الهواتف و 5 في التابلت
-    final screenWidth = MediaQuery.of(context).size.width;
-    final gridCount = screenWidth > 700 ? 5 : 4;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -535,111 +484,127 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.primary, AppColors.primaryDark]),
-                borderRadius: BorderRadius.circular(6),
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(AppRadius.chip),
               ),
-              child: const Text('ONEBR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1.2)),
+              child: const Text('سينمانا', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            const Text('سينما بلس', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(width: 8),
+            const Text('ONEBR TV', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
       ),
-      body: RefreshIndicator(
-        color: AppColors.primary,
-        onRefresh: () async {
-          _uniqueIds.clear();
-          await _loadInitialData();
-        },
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // البانر السينمائي بنسبة عرض متناسقة غير مقصوصة
-              if (_heroItems.isNotEmpty) _buildHeroBanner(),
-
-              if (_resumeList.isNotEmpty) _buildResumeSection(),
-
-              const Padding(
-                padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.sm),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          : RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: _loadFeed,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('أحدث الأعمال السينمائية', style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
-                    Icon(Icons.auto_awesome, color: AppColors.primary, size: 16),
+                    if (_heroItems.isNotEmpty) _buildCarouselBanner(),
+                    if (_resumeList.isNotEmpty) _buildResumeSection(),
+                    _buildMediaShelf('عالم مارفل 4K', _marvelItems),
+                    _buildMediaShelf('الأفلام المميزة', _featuredItems),
+                    _buildMediaShelf('أُضيف مؤخراً', _recentItems),
+                    const SizedBox(height: 50),
                   ],
                 ),
               ),
-
-              _buildDynamicGrid(gridCount),
-
-              if (_isLoading && _items.isNotEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
-                ),
-              const SizedBox(height: 50),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 
-  Widget _buildHeroBanner() {
-    final item = _heroItems.first;
-    final poster = StreamService.extractPoster(item);
-    final title = item['ar_title'] ?? item['en_title'] ?? '';
+  Widget _buildCarouselBanner() {
+    return Column(
+      children: [
+        CarouselSlider(
+          options: CarouselOptions(
+            height: 230,
+            viewportFraction: 0.94,
+            enlargeCenterPage: true,
+            autoPlay: true,
+            autoPlayInterval: const Duration(seconds: 5),
+            onPageChanged: (idx, _) => setState(() => _currentHeroIdx = idx),
+          ),
+          items: _heroItems.map((item) {
+            final poster = StreamService.extractPoster(item);
+            final title = item['ar_title'] ?? item['en_title'] ?? '';
 
-    return AspectRatio(
-      aspectRatio: 16 / 9, // حل مشكلة قص البانر نهائياً
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.card + 4),
-          border: Border.all(color: AppColors.border, width: 0.5),
-          image: poster.isNotEmpty ? DecorationImage(image: NetworkImage(poster), fit: BoxFit.cover) : null,
-        ),
-        child: Stack(
-          children: [
-            Container(
+            return Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.card + 4),
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0x99000000), Color(0xF0070A10)],
-                  stops: [0.3, 0.7, 1.0],
-                ),
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                border: Border.all(color: AppColors.border, width: 0.5),
+                image: poster.isNotEmpty ? DecorationImage(image: NetworkImage(poster), fit: BoxFit.cover) : null,
               ),
-            ),
-            Positioned(
-              bottom: 12, right: 14, left: 14,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Stack(
                 children: [
-                  Expanded(
-                    child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.button)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0x77000000), Color(0xF0070A10)],
+                        stops: [0.3, 0.7, 1.0],
+                      ),
                     ),
-                    onPressed: () => _openDetails(item),
-                    icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
-                    label: const Text('مشاهدة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                  Positioned(
+                    bottom: 14, right: 16, left: 16,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 2),
+                              const Text('4K Ultra HD', style: TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.button)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          ),
+                          onPressed: () => _openDetails(item),
+                          icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
+                          label: const Text('شاهد الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+            );
+          }).toList(),
         ),
-      ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: _heroItems.asMap().entries.map((entry) {
+            final isSel = entry.key == _currentHeroIdx;
+            return Container(
+              width: isSel ? 16 : 6,
+              height: 4,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: isSel ? AppColors.primary : Colors.white24,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
@@ -648,73 +613,54 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.sm),
-          child: Text('متابعة المشاهدة', style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
+          child: Text('متابعة المشاهدة', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
         ),
         SizedBox(
-          height: 120,
+          height: 115,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             itemCount: _resumeList.length,
             itemBuilder: (ctx, i) {
-              final item = _resumeList[i];
-              final progress = (item['position'] / item['duration']).clamp(0.0, 1.0);
+              final it = _resumeList[i];
+              final progress = (it['position'] / it['duration']).clamp(0.0, 1.0);
+
               return GestureDetector(
                 onTap: () {
-                  StreamService.getVideoSource(item['id']).then((source) {
-                    if (source != null && mounted) {
+                  StreamService.getVideoSource(it['id']).then((src) {
+                    if (src != null && mounted) {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => PlayerScreen(
-                            mediaId: item['id'],
-                            title: item['title'] ?? '',
-                            videoUrl: source['video_url'],
-                            qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
+                            mediaId: it['id'],
+                            title: it['title'] ?? '',
+                            videoUrl: src['video_url'],
+                            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
                           ),
                         ),
-                      ).then((_) => _loadResumeState());
+                      );
                     }
                   });
                 },
                 child: Container(
-                  width: 150,
+                  width: 140,
                   margin: const EdgeInsets.only(left: 10),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
                     borderRadius: BorderRadius.circular(AppRadius.card),
                     border: Border.all(color: AppColors.border, width: 0.5),
-                    image: item['poster'].toString().isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(item['poster']),
-                            fit: BoxFit.cover,
-                            colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.45), BlendMode.darken),
-                          )
-                        : null,
+                    image: it['poster'].toString().isNotEmpty ? DecorationImage(image: NetworkImage(it['poster']), fit: BoxFit.cover) : null,
                   ),
                   child: Stack(
                     children: [
-                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 34)),
+                      Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
+                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 32)),
                       Positioned(
                         bottom: 0, left: 0, right: 0,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
-                              child: Text(item['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                            ),
-                            ClipRRect(
-                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppRadius.card)),
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                backgroundColor: Colors.white24,
-                                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                minHeight: 3,
-                              ),
-                            ),
-                          ],
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppRadius.card)),
+                          child: LinearProgressIndicator(value: progress, minHeight: 3, backgroundColor: Colors.white24, valueColor: const AlwaysStoppedAnimation(AppColors.primary)),
                         ),
                       ),
                     ],
@@ -728,75 +674,74 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     );
   }
 
-  Widget _buildDynamicGrid(int count) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: count,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 10,
-          childAspectRatio: 0.56,
-        ),
-        itemCount: _items.length,
-        itemBuilder: (ctx, i) {
-          final it = _items[i];
-          final poster = StreamService.extractPoster(it);
-          final title = it['ar_title'] ?? it['en_title'] ?? it['title'] ?? '';
-          final score = (it['stars'] ?? '7.0').toString();
-          final id = (it['nb'] ?? it['id']).toString();
+  Widget _buildMediaShelf(String title, List<dynamic> items) {
+    if (items.isEmpty) return const SizedBox();
 
-          return InkWell(
-            onTap: () => _openDetails(it),
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                      border: Border.all(color: AppColors.border, width: 0.5),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                      child: Hero(
-                        tag: 'poster_$id',
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
-                            : Container(color: AppColors.surface),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+              const Text('المزيد', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 185,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            itemCount: items.length,
+            itemBuilder: (ctx, i) {
+              final it = items[i];
+              final poster = StreamService.extractPoster(it);
+              final t = it['ar_title'] ?? it['en_title'] ?? '';
+              final score = (it['stars'] ?? '7.0').toString();
+
+              return Container(
+                width: 105,
+                margin: const EdgeInsets.only(left: 8),
+                child: InkWell(
+                  onTap: () => _openDetails(it),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(AppRadius.card),
+                            border: Border.all(color: AppColors.border, width: 0.5),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.card),
+                            child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: AppColors.surface),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
+                          const SizedBox(width: 2),
+                          Text(score, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 10.5, fontWeight: FontWeight.bold),
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.star_rounded, color: AppColors.star, size: 11),
-                    const SizedBox(width: 2),
-                    Text(score, style: const TextStyle(color: AppColors.textSecondary, fontSize: 9.5)),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
 
-// =========================================================================
-// شاشة تفاصيل العمل المطابقة للصور (1000018711 و 1000018712)
-// =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   const MediaDetailScreen({super.key, required this.media});
@@ -851,36 +796,52 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _playEpisode(dynamic episodeData, int epIndex) async {
-    setState(() => _isLaunching = true);
+  void _playTrailer() {
+    final trailer = widget.media['trailer']?.toString() ?? '';
+    if (trailer.isNotEmpty && trailer.startsWith('http')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PlayerScreen(
+            mediaId: 'trailer',
+            title: 'الإعلان الترويجي: ${widget.media['ar_title'] ?? ''}',
+            videoUrl: trailer,
+            qualities: const [],
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الإعلان الترويجي غير متوفر لهذا العمل')));
+    }
+  }
 
-    final targetId = (episodeData['nb'] ?? episodeData['id']).toString();
+  void _playEpisode(dynamic ep, int idx) async {
+    setState(() => _isLaunching = true);
+    final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final source = await StreamService.getVideoSource(targetId);
-    final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
+    final src = await StreamService.getVideoSource(targetId);
+    final sub = await StreamService.getArabicSubtitleUrl(targetId);
 
     await LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
-
     setState(() => _isLaunching = false);
 
-    if (source != null && mounted) {
-      final currentSeasonEpisodes = _seasonsMap[_selectedSeason] ?? [];
+    if (src != null && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
             mediaId: targetId,
             title: title,
-            subtitleTextHeader: 'الموسم $_selectedSeason - الحلقة $epIndex',
-            videoUrl: source['video_url'],
-            subtitleUrl: subUrl,
-            qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
-            episodes: currentSeasonEpisodes,
-            currentEpIndex: epIndex,
+            subtitleTextHeader: 'الموسم $_selectedSeason - الحلقة $idx',
+            videoUrl: src['video_url'],
+            subtitleUrl: sub,
+            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
+            episodes: _seasonsMap[_selectedSeason] ?? [],
+            currentEpIndex: idx,
             poster: StreamService.extractPoster(widget.media),
-            onEpisodeChanged: (newEpId) {
-              LocalStorageService.markEpisodeWatched(newEpId);
+            onEpisodeChanged: (newId) {
+              LocalStorageService.markEpisodeWatched(newId);
               _loadState();
             },
           ),
@@ -893,22 +854,20 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     setState(() => _isLaunching = true);
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final source = await StreamService.getVideoSource(targetId);
-    final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
-
+    final src = await StreamService.getVideoSource(targetId);
+    final sub = await StreamService.getArabicSubtitleUrl(targetId);
     setState(() => _isLaunching = false);
 
-    if (source != null && mounted) {
+    if (src != null && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
             mediaId: targetId,
             title: title,
-            subtitleTextHeader: '',
-            videoUrl: source['video_url'],
-            subtitleUrl: subUrl,
-            qualities: List<Map<String, dynamic>>.from(source['qualities'] ?? []),
+            videoUrl: src['video_url'],
+            subtitleUrl: sub,
+            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
             poster: StreamService.extractPoster(widget.media),
           ),
         ),
@@ -943,13 +902,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               return Directionality(
                 textDirection: TextDirection.rtl,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Text('اختر جودة التنزيل', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                       ...qualities.map((q) {
@@ -992,6 +951,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? '';
     final score = (widget.media['stars'] ?? '7.9').toString();
     final year = widget.media['year']?.toString() ?? '2024';
+    final rateCount = widget.media['rate']?.toString() ?? '4818';
     final currentEpisodes = _seasonsMap[_selectedSeason] ?? [];
 
     return Directionality(
@@ -1000,19 +960,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         backgroundColor: AppColors.background,
         body: CustomScrollView(
           slivers: [
-            // الجزء العلوي مع البوستر الممتد والأزرار السينمائية (مطابق لـ 1000018711)
             SliverAppBar(
               expandedHeight: 480,
               pinned: true,
               backgroundColor: AppColors.background,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
+              leading: IconButton(icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
               actions: [
                 IconButton(
-                  icon: Icon(_isWatchlist ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: _isWatchlist ? AppColors.primary : Colors.white),
+                  icon: Icon(_isWatchlist ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _isWatchlist ? AppColors.primary : Colors.white),
                   onPressed: () async {
                     await LocalStorageService.toggleWatchlist(widget.media);
                     _loadState();
@@ -1023,21 +978,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (poster.isNotEmpty)
-                      Image.network(poster, fit: BoxFit.cover)
-                    else
-                      Container(color: AppColors.surface),
+                    if (poster.isNotEmpty) Image.network(poster, fit: BoxFit.cover) else Container(color: AppColors.surface),
                     Container(
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black45,
-                            Colors.transparent,
-                            Color(0xCC070A10),
-                            AppColors.background,
-                          ],
+                          colors: [Colors.black45, Colors.transparent, Color(0xCC070A10), AppColors.background],
                           stops: [0.0, 0.4, 0.75, 1.0],
                         ),
                       ),
@@ -1047,26 +994,24 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 6),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(4)),
-                                child: Text('IMDb $score', style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
+                                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(AppRadius.chip)),
+                                child: Text('IMDb $score', style: const TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.bold)),
                               ),
                               const SizedBox(width: 8),
                               Text('$year • ${_isSeries ? 'مسلسل' : 'فيلم'} • أكشن', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                             ],
                           ),
                           const SizedBox(height: 16),
-                          // أزرار التحكم الثلاثية المركزية (مشاهدة لاحقاً - شاهد الآن - تحميل)
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              // زر المشاهدة لاحقاً
                               InkWell(
                                 onTap: () async {
                                   await LocalStorageService.toggleWatchlist(widget.media);
@@ -1080,28 +1025,18 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 32),
-                              // زر شاهد الآن البيضاوي
+                              const SizedBox(width: 34),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.button)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 10),
                                 ),
-                                onPressed: _isLaunching
-                                    ? null
-                                    : () {
-                                        if (_isSeries && currentEpisodes.isNotEmpty) {
-                                          _playEpisode(currentEpisodes.first, 1);
-                                        } else {
-                                          _playMovie();
-                                        }
-                                      },
+                                onPressed: _isLaunching ? null : () => _isSeries && currentEpisodes.isNotEmpty ? _playEpisode(currentEpisodes.first, 1) : _playMovie(),
                                 icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
                                 label: const Text('شاهد الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                               ),
-                              const SizedBox(width: 32),
-                              // زر التحميل
+                              const SizedBox(width: 34),
                               InkWell(
                                 onTap: () => _showDownloadQualitySheet((widget.media['nb'] ?? widget.media['id']).toString(), title, poster),
                                 child: const Column(
@@ -1121,38 +1056,37 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 ),
               ),
             ),
-
-            // محتوى الصفحة (الوصف والحلقات مع البوسترات العريضة)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // زر مشاهدة الإعلان الترويجي
-                    Row(
-                      children: [
-                        const Icon(Icons.play_circle_outline_rounded, color: Colors.white70, size: 20),
-                        const SizedBox(width: 6),
-                        const Text('مشاهدة الإعلان', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(4)),
-                          child: const Text('PG-13', style: TextStyle(color: Colors.white54, fontSize: 10)),
-                        ),
-                      ],
+                    InkWell(
+                      onTap: _playTrailer,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.play_circle_outline_rounded, color: AppColors.primary, size: 22),
+                          const SizedBox(width: 6),
+                          const Text('مشاهدة الإعلان الرسمي', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(AppRadius.chip)),
+                            child: const Text('PG-13', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 10),
                     if (story.isNotEmpty)
                       Text(story, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.6)),
-                    const SizedBox(height: 14),
-                    // أزرار التفاعل والإعجاب
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         const Icon(Icons.thumb_up_alt_outlined, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
-                        const Text('6278', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        Text(rateCount, style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         const SizedBox(width: 16),
                         const Icon(Icons.thumb_down_alt_outlined, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
@@ -1161,7 +1095,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     ),
                     const Divider(color: AppColors.border, height: 30),
 
-                    // تبويب الحلقات والمواسم
                     if (_isSeries && _seasonsMap.isNotEmpty) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1180,8 +1113,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-
-                      // بطاقات الحلقات مع الصورة العريضة ومؤشر المشاهدة بالعين الخضراء (مطابقة للصور 1000018712 و 1000018713)
                       ...currentEpisodes.asMap().entries.map((e) {
                         final ep = e.value;
                         final idx = e.key + 1;
@@ -1202,13 +1133,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               padding: const EdgeInsets.all(8),
                               child: Row(
                                 children: [
-                                  // زر التنزيل
                                   IconButton(
                                     icon: const Icon(Icons.arrow_downward_rounded, color: Colors.white54, size: 20),
                                     onPressed: () => _showDownloadQualitySheet(targetId, '$title - حلقة $idx', poster),
                                   ),
                                   const SizedBox(width: 8),
-                                  // تفاصيل الحلقة وحالة المشاهدة
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1230,18 +1159,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  // البوستر العريض للحلقة
                                   ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(AppRadius.chip),
                                     child: Stack(
                                       alignment: Alignment.center,
                                       children: [
-                                        Container(
-                                          width: 110,
-                                          height: 65,
-                                          color: Colors.black26,
-                                          child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : null,
-                                        ),
+                                        Container(width: 110, height: 65, color: Colors.black26, child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : null),
                                         Container(
                                           width: 28, height: 28,
                                           decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
@@ -1268,9 +1191,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// مشغل الفيديو والتحكم بمكان الترجمة
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -1308,7 +1228,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideTimer;
 
   String _activeQuality = '240p';
-  BoxFit _videoFit = BoxFit.cover;
+  BoxFit _videoFit = BoxFit.contain;
 
   List<Subtitle> _subtitles = [];
   String _currentSubText = '';
@@ -1545,10 +1465,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Directionality(
             textDirection: TextDirection.rtl,
             child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+              padding: const EdgeInsets.symmetric(vertical: 16),
               children: [
                 const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Text('اختر حلقة للمشاهدة', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
                 ...widget.episodes.asMap().entries.map((e) {
@@ -1582,7 +1502,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _openSettingsBottomSheet() {
-    final settings = PlayerSettings.instance;
+    final settings = AppSettings.instance;
 
     showModalBottomSheet(
       context: context,
@@ -1598,10 +1518,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Directionality(
             textDirection: TextDirection.rtl,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.shield_outlined, color: Colors.white70),
+                    title: const Text('إزالة اللقطات الحساسة تلقائياً', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    value: settings.skipSensitiveScenes,
+                    activeColor: AppColors.primary,
+                    onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
                   ListTile(
                     leading: const Icon(Icons.settings_outlined, color: Colors.white70),
                     title: const Text('دقة الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
@@ -1661,7 +1589,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         children: [5, 10, 15, 30].map((s) => ListTile(
           title: Text('$s ثوانٍ', style: const TextStyle(color: Colors.white)),
           onTap: () {
-            PlayerSettings.instance.updateSeek(s);
+            AppSettings.instance.updateSeek(s);
             Navigator.pop(context);
           },
         )).toList(),
@@ -1694,7 +1622,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = PlayerSettings.instance;
+    final settings = AppSettings.instance;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1738,7 +1666,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // مكان الترجمة القابل للتخصيص عمودياً
                   if (_currentSubText.isNotEmpty)
                     Positioned(
                       bottom: settings.subBottomPadding,
@@ -1927,9 +1854,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-// =========================================================================
-// شاشة إعدادات الترجمة مع التحكم بارتفاع وموقع النص
-// =========================================================================
 class SubtitleSettingsScreen extends StatefulWidget {
   const SubtitleSettingsScreen({super.key});
 
@@ -1940,7 +1864,7 @@ class SubtitleSettingsScreen extends StatefulWidget {
 class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
   @override
   Widget build(BuildContext context) {
-    final s = PlayerSettings.instance;
+    final s = AppSettings.instance;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1951,7 +1875,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
           title: const Text('إعدادات الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
         body: ListView(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(16),
           children: [
             Container(
               height: 140,
@@ -1963,7 +1887,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
               child: Stack(
                 children: [
                   Positioned(
-                    bottom: (s.subBottomPadding / 120) * 80,
+                    bottom: (s.subBottomPadding / 140) * 90,
                     left: 20, right: 20,
                     child: Center(
                       child: Text(
@@ -1981,8 +1905,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            // التحكم بمكان الترجمة (Bottom Padding Slider)
+            const SizedBox(height: 24),
             ListTile(
               title: const Text('موقع الترجمة من الأسفل', style: TextStyle(color: Colors.white, fontSize: 13)),
               subtitle: Slider(
@@ -2045,7 +1968,8 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
       onTap: tap,
       child: Container(
         margin: const EdgeInsets.only(left: 8),
-        width: 24, height: 24,
+        width: 24,
+        height: 24,
         decoration: BoxDecoration(
           color: c,
           shape: BoxShape.circle,
@@ -2082,7 +2006,7 @@ class CategoriesScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(16),
         itemCount: _allCategories.length,
         itemBuilder: (ctx, i) {
           final cat = _allCategories[i];
@@ -2178,7 +2102,7 @@ class _CategoryCatalogPageState extends State<CategoryCatalogPage> {
         ),
         body: GridView.builder(
           controller: _scrollController,
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(10),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: count,
             crossAxisSpacing: 8,
@@ -2265,7 +2189,7 @@ class _SearchScreenState extends State<SearchScreen> {
       body: _isSearching
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : GridView.builder(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: const EdgeInsets.all(10),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.56, crossAxisSpacing: 8, mainAxisSpacing: 10),
               itemCount: _results.length,
               itemBuilder: (ctx, i) {
@@ -2284,14 +2208,14 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-class DownloadsScreen extends StatefulWidget {
-  const DownloadsScreen({super.key});
+class LibraryScreen extends StatefulWidget {
+  const LibraryScreen({super.key});
 
   @override
-  State<DownloadsScreen> createState() => _DownloadsScreenState();
+  State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProviderStateMixin {
+class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _completed = [];
   List<Map<String, dynamic>> _watchlist = [];
@@ -2299,7 +2223,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _loadData();
   }
 
@@ -2326,11 +2250,13 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    final s = AppSettings.instance;
     final count = MediaQuery.of(context).size.width > 700 ? 5 : 4;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('المكتبة الشخصية'),
+        title: const Text('الحساب والمكتبة'),
         backgroundColor: AppColors.background,
         elevation: 0,
         actions: [
@@ -2345,7 +2271,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
           indicatorColor: AppColors.primary,
           tabs: const [
             Tab(text: 'التنزيلات'),
-            Tab(text: 'قائمة المشاهدة'),
+            Tab(text: 'المشاهدة لاحقاً'),
+            Tab(text: 'الإعدادات'),
           ],
         ),
       ),
@@ -2353,14 +2280,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
         controller: _tabCtrl,
         children: [
           _completed.isEmpty
-              ? _buildEmptyState(Icons.download_done_rounded, 'لا توجد تنزيلات مكتملة', 'قم بتنزيل أفلامك وحلقاتك المفضلة لمشاهدتها بدون إنترنت')
+              ? const Center(child: Text('لا توجد ملفات مكتملة حالياً', style: TextStyle(color: Colors.white54)))
               : ListView.builder(
-                  padding: const EdgeInsets.all(AppSpacing.md),
+                  padding: const EdgeInsets.all(16),
                   itemCount: _completed.length,
                   itemBuilder: (ctx, i) {
                     final item = _completed[i];
                     return Container(
-                      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
                         borderRadius: BorderRadius.circular(AppRadius.card),
@@ -2375,9 +2302,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
                   },
                 ),
           _watchlist.isEmpty
-              ? _buildEmptyState(Icons.bookmark_border_rounded, 'قائمة المشاهدة فارغة', 'أضف الأعمال التي تنوي مشاهدتها لاحقاً بنقرة واحدة من صفحة التفاصيل')
+              ? const Center(child: Text('لم تقم بحفظ أي عمل في قائمتك بعد', style: TextStyle(color: Colors.white54)))
               : GridView.builder(
-                  padding: const EdgeInsets.all(AppSpacing.md),
+                  padding: const EdgeInsets.all(10),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.56, crossAxisSpacing: 8, mainAxisSpacing: 10),
                   itemCount: _watchlist.length,
                   itemBuilder: (ctx, i) {
@@ -2392,25 +2319,42 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
                     );
                   },
                 ),
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text('وضع التطبيق وفلترة المحتوى', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.card)),
+                child: Column(
+                  children: [
+                    RadioListTile<int>(
+                      title: const Text('الوضع الافتراضي (جميع الأعمال)', style: TextStyle(color: Colors.white)),
+                      value: 0,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => s.updateFilterMode(v!)),
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('الوضع العائلي (فلترة المشاهد الصريحة)', style: TextStyle(color: Colors.white)),
+                      value: 1,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => s.updateFilterMode(v!)),
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('وضع الأطفال (كرتون وأعمال أطفال فقط)', style: TextStyle(color: Colors.white)),
+                      value: 2,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => s.updateFilterMode(v!)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(IconData icon, String title, String subtitle) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 64, color: AppColors.border),
-            const SizedBox(height: AppSpacing.md),
-            Text(title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          ],
-        ),
       ),
     );
   }
