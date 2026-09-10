@@ -136,7 +136,6 @@ class LocalStorageService {
     await setList('user_watchlist', list);
   }
 
-  // نظام الإشعارات ومتابعة المسلسلات
   static Future<bool> isSubscribedToNotifications(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
@@ -306,12 +305,11 @@ class AppSettings extends ChangeNotifier {
   Color subColor = Colors.white;
   bool subHasShadow = true;
   double subBottomPadding = 60.0;
-  bool enableDualSubtitles = false; // الترجمة المزدوجة
-  int appFilterMode = 0; // 0: افتراضي, 1: عائلي, 2: أطفال
-  String appLanguage = 'ar'; // ar, en
-  String selectedFont = 'Cairo'; // Cairo, Tajawal, Almarai, Changa
+  bool enableDualSubtitles = false;
+  int appFilterMode = 0;
+  String appLanguage = 'ar';
+  String selectedFont = 'Cairo';
 
-  // بيانات الحساب والمزامنة
   String? userName;
   String? userEmail;
 
@@ -380,6 +378,17 @@ class AppSettings extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     if (bottomPadding != null) await p.setDouble('player_sub_bottom', bottomPadding);
     if (size != null) await p.setDouble('player_sub_size', size);
+  }
+
+  void resetSubtitles() async {
+    subFontSize = 18.0;
+    subColor = Colors.white;
+    subHasShadow = true;
+    subBottomPadding = 60.0;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble('player_sub_size', 18.0);
+    await p.setDouble('player_sub_bottom', 60.0);
   }
 
   void login(String name, String email) async {
@@ -1762,9 +1771,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// مشغل الفيديو المتكامل: بث للتلفاز، ترجمة مزدوجة، إيماءات، قفل، وانتقال للحلقة
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -2277,7 +2283,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // الترجمة المزدوجة: الإنجليزية بالأعلى
                   if (settings.enableDualSubtitles && _currentSecondarySubText.isNotEmpty)
                     Positioned(
                       top: 70, left: 20, right: 20,
@@ -2290,7 +2295,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // الترجمة الأساسية بالأسفل
                   if (_currentSubText.isNotEmpty)
                     Positioned(
                       bottom: settings.subBottomPadding, left: 20, right: 20,
@@ -2646,9 +2650,6 @@ class CategoriesScreen extends StatelessWidget {
   }
 }
 
-// =========================================================================
-// شاشة الحساب والمكتبة: تسجيل الدخول، لغة التطبيق، اختيار الخط، التنزيلات
-// =========================================================================
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -2824,7 +2825,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // قسم الحساب والمزامنة السحابية
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.card)),
@@ -2851,7 +2851,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 18),
 
-              // تغيير لغة التطبيق
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
@@ -2869,7 +2868,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 12),
 
-              // تغيير خط التطبيق
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
