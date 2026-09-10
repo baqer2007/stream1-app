@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -568,10 +569,10 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
             unselectedFontSize: 11,
             onTap: (i) => setState(() => _currentIndex = i),
             items: [
-              BottomNavigationBarItem(icon: const Icon(Icons.home_filled), label: isAr ? 'الرئيسية' : 'Home'),
-              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded), label: isAr ? 'الأقسام' : 'Categories'),
-              BottomNavigationBarItem(icon: const Icon(Icons.search_rounded), label: isAr ? 'بحث وفلترة' : 'Search'),
-              BottomNavigationBarItem(icon: const Icon(Icons.person_rounded), label: isAr ? 'الحساب والمكتبة' : 'Profile'),
+              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.house_fill, size: 21), label: isAr ? 'الرئيسية' : 'Home'),
+              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.square_grid_2x2_fill, size: 21), label: isAr ? 'الأقسام' : 'Categories'),
+              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.search, size: 21), label: isAr ? 'بحث' : 'Search'),
+              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.person_crop_circle_fill, size: 21), label: isAr ? 'الحساب' : 'Profile'),
             ],
           ),
         ),
@@ -636,30 +637,48 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
     try {
       final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 20, level: level),
-        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 20, level: level),
+        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 25, level: level),
+        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
       ]);
 
-      final all = [...res[0], ...res[1]];
-      for (var it in all) {
+      final allMovies = res[0];
+      final allSeries = res[1];
+
+      final hero = allMovies.take(5).toList();
+      final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
+
+      final marvel = allMovies.where((it) {
+        final t = (it['ar_title'] ?? it['en_title'] ?? '').toString().toLowerCase();
+        final id = (it['nb'] ?? it['id']).toString();
+        return !heroIds.contains(id) &&
+            (t.contains('iron') || t.contains('thor') || t.contains('avengers') || t.contains('hulk') || t.contains('captain') || t.contains('marvel') || t.contains('war'));
+      }).take(10).toList();
+      final marvelIds = marvel.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
+
+      final featured = allMovies.where((it) {
+        final id = (it['nb'] ?? it['id']).toString();
+        return !heroIds.contains(id) && !marvelIds.contains(id);
+      }).take(12).toList();
+      final featuredIds = featured.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
+
+      final recent = allSeries.where((it) {
+        final id = (it['nb'] ?? it['id']).toString();
+        return !heroIds.contains(id) && !marvelIds.contains(id) && !featuredIds.contains(id);
+      }).take(12).toList();
+
+      final combined = [...allMovies, ...allSeries];
+      for (var it in combined) {
         final id = (it['nb'] ?? it['id'])?.toString();
         if (id != null) _uniqueIds.add(id);
       }
 
       if (mounted) {
         setState(() {
-          _heroItems = all.take(6).toList();
-          _marvelItems = all.where((it) {
-            final t = (it['ar_title'] ?? it['en_title'] ?? '').toString().toLowerCase();
-            return t.contains('iron') || t.contains('thor') || t.contains('avengers') || t.contains('hulk') || t.contains('captain') || t.contains('marvel');
-          }).toList();
-          if (_marvelItems.isEmpty && all.isNotEmpty) {
-            _marvelItems = all.sublist(0, all.length > 8 ? 8 : all.length);
-          }
-
-          _featuredItems = all.reversed.take(12).toList();
-          _recentItems = all.skip(4).take(12).toList();
-          _infiniteList = List.from(all);
+          _heroItems = hero;
+          _marvelItems = marvel.isNotEmpty ? marvel : allMovies.skip(5).take(10).toList();
+          _featuredItems = featured.isNotEmpty ? featured : allMovies.skip(15).take(10).toList();
+          _recentItems = recent;
+          _infiniteList = List.from(combined);
           _page = 1;
           _isLoading = false;
         });
@@ -771,7 +790,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(isAr ? 'استكشف المزيد من الأعمال' : 'Explore More Titles', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                          const Icon(Icons.movie_filter_rounded, color: AppColors.primary, size: 18),
+                          const Icon(CupertinoIcons.film, color: AppColors.primary, size: 18),
                         ],
                       ),
                     ),
@@ -856,14 +875,11 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   gradient: const LinearGradient(colors: [AppColors.surfaceLight, AppColors.surface]),
                   borderRadius: BorderRadius.circular(AppRadius.button),
                   border: Border.all(color: AppColors.primary.withOpacity(0.4), width: 1),
-                  boxShadow: [
-                    BoxShadow(color: AppColors.primary.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2)),
-                  ],
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.local_movies_rounded, color: AppColors.primary, size: 20),
+                    const Icon(CupertinoIcons.play_rectangle_fill, color: AppColors.primary, size: 18),
                     const SizedBox(width: 8),
                     Text(isAr ? 'الأفلام' : 'Movies', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
@@ -886,7 +902,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.tv_rounded, color: Colors.amber, size: 20),
+                    const Icon(CupertinoIcons.tv_fill, color: Colors.amber, size: 18),
                     const SizedBox(width: 8),
                     Text(isAr ? 'المسلسلات' : 'Series', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
@@ -957,7 +973,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           ),
                           onPressed: () => _openDetails(item),
-                          icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
+                          icon: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 16),
                           label: Text(AppSettings.instance.appLanguage == 'ar' ? 'شاهد الآن' : 'Watch', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                         ),
                       ],
@@ -1035,7 +1051,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   child: Stack(
                     children: [
                       Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
-                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 32)),
+                      const Center(child: Icon(CupertinoIcons.play_circle_fill, color: AppColors.primary, size: 34)),
                       Positioned(
                         bottom: 0, left: 0, right: 0,
                         child: ClipRRect(
@@ -1129,7 +1145,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 }
 
 // =========================================================================
-// شاشة البحث والفلترة المباشرة السلسة
+// شاشة البحث والفلترة السينمائية المطابقة لصور النظام (1000018787 / 88 / 89)
 // =========================================================================
 class AdvancedSearchScreen extends StatefulWidget {
   const AdvancedSearchScreen({super.key});
@@ -1140,22 +1156,19 @@ class AdvancedSearchScreen extends StatefulWidget {
 
 class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
-  List<dynamic> _results = [];
+  List<dynamic> _movieResults = [];
+  List<dynamic> _seriesResults = [];
   List<Map<String, dynamic>> _recentSearches = [];
   bool _isSearching = false;
 
-  String _filterType = 'all';
-  String _filterGenre = 'all';
+  String _filterType = 'all'; // all, movie, series
+  String _selectedCategory = 'الكل';
   double _minScore = 0.0;
+  int _fromYear = 1900;
+  int _toYear = 2026;
 
-  final List<Map<String, String>> _genres = [
-    {'key': 'all', 'ar': 'كل التصنيفات'},
-    {'key': 'horror', 'ar': 'رعب'},
-    {'key': 'action', 'ar': 'أكشن'},
-    {'key': 'comedy', 'ar': 'كوميديا'},
-    {'key': 'drama', 'ar': 'دراما'},
-    {'key': 'animation', 'ar': 'أنمي ورسوم'},
-    {'key': 'sci-fi', 'ar': 'خيال علمي'},
+  final List<String> _categories = [
+    'الكل', 'أكشن', 'رعب', 'كوميديا', 'دراما', 'أنمي ورسوم متحركة', 'خيال علمي', 'مغامرات', 'إثارة'
   ];
 
   @override
@@ -1171,125 +1184,345 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
 
   void _search() async {
     final q = _searchCtrl.text.trim();
-    setState(() => _isSearching = true);
-    final level = AppSettings.instance.appFilterMode;
-
-    List<dynamic> baseList = [];
-    if (q.isNotEmpty) {
-      baseList = await StreamService.searchContent(q, level: level);
-    } else if (_filterGenre != 'all') {
-      baseList = await StreamService.fetchByCategoryName(_filterGenre, page: 0, level: level);
-    } else {
-      final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 25, level: level),
-        StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
-      ]);
-      baseList = [...res[0], ...res[1]];
+    if (q.isEmpty) {
+      setState(() {
+        _movieResults.clear();
+        _seriesResults.clear();
+      });
+      return;
     }
 
-    final filtered = baseList.where((item) {
-      final isSeries = (item['is_series_fixed'] == true) || (item['season'] != null && item['season'].toString() != '0');
-      if (_filterType == 'movie' && isSeries) return false;
-      if (_filterType == 'series' && !isSeries) return false;
+    setState(() => _isSearching = true);
+    final level = AppSettings.instance.appFilterMode;
+    final results = await StreamService.searchContent(q, level: level);
 
-      final score = double.tryParse((item['stars'] ?? '0').toString()) ?? 0.0;
-      if (score < _minScore) return false;
+    final List<dynamic> movies = [];
+    final List<dynamic> series = [];
 
-      return true;
-    }).toList();
+    for (var it in results) {
+      final isSeries = (it['is_series_fixed'] == true) || (it['season'] != null && it['season'].toString() != '0');
+      final score = double.tryParse((it['stars'] ?? '0').toString()) ?? 0.0;
+      final year = int.tryParse((it['year'] ?? '0').toString()) ?? 2024;
+
+      if (score < _minScore) continue;
+      if (year < _fromYear || year > _toYear) continue;
+
+      if (isSeries) {
+        series.add(it);
+      } else {
+        movies.add(it);
+      }
+    }
 
     if (mounted) {
       setState(() {
-        _results = filtered;
+        _movieResults = movies;
+        _seriesResults = series;
         _isSearching = false;
       });
     }
   }
 
+  void _openFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C111D),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setMState) => Container(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      setMState(() {
+                        _selectedCategory = 'الكل';
+                        _minScore = 0.0;
+                        _fromYear = 1900;
+                        _toYear = 2026;
+                      });
+                    },
+                    child: const Text('مسح الكل', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  ),
+                  const Text('تصفية النتائج', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Align(alignment: Alignment.centerRight, child: Text('السنة', style: TextStyle(color: Colors.white70, fontSize: 12))),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
+                      alignment: Alignment.center,
+                      child: Text('$_toYear', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('إلى', style: TextStyle(color: Colors.white54))),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
+                      alignment: Alignment.center,
+                      child: Text('$_fromYear', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Align(alignment: Alignment.centerRight, child: Text('القسم', style: TextStyle(color: Colors.white70, fontSize: 12))),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
+                child: DropdownButton<String>(
+                  value: _selectedCategory,
+                  dropdownColor: AppColors.surface,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  icon: const Icon(CupertinoIcons.chevron_down, color: Colors.white54, size: 16),
+                  items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
+                  onChanged: (v) {
+                    if (v != null) setMState(() => _selectedCategory = v);
+                  },
+                ),
+              ),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text('تقييم IMDb: ${_minScore.toStringAsFixed(1)}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: Colors.white,
+                  inactiveTrackColor: Colors.white24,
+                  thumbColor: Colors.white,
+                  trackHeight: 3,
+                ),
+                child: Slider(
+                  value: _minScore,
+                  min: 0.0,
+                  max: 9.5,
+                  onChanged: (v) => setMState(() => _minScore = v),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _search();
+                  },
+                  child: const Text('إظهار النتائج', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final count = MediaQuery.of(context).size.width > 700 ? 5 : 4;
     final isAr = AppSettings.instance.appLanguage == 'ar';
 
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.background,
-          elevation: 0,
-          title: TextField(
-            controller: _searchCtrl,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: isAr ? 'ابحث عن أفلام، مسلسلات...' : 'Search movies, series...',
-              hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-              border: InputBorder.none,
-              prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
-            ),
-            onSubmitted: (_) => _search(),
+        backgroundColor: const Color(0xFF070A10),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 1. شريط البحث العلوي مع زر الفلترة (مطابق لصورة 1000018787)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    InkWell(
+                      onTap: _openFilterDialog,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(color: const Color(0xFF131A29), borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(CupertinoIcons.slider_horizontal_3, color: Colors.white70, size: 20),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Container(
+                        height: 46,
+                        decoration: BoxDecoration(color: const Color(0xFF131A29), borderRadius: BorderRadius.circular(14)),
+                        child: TextField(
+                          controller: _searchCtrl,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          decoration: const InputDecoration(
+                            hintText: 'ابحث عن أفلام، مسلسلات، ممثلين...',
+                            hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                            border: InputBorder.none,
+                            prefixIcon: Icon(CupertinoIcons.search, color: Colors.white38, size: 20),
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onSubmitted: (_) => _search(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 2. كبسولات التصفية الأفقية عند البحث (مطابق لصورة 1000018788)
+              if (_searchCtrl.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      _buildQuickFilterTab('الكل', _filterType == 'all', () => setState(() => _filterType = 'all')),
+                      const SizedBox(width: 8),
+                      _buildQuickFilterTab('أفلام', _filterType == 'movie', () => setState(() => _filterType = 'movie')),
+                      const SizedBox(width: 8),
+                      _buildQuickFilterTab('مسلسلات', _filterType == 'series', () => setState(() => _filterType = 'series')),
+                    ],
+                  ),
+                ),
+
+              // 3. عرض النتائج المقسمة أو سجل البحث السابق
+              Expanded(
+                child: _isSearching
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                    : (_movieResults.isNotEmpty || _seriesResults.isNotEmpty)
+                        ? _buildCategorizedResults()
+                        : _buildRecentSearches(),
+              ),
+            ],
           ),
         ),
-        body: Column(
+      ),
+    );
+  }
+
+  Widget _buildQuickFilterTab(String label, bool isSelected, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF00E5C9) : const Color(0xFF131A29),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(color: isSelected ? Colors.black : Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  // عرض نتائج البحث المقسمة (مسلسلات / أفلام مع زر عرض الكل)
+  Widget _buildCategorizedResults() {
+    final showSeries = _filterType == 'all' || _filterType == 'series';
+    final showMovies = _filterType == 'all' || _filterType == 'movie';
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        if (showSeries && _seriesResults.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('مسلسلات', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          ),
+          ..._seriesResults.take(4).map((it) => _buildMediaSearchRow(it)),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
+              child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+          ),
+          const Divider(color: Colors.white10, height: 24),
+        ],
+        if (showMovies && _movieResults.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('أفلام', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          ),
+          ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // سطر البحث الطولي مع البوستر وشارة IMDb (مطابق للصور 1000018787 و 1000018788)
+  Widget _buildMediaSearchRow(dynamic it) {
+    final poster = StreamService.extractPoster(it);
+    final title = it['en_title'] ?? it['ar_title'] ?? '';
+    final year = it['year']?.toString() ?? '2024';
+    final score = (it['stars'] ?? '7.5').toString();
+
+    return InkWell(
+      onTap: () {
+        LocalStorageService.appendItem('recent_search_history', it, maxLength: 20);
+        _loadRecents();
+        Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it)));
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
           children: [
-            // شريط الفلاتر المباشر في نفس الشاشة لسهولة الوصول
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: AppColors.surface,
+            Expanded(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Wrap(
-                        spacing: 6,
-                        children: [
-                          ChoiceChip(label: const Text('الكل', style: TextStyle(fontSize: 11)), selected: _filterType == 'all', onSelected: (_) { setState(() => _filterType = 'all'); _search(); }),
-                          ChoiceChip(label: const Text('أفلام', style: TextStyle(fontSize: 11)), selected: _filterType == 'movie', onSelected: (_) { setState(() => _filterType = 'movie'); _search(); }),
-                          ChoiceChip(label: const Text('مسلسلات', style: TextStyle(fontSize: 11)), selected: _filterType == 'series', onSelected: (_) { setState(() => _filterType = 'series'); _search(); }),
-                        ],
-                      ),
-                      const Spacer(),
-                      DropdownButton<String>(
-                        dropdownColor: AppColors.surfaceLight,
-                        value: _filterGenre,
-                        underline: const SizedBox(),
-                        items: _genres.map((g) => DropdownMenuItem(value: g['key'], child: Text(g['ar']!, style: const TextStyle(color: Colors.white, fontSize: 12)))).toList(),
-                        onChanged: (v) {
-                          setState(() => _filterGenre = v!);
-                          _search();
-                        },
-                      ),
-                    ],
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text('$year,دراما', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.white24, width: 0.8), borderRadius: BorderRadius.circular(3)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('IMDb', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 4),
+                        Text(score, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            Expanded(
-              child: _isSearching
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                  : _results.isNotEmpty
-                      ? GridView.builder(
-                          padding: const EdgeInsets.all(10),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.56, crossAxisSpacing: 8, mainAxisSpacing: 10),
-                          itemCount: _results.length,
-                          itemBuilder: (ctx, i) {
-                            final item = _results[i];
-                            final poster = StreamService.extractPoster(item);
-                            return InkWell(
-                              onTap: () {
-                                LocalStorageService.appendItem('recent_search_history', item, maxLength: 20);
-                                _loadRecents();
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item)));
-                              },
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(AppRadius.card),
-                                child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: AppColors.surface),
-                              ),
-                            );
-                          },
-                        )
-                      : _buildRecentSearchesList(isAr),
+            const SizedBox(width: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: poster.isNotEmpty
+                  ? Image.network(poster, width: 52, height: 75, fit: BoxFit.cover)
+                  : Container(width: 52, height: 75, color: AppColors.surface),
             ),
           ],
         ),
@@ -1297,46 +1530,30 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     );
   }
 
-  Widget _buildRecentSearchesList(bool isAr) {
+  // قائمة عمليات البحث الأخيرة (مطابقة لصورة 1000018787)
+  Widget _buildRecentSearches() {
     if (_recentSearches.isEmpty) {
-      return Center(child: Text(isAr ? 'ابحث عن أفلامك المفضلة وسجل البحث سيظهر هنا' : 'Search for titles to see history here', style: const TextStyle(color: Colors.white38, fontSize: 12)));
+      return const Center(child: Text('ابحث عن أفلامك المفضلة وسجل البحث سيظهر هنا', style: TextStyle(color: Colors.white38, fontSize: 12)));
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(isAr ? 'عمليات البحث الأخيرة' : 'Recent Searches', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-            InkWell(
+            const Text('عمليات البحث الأخيرة', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+            GestureDetector(
               onTap: () async {
                 await LocalStorageService.setList('recent_search_history', []);
                 _loadRecents();
               },
-              child: Text(isAr ? 'مسح السجل' : 'Clear', style: const TextStyle(color: AppColors.primary, fontSize: 12)),
+              child: const Text('مسح السجل', style: TextStyle(color: AppColors.primary, fontSize: 12)),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        ..._recentSearches.map((item) {
-          final poster = StreamService.extractPoster(item);
-          final title = item['ar_title'] ?? item['en_title'] ?? '';
-          final year = item['year']?.toString() ?? '2024';
-          final score = (item['stars'] ?? '7.5').toString();
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(vertical: 4),
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: poster.isNotEmpty ? Image.network(poster, width: 45, height: 65, fit: BoxFit.cover) : Container(width: 45, height: 65, color: AppColors.surface),
-            ),
-            title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-            subtitle: Text('$year • سينما • IMDb $score', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-            trailing: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white24, size: 14),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))),
-          );
-        }),
+        const SizedBox(height: 10),
+        ..._recentSearches.map((it) => _buildMediaSearchRow(it)),
       ],
     );
   }
@@ -1569,9 +1786,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   final res = q['resolution'] ?? '720p';
                   final url = q['url'] ?? '';
                   return ListTile(
-                    leading: const Icon(Icons.video_file_rounded, color: AppColors.primary),
+                    leading: const Icon(CupertinoIcons.film, color: AppColors.primary),
                     title: Text('دقة $res', style: const TextStyle(color: Colors.white)),
-                    trailing: const Icon(Icons.download_rounded, color: Colors.white70),
+                    trailing: const Icon(CupertinoIcons.arrow_down_circle, color: Colors.white70),
                     onTap: () {
                       Navigator.pop(context);
                       DownloadManager.instance.startDownload(
@@ -1616,19 +1833,19 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               expandedHeight: 480,
               pinned: true,
               backgroundColor: AppColors.background,
-              leading: IconButton(icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
+              leading: IconButton(icon: const Icon(CupertinoIcons.chevron_forward, color: Colors.white), onPressed: () => Navigator.pop(context)),
               actions: [
-                IconButton(icon: const Icon(Icons.share_rounded, color: Colors.white), onPressed: _shareMedia),
+                IconButton(icon: const Icon(CupertinoIcons.share, color: Colors.white), onPressed: _shareMedia),
                 if (_isSeries)
                   IconButton(
-                    icon: Icon(_isSubscribed ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: _isSubscribed ? AppColors.primary : Colors.white),
+                    icon: Icon(_isSubscribed ? CupertinoIcons.bell_fill : CupertinoIcons.bell, color: _isSubscribed ? AppColors.primary : Colors.white),
                     onPressed: () async {
                       await LocalStorageService.toggleNotificationSubscription(id);
                       _loadState();
                     },
                   ),
                 IconButton(
-                  icon: Icon(_isWatchlist ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _isWatchlist ? AppColors.primary : Colors.white),
+                  icon: Icon(_isWatchlist ? CupertinoIcons.bookmark_fill : CupertinoIcons.bookmark, color: _isWatchlist ? AppColors.primary : Colors.white),
                   onPressed: () async {
                     await LocalStorageService.toggleWatchlist(widget.media);
                     _loadState();
@@ -1680,7 +1897,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 },
                                 child: Column(
                                   children: [
-                                    Icon(_isWatchlist ? Icons.check_rounded : Icons.add_rounded, color: Colors.white, size: 24),
+                                    Icon(_isWatchlist ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.plus_circle, color: Colors.white, size: 24),
                                     const SizedBox(height: 4),
                                     const Text('المشاهدة لاحقاً', style: TextStyle(color: Colors.white70, fontSize: 10)),
                                   ],
@@ -1694,7 +1911,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 10),
                                 ),
                                 onPressed: _isLaunching ? null : () => _isSeries && currentEpisodes.isNotEmpty ? _playEpisode(currentEpisodes.first, 1) : _playMovie(),
-                                icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                                icon: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 16),
                                 label: const Text('شاهد الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                               ),
                               const SizedBox(width: 34),
@@ -1702,7 +1919,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 onTap: () => _showDownloadQualityPicker(id, title, poster),
                                 child: const Column(
                                   children: [
-                                    Icon(Icons.download_rounded, color: Colors.white, size: 24),
+                                    Icon(CupertinoIcons.arrow_down_circle, color: Colors.white, size: 24),
                                     SizedBox(height: 4),
                                     Text('تحميل', style: TextStyle(color: Colors.white70, fontSize: 10)),
                                   ],
@@ -1741,7 +1958,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       onTap: _playTrailer,
                       child: Row(
                         children: const [
-                          Icon(Icons.play_circle_outline_rounded, color: AppColors.primary, size: 22),
+                          Icon(CupertinoIcons.play_circle, color: AppColors.primary, size: 22),
                           SizedBox(width: 6),
                           Text('مشاهدة الإعلان الرسمي', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                           Spacer(),
@@ -1755,11 +1972,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        const Icon(Icons.thumb_up_alt_outlined, color: Colors.white54, size: 16),
+                        const Icon(CupertinoIcons.hand_thumbsup, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
                         Text(rateCount, style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         const SizedBox(width: 16),
-                        const Icon(Icons.thumb_down_alt_outlined, color: Colors.white54, size: 16),
+                        const Icon(CupertinoIcons.hand_thumbsdown, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
                         const Text('84', style: TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
@@ -1805,7 +2022,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               child: Row(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.arrow_downward_rounded, color: Colors.white54, size: 20),
+                                    icon: const Icon(CupertinoIcons.arrow_down_to_line, color: Colors.white54, size: 18),
                                     onPressed: () => _showDownloadQualityPicker(targetId, '$title - حلقة $idx', poster),
                                   ),
                                   const SizedBox(width: 8),
@@ -1820,7 +2037,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: const [
-                                              Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
+                                              Icon(CupertinoIcons.eye_fill, color: Colors.greenAccent, size: 14),
                                               SizedBox(width: 4),
                                               Text('تمت المشاهدة', style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                                             ],
@@ -1839,7 +2056,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                         Container(
                                           width: 28, height: 28,
                                           decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
-                                          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                                          child: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 14),
                                         ),
                                       ],
                                     ),
@@ -1960,7 +2177,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _brightnessLevel = 0.5;
   bool _showIndicator = false;
   String _indicatorText = '';
-  IconData _indicatorIcon = Icons.volume_up;
+  IconData _indicatorIcon = CupertinoIcons.volume_up;
 
   bool _showAutoNext = false;
   int _autoNextCountdown = 5;
@@ -2179,11 +2396,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (isRightSide) {
         _volumeLevel = (_volumeLevel + delta).clamp(0.0, 1.0);
         _controller?.setVolume(_volumeLevel);
-        _indicatorIcon = _volumeLevel == 0 ? Icons.volume_off : Icons.volume_up;
+        _indicatorIcon = _volumeLevel == 0 ? CupertinoIcons.volume_off : CupertinoIcons.volume_up;
         _indicatorText = '${(_volumeLevel * 100).toInt()}%';
       } else {
         _brightnessLevel = (_brightnessLevel + delta).clamp(0.1, 1.0);
-        _indicatorIcon = Icons.brightness_6;
+        _indicatorIcon = CupertinoIcons.sun_max;
         _indicatorText = '${(_brightnessLevel * 100).toInt()}%';
       }
     });
@@ -2191,6 +2408,133 @@ class _PlayerScreenState extends State<PlayerScreen> {
     Timer(const Duration(milliseconds: 1200), () {
       if (mounted) setState(() => _showIndicator = false);
     });
+  }
+
+  void _openSettingsBottomSheet() {
+    final settings = AppSettings.instance;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface.withOpacity(0.92),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            border: Border.all(color: AppColors.border, width: 0.5),
+          ),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(CupertinoIcons.text_bubble, color: Colors.white70),
+                    title: const Text('الترجمة المزدوجة (عربي + إنجليزي)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    value: settings.enableDualSubtitles,
+                    activeColor: AppColors.primary,
+                    onChanged: (v) => setState(() => settings.updateDualSubtitles(v)),
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(CupertinoIcons.shield, color: Colors.white70),
+                    title: const Text('إزالة اللقطات الحساسة تلقائياً', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    value: settings.skipSensitiveScenes,
+                    activeColor: AppColors.primary,
+                    onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.gear_alt, color: Colors.white70),
+                    title: const Text('دقة الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    trailing: Text(_activeQuality, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showQualityPicker();
+                    },
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.forward, color: Colors.white70),
+                    title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    trailing: Text('${settings.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showSeekPicker();
+                    },
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.captions_bubble, color: Colors.white70),
+                    title: const Text('إعدادات ومكان الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    trailing: const Icon(CupertinoIcons.chevron_forward, color: Colors.white24, size: 14),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
+                    },
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.aspectratio, color: Colors.white70),
+                    title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    trailing: Text(_videoFit == BoxFit.cover ? 'ملء الشاشة' : 'طبيعي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    onTap: () {
+                      setState(() {
+                        _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSeekPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [5, 10, 15, 30].map((s) => ListTile(
+          title: Text('$s ثوانٍ', style: const TextStyle(color: Colors.white)),
+          onTap: () {
+            AppSettings.instance.updateSeek(s);
+            Navigator.pop(context);
+          },
+        )).toList(),
+      ),
+    );
+  }
+
+  void _showQualityPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        children: widget.qualities.map((q) {
+          final res = q['resolution'] ?? '240p';
+          final url = q['url'] ?? '';
+          return ListTile(
+            title: Text(res, style: const TextStyle(color: Colors.white)),
+            trailing: _activeQuality == res ? const Icon(CupertinoIcons.check_mark, color: AppColors.primary) : null,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() => _activeQuality = res);
+              _initPlayer(url);
+            },
+          );
+        }).toList(),
+      ),
+    );
   }
 
   @override
@@ -2273,7 +2617,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       bottom: 85, right: 20,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(color: AppColors.surface.withOpacity(0.9), borderRadius: BorderRadius.circular(12)),
+                        decoration: BoxDecoration(color: AppColors.surface.withOpacity(0.9), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
                         child: Row(
                           children: [
                             Text('الحلقة التالية خلال $_autoNextCountdown ث', style: const TextStyle(color: Colors.white, fontSize: 12)),
@@ -2306,11 +2650,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                IconButton(icon: const Icon(Icons.cast_rounded, color: Colors.white), onPressed: _castToTv),
-                                IconButton(
-                                  icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
-                                  onPressed: () => setState(() => _videoFit = _videoFit == BoxFit.contain ? BoxFit.cover : BoxFit.contain),
-                                ),
+                                IconButton(icon: const Icon(CupertinoIcons.tv, color: Colors.white), onPressed: _castToTv),
+                                IconButton(icon: const Icon(CupertinoIcons.slider_horizontal_3, color: Colors.white), onPressed: _openSettingsBottomSheet),
                               ],
                             ),
                           ],
@@ -2318,10 +2659,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
                     Center(
-                      child: IconButton(
-                        iconSize: 52,
-                        icon: Icon(_controller != null && _controller!.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.white),
-                        onPressed: () => setState(() => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play()),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            iconSize: 34,
+                            icon: const Icon(CupertinoIcons.gobackward_10, color: Colors.white),
+                            onPressed: () {
+                              final p = _controller!.value.position - Duration(seconds: settings.seekDuration);
+                              _controller!.seekTo(p < Duration.zero ? Duration.zero : p);
+                            },
+                          ),
+                          const SizedBox(width: 24),
+                          IconButton(
+                            iconSize: 48,
+                            icon: Icon(_controller != null && _controller!.value.isPlaying ? CupertinoIcons.pause_circle_fill : CupertinoIcons.play_circle_fill, color: Colors.white),
+                            onPressed: () => setState(() => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play()),
+                          ),
+                          const SizedBox(width: 24),
+                          IconButton(
+                            iconSize: 34,
+                            icon: const Icon(CupertinoIcons.goforward_10, color: Colors.white),
+                            onPressed: () {
+                              final p = _controller!.value.position + Duration(seconds: settings.seekDuration);
+                              _controller!.seekTo(p);
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -2336,22 +2700,151 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // =========================================================================
+// شاشة إعدادات الترجمة
+// =========================================================================
+class SubtitleSettingsScreen extends StatefulWidget {
+  const SubtitleSettingsScreen({super.key});
+
+  @override
+  State<SubtitleSettingsScreen> createState() => _SubtitleSettingsScreenState();
+}
+
+class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background,
+          title: const Text('إعدادات الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: (s.subBottomPadding / 140) * 90,
+                    left: 20, right: 20,
+                    child: Center(
+                      child: Text(
+                        'معاينة موقع ولون الترجمة المباشر\nLive Subtitle Preview',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: s.subColor,
+                          fontSize: s.subFontSize,
+                          fontWeight: FontWeight.bold,
+                          shadows: s.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              title: const Text('موقع الترجمة من الأسفل', style: TextStyle(color: Colors.white, fontSize: 13)),
+              subtitle: Slider(
+                value: s.subBottomPadding,
+                min: 30.0,
+                max: 140.0,
+                activeColor: AppColors.primary,
+                inactiveColor: Colors.white24,
+                onChanged: (v) => setState(() => s.updateSubStyle(bottomPadding: v)),
+              ),
+              trailing: Text('${s.subBottomPadding.toInt()} dp', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            ),
+            const Divider(color: AppColors.border),
+            ListTile(
+              title: const Text('حجم خط الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: DropdownButton<double>(
+                dropdownColor: AppColors.surface,
+                value: s.subFontSize,
+                items: const [
+                  DropdownMenuItem(value: 14.0, child: Text('صغير', style: TextStyle(color: Colors.white))),
+                  DropdownMenuItem(value: 18.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
+                  DropdownMenuItem(value: 24.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
+                ],
+                onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
+              ),
+            ),
+            const Divider(color: AppColors.border),
+            ListTile(
+              title: const Text('لون الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
+                  _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
+                  _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.border),
+            SwitchListTile(
+              title: const Text('ظل حواف الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
+              value: s.subHasShadow,
+              activeColor: AppColors.primary,
+              onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
+            ),
+            const SizedBox(height: 30),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.border)),
+              onPressed: () => setState(() => s.resetSubtitles()),
+              child: const Text('إعادة ضبط الترجمة الافتراضية', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
+    return GestureDetector(
+      onTap: tap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
 // شاشة الأقسام والتصنيفات
 // =========================================================================
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
 
   final List<Map<String, dynamic>> _allCategories = const [
-    {'key': 'horror', 'ar': 'رعب وتشويق', 'icon': Icons.nights_stay_rounded},
-    {'key': 'action', 'ar': 'أكشن وحركة', 'icon': Icons.flash_on_rounded},
-    {'key': 'animation', 'ar': 'أنمي ورسوم متحركة', 'icon': Icons.animation_rounded},
-    {'key': 'comedy', 'ar': 'كوميديا وضحك', 'icon': Icons.sentiment_very_satisfied_rounded},
-    {'key': 'sci-fi', 'ar': 'خيال علمي وفضاء', 'icon': Icons.rocket_launch_rounded},
-    {'key': 'drama', 'ar': 'دراما وقصص واقعية', 'icon': Icons.theater_comedy_rounded},
-    {'key': 'romance', 'ar': 'رومانسية وحب', 'icon': Icons.favorite_rounded},
-    {'key': 'crime', 'ar': 'جريمة وتحقيق', 'icon': Icons.local_police_rounded},
-    {'key': 'adventure', 'ar': 'مغامرات واستكشاف', 'icon': Icons.explore_rounded},
-    {'key': 'thriller', 'ar': 'إثارة وغموض', 'icon': Icons.psychology_rounded},
+    {'key': 'horror', 'ar': 'رعب وتشويق', 'icon': CupertinoIcons.flame_fill},
+    {'key': 'action', 'ar': 'أكشن وحركة', 'icon': CupertinoIcons.bolt_fill},
+    {'key': 'animation', 'ar': 'أنمي ورسوم متحركة', 'icon': CupertinoIcons.sparkles},
+    {'key': 'comedy', 'ar': 'كوميديا وضحك', 'icon': CupertinoIcons.smiley_fill},
+    {'key': 'sci-fi', 'ar': 'خيال علمي وفضاء', 'icon': CupertinoIcons.rocket_fill},
+    {'key': 'drama', 'ar': 'دراما وقصص واقعية', 'icon': CupertinoIcons.film_fill},
+    {'key': 'romance', 'ar': 'رومانسية وحب', 'icon': CupertinoIcons.heart_fill},
+    {'key': 'crime', 'ar': 'جريمة وتحقيق', 'icon': CupertinoIcons.shield_fill},
+    {'key': 'adventure', 'ar': 'مغامرات واستكشاف', 'icon': CupertinoIcons.compass_fill},
+    {'key': 'thriller', 'ar': 'إثارة وغموض', 'icon': CupertinoIcons.eye_fill},
   ];
 
   @override
@@ -2378,7 +2871,7 @@ class CategoriesScreen extends StatelessWidget {
             child: ListTile(
               leading: Icon(cat['icon'], color: AppColors.primary),
               title: Text(cat['ar'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 14),
+              trailing: const Icon(CupertinoIcons.chevron_forward, color: AppColors.textMuted, size: 14),
               onTap: () {
                 Navigator.push(
                   context,
@@ -2393,6 +2886,9 @@ class CategoriesScreen extends StatelessWidget {
   }
 }
 
+// =========================================================================
+// شاشة عرض القسم الكامل
+// =========================================================================
 class FullCategoryView extends StatefulWidget {
   final String title;
   final bool isSeriesOnly;
@@ -2508,7 +3004,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
 }
 
 // =========================================================================
-// شاشة الحساب والمكتبة المتكاملة
+// شاشة الحساب والمكتبة
 // =========================================================================
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -2651,7 +3147,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         actions: [
           IconButton(
             tooltip: 'تفريغ الكاش',
-            icon: const Icon(Icons.cleaning_services_rounded, color: Colors.white70),
+            icon: const Icon(CupertinoIcons.trash, color: Colors.white70),
             onPressed: _cleanCache,
           ),
         ],
@@ -2695,7 +3191,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text('${d.speedKbs.toStringAsFixed(1)} KB/s', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                              IconButton(icon: const Icon(Icons.close, color: Colors.white54, size: 18), onPressed: () => DownloadManager.instance.cancelDownload(d.id)),
+                              IconButton(icon: const Icon(CupertinoIcons.xmark_circle, color: Colors.white54, size: 18), onPressed: () => DownloadManager.instance.cancelDownload(d.id)),
                             ],
                           ),
                         ],
@@ -2705,10 +3201,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: const Icon(Icons.download_done_rounded, color: AppColors.primary),
+                        leading: const Icon(CupertinoIcons.check_mark_circled_solid, color: AppColors.primary),
                         title: Text(it['title'] ?? '', style: const TextStyle(color: Colors.white)),
                         subtitle: Text(it['size'] ?? '', style: const TextStyle(color: Colors.white54)),
-                        trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.white38), onPressed: () async {
+                        trailing: IconButton(icon: const Icon(CupertinoIcons.delete, color: Colors.white38), onPressed: () async {
                           await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
                           _loadData();
                         }),
@@ -2748,7 +3244,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 ),
                 child: Column(
                   children: [
-                    const Icon(Icons.analytics_rounded, color: AppColors.primary, size: 40),
+                    const Icon(CupertinoIcons.chart_bar_alt_fill, color: AppColors.primary, size: 40),
                     const SizedBox(height: 10),
                     Text(isAr ? 'إحصائيات الملف: ${s.activeProfile}' : 'Stats for: ${s.activeProfile}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     const Divider(color: AppColors.border, height: 24),
@@ -2783,7 +3279,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.card)),
                 child: Row(
                   children: [
-                    const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(Icons.person, color: Colors.white)),
+                    const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(CupertinoIcons.person_fill, color: Colors.white)),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -2796,7 +3292,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     ),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                      onPressed: s.userName == null ? _showAuthDialog : () => s.logout(),
+                      onPressed: s.userName == null ? _showAuthDialog : () => setState(() => s.logout()),
                       child: Text(s.userName == null ? (isAr ? 'تسجيل' : 'Login') : (isAr ? 'خروج' : 'Logout'), style: const TextStyle(fontSize: 11)),
                     ),
                   ],
@@ -2814,12 +3310,14 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     selected: s.activeProfile == p,
                     selectedColor: AppColors.primary,
                     onSelected: (_) {
-                      s.switchProfile(p);
-                      _loadData();
+                      setState(() {
+                        s.switchProfile(p);
+                        _loadData();
+                      });
                     },
                   )),
                   ActionChip(
-                    avatar: const Icon(Icons.add, size: 16),
+                    avatar: const Icon(CupertinoIcons.plus, size: 16),
                     label: const Text('إضافة بروفايل'),
                     onPressed: _showAddProfileDialog,
                   ),
@@ -2830,19 +3328,19 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               SwitchListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                secondary: const Icon(Icons.auto_awesome, color: AppColors.primary),
+                secondary: const Icon(CupertinoIcons.sparkles, color: AppColors.primary),
                 title: const Text('التنزيل الذكي للحلقات', style: TextStyle(color: Colors.white, fontSize: 13)),
                 subtitle: const Text('تنزيل الحلقة التالية ومسح المنتهية تلقائياً', style: TextStyle(color: Colors.white54, fontSize: 11)),
                 value: s.autoSmartDownload,
                 activeColor: AppColors.primary,
-                onChanged: (v) => s.updateSmartDownload(v),
+                onChanged: (v) => setState(() => s.updateSmartDownload(v)),
               ),
               const SizedBox(height: 12),
 
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                leading: const Icon(CupertinoIcons.globe, color: AppColors.primary),
                 title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 trailing: DropdownButton<String>(
                   dropdownColor: AppColors.surface,
@@ -2851,7 +3349,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: Colors.white))),
                     DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: Colors.white))),
                   ],
-                  onChanged: (v) => s.updateLanguage(v!),
+                  onChanged: (v) {
+                    if (v != null) setState(() => s.updateLanguage(v));
+                  },
                 ),
               ),
               const SizedBox(height: 12),
@@ -2859,7 +3359,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                leading: const Icon(Icons.font_download_rounded, color: AppColors.primary),
+                leading: const Icon(CupertinoIcons.textformat, color: AppColors.primary),
                 title: Text(isAr ? 'خط التطبيق' : 'App Font', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 trailing: DropdownButton<String>(
                   dropdownColor: AppColors.surface,
@@ -2870,7 +3370,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: Colors.white))),
                     DropdownMenuItem(value: 'Changa', child: Text('Changa', style: TextStyle(color: Colors.white))),
                   ],
-                  onChanged: (v) => s.updateFont(v!),
+                  onChanged: (v) {
+                    if (v != null) setState(() => s.updateFont(v));
+                  },
                 ),
               ),
               const SizedBox(height: 16),
@@ -2881,9 +3383,33 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.card)),
                 child: Column(
                   children: [
-                    RadioListTile<int>(title: const Text('الافتراضي (الكل)', style: TextStyle(color: Colors.white)), value: 0, groupValue: s.appFilterMode, activeColor: AppColors.primary, onChanged: (v) => s.updateFilterMode(v!)),
-                    RadioListTile<int>(title: const Text('الوضع العائلي', style: TextStyle(color: Colors.white)), value: 1, groupValue: s.appFilterMode, activeColor: AppColors.primary, onChanged: (v) => s.updateFilterMode(v!)),
-                    RadioListTile<int>(title: const Text('وضع الأطفال', style: TextStyle(color: Colors.white)), value: 2, groupValue: s.appFilterMode, activeColor: AppColors.primary, onChanged: (v) => s.updateFilterMode(v!)),
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'الافتراضي (الكل)' : 'Default', style: const TextStyle(color: Colors.white)),
+                      value: 0,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
+                    ),
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: const TextStyle(color: Colors.white)),
+                      value: 1,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
+                    ),
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: const TextStyle(color: Colors.white)),
+                      value: 2,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
+                    ),
                   ],
                 ),
               ),
