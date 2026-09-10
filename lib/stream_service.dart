@@ -46,24 +46,31 @@ class StreamService {
     return [];
   }
 
-  /// جلب عميق ومكثف للتصنيفات لضمان جلب عشرات الأعمال لأقسام الرعب وغيرها
   static Future<List<dynamic>> fetchByCategoryName(
     String categoryEn, {
     int page = 0,
     int level = 0,
   }) async {
     try {
-      final start = page * 4;
+      final start = page * 5;
       final requests = <Future<List<dynamic>>>[];
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < 5; i++) {
         requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40, level: level));
         requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40, level: level));
       }
 
       final results = await Future.wait(requests);
       final List<dynamic> allItems = [];
+      final Set<String> ids = {};
+
       for (var r in results) {
-        allItems.addAll(r);
+        for (var it in r) {
+          final id = (it['nb'] ?? it['id'])?.toString();
+          if (id != null && !ids.contains(id)) {
+            ids.add(id);
+            allItems.add(it);
+          }
+        }
       }
 
       final target = categoryEn.toLowerCase().trim();
@@ -82,14 +89,10 @@ class StreamService {
           final ar = (item['ar_title'] ?? '').toString().toLowerCase();
           final desc = ((item['ar_content'] ?? '') + (item['en_content'] ?? '')).toString().toLowerCase();
           if (en.contains('horror') || ar.contains('رعب') || en.contains('ghost') || en.contains('dead') ||
-              en.contains('evil') || desc.contains('رعب') || desc.contains('خارق') || desc.contains('أشباح')) {
+              en.contains('evil') || en.contains('blood') || desc.contains('رعب') || desc.contains('خارق') ||
+              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('شياطين')) {
             return true;
           }
-        }
-        if (target == 'animation' || target == 'anime') {
-          final enTitle = (item['en_title'] ?? '').toString().toLowerCase();
-          final arTitle = (item['ar_title'] ?? '').toString().toLowerCase();
-          if (enTitle.contains('anime') || arTitle.contains('أنمي') || arTitle.contains('انمي')) return true;
         }
         return false;
       }).toList();
@@ -98,17 +101,32 @@ class StreamService {
   }
 
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
+    if (query.trim().isEmpty) return [];
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$level';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        if (data is List) return data;
-        if (data is Map) return data['articles'] ?? data['info'] ?? [];
+        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? []);
+        return list;
       }
     } catch (_) {}
+
+    // خطة بديلة للبحث في التغذية المباشرة عند تعثر استعلام السيرفر
+    try {
+      final qLower = query.toLowerCase().trim();
+      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 60, level: level);
+      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 60, level: level);
+      final all = [...feed, ...feedSeries];
+      return all.where((it) {
+        final ar = (it['ar_title'] ?? '').toString().toLowerCase();
+        final en = (it['en_title'] ?? '').toString().toLowerCase();
+        return ar.contains(qLower) || en.contains(qLower);
+      }).toList();
+    } catch (_) {}
+
     return [];
   }
 
