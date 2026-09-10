@@ -8,11 +8,16 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب دفعة من التغذية العامة
-  static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
+  /// جلب دفعة من الأعمال العامة مع تطبيق معامل الفلترة الحقيقي
+  static Future<List<dynamic>> fetchFeed({
+    required bool isSeries,
+    int page = 0,
+    int perPage = 30,
+    int level = 0,
+  }) async {
     try {
       final vKind = isSeries ? 2 : 1;
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/0/videoKind/$vKind/sortParam/desc/pageNumber/$page';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/$vKind/sortParam/desc/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -21,20 +26,42 @@ class StreamService {
         for (var item in list) {
           item['is_series_fixed'] = isSeries;
         }
+
+        // فلترة إضافية في جهة العميل لضمان نقاء المحتوى
+        if (level == 2) {
+          // وضع الأطفال: الرسوم المتحركة والأعمال العائلية فقط
+          return list.where((item) {
+            final title = ((item['ar_title'] ?? '') + (item['en_title'] ?? '')).toString().toLowerCase();
+            final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
+            return cats.contains('animation') || cats.contains('family') || cats.contains('رسوم') ||
+                   title.contains('moana') || title.contains('zenon') || title.contains('كرتون');
+          }).toList();
+        } else if (level == 1) {
+          // الوضع العائلي: استبعاد تصنيفات الرعب والمشاهد غير المناسبة
+          return list.where((item) {
+            final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
+            return !cats.contains('horror') && !cats.contains('رعب');
+          }).toList();
+        }
+
         return list;
       }
     } catch (_) {}
     return [];
   }
 
-  /// جلب عميق ومكثف للتصنيفات لمنع نقص الأفلام
-  static Future<List<dynamic>> fetchByCategoryName(String categoryEn, {int page = 0}) async {
+  /// جلب عميق للتصنيفات
+  static Future<List<dynamic>> fetchByCategoryName(
+    String categoryEn, {
+    int page = 0,
+    int level = 0,
+  }) async {
     try {
       final start = page * 3;
       final requests = <Future<List<dynamic>>>[];
       for (int i = 0; i < 3; i++) {
-        requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40));
-        requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40));
+        requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40, level: level));
+        requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40, level: level));
       }
 
       final results = await Future.wait(requests);
@@ -71,10 +98,10 @@ class StreamService {
   }
 
   /// البحث
-  static Future<List<dynamic>> searchContent(String query) async {
+  static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/0';
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/30/video_title_search/$b64/itemsPerPage/30/pageNumber/0/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
 
       if (res.statusCode == 200) {
@@ -86,7 +113,7 @@ class StreamService {
     return [];
   }
 
-  /// استخراج روابط الفيديو
+  /// استخراج مصادر الفيديو
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -143,7 +170,7 @@ class StreamService {
     return null;
   }
 
-  /// تفاصيل الفيديو والترجمة والإعلان
+  /// معلومات وتفاصيل العمل والترجمة والإعلان
   static Future<Map<String, dynamic>> getVideoExtendedInfo(String videoId) async {
     try {
       final res = await http.get(
