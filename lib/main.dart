@@ -47,16 +47,14 @@ class LocalStorageService {
     await setList(key, list);
   }
 
-  // حفظ واسترجاع آخر دقيقة تمت مشاهدتها
   static Future<void> savePlaybackPosition(String id, int positionMs, int durationMs, String title, String poster) async {
     if (durationMs <= 0) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('pos_$id', positionMs);
 
-    // إضافة العمل لشريط متابعة المشاهدة
     final resumeList = await getList('resume_playback_list');
     resumeList.removeWhere((x) => x['id'] == id);
-    if (positionMs < (durationMs - 15000)) { // لا نحفظ إذا وصل لنهاية الفيديو
+    if (positionMs < (durationMs - 15000)) {
       resumeList.insert(0, {
         'id': id,
         'position': positionMs,
@@ -90,7 +88,6 @@ class LocalStorageService {
     }
   }
 
-  // قائمة المشاهدة لاحقاً
   static Future<bool> isWatchlist(String id) async {
     final list = await getList('user_watchlist');
     return list.any((x) => (x['nb'] ?? x['id'])?.toString() == id);
@@ -375,9 +372,6 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 }
 
-// =========================================================================
-// الواجهة الرئيسية مع البانر السينمائي وشريط متابعة المشاهدة
-// =========================================================================
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
 
@@ -514,10 +508,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. البانر السينمائي العريض (Hero Carousel)
               if (_heroItems.isNotEmpty) _buildHeroBanner(),
-
-              // 2. شريط متابعة المشاهدة (Continue Watching)
               if (_resumeList.isNotEmpty) _buildResumeSection(),
 
               const Padding(
@@ -531,7 +522,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 ),
               ),
 
-              // 3. شبكة الأعمال الزجاجية
               _buildDynamicGrid(),
 
               if (_isLoading && _items.isNotEmpty)
@@ -615,7 +605,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               final progress = (item['position'] / item['duration']).clamp(0.0, 1.0);
               return GestureDetector(
                 onTap: () {
-                  // تشغيل واستئناف مباشر من نفس الثانية
                   StreamService.getVideoSource(item['id']).then((source) {
                     if (source != null && mounted) {
                       Navigator.push(
@@ -639,7 +628,11 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     color: const Color(0xFF101726),
                     borderRadius: BorderRadius.circular(12),
                     image: item['poster'].toString().isNotEmpty
-                        ? DecorationImage(image: NetworkImage(item['poster']), fit: BoxFit.cover, colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.4), BlendMode.darken))
+                        ? DecorationImage(
+                            image: NetworkImage(item['poster']),
+                            fit: BoxFit.cover,
+                            colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.4), BlendMode.darken),
+                          )
                         : null,
                   ),
                   child: Stack(
@@ -1232,9 +1225,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// مشغل الفيديو المتطور: ملء الشاشة التلقائي، استئناف التشغيل، إيماءات اللمس والقفل
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -1272,7 +1262,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _hideTimer;
 
   String _activeQuality = '240p';
-  BoxFit _videoFit = BoxFit.cover; // ملء الشاشة بالكامل افتراضياً
+  BoxFit _videoFit = BoxFit.cover;
 
   List<Subtitle> _subtitles = [];
   String _currentSubText = '';
@@ -1282,7 +1272,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late String _activeHeader;
   Set<String> _watchedSet = {};
 
-  // حالة القفل وإيماءات اللمس
   bool _isLocked = false;
   double _volumeLevel = 0.5;
   double _brightnessLevel = 0.5;
@@ -1290,7 +1279,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _indicatorText = '';
   IconData _indicatorIcon = Icons.volume_up;
 
-  // الانتقال التلقائي للحلقة التالية
   bool _showAutoNext = false;
   int _autoNextCountdown = 5;
   Timer? _autoNextTimer;
@@ -1352,13 +1340,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: StreamService.stealthHeaders);
     await _controller!.initialize();
 
-    // استرجاع الدقيقة التي توقف عندها المشاهد
     final savedMs = await LocalStorageService.getPlaybackPosition(_activeMediaId);
     if (savedMs > 0 && savedMs < _controller!.value.duration.inMilliseconds - 5000) {
       await _controller!.seekTo(Duration(milliseconds: savedMs));
     }
 
-    // تشغيل تلقائي فوري بدون الحاجة للضغط
     _controller!.play();
 
     _controller!.addListener(() {
@@ -1366,12 +1352,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final pos = _controller!.value.position;
         final dur = _controller!.value.duration;
 
-        // حفظ مستمر للدقيقة المحددة
         if (pos.inSeconds % 5 == 0) {
           LocalStorageService.savePlaybackPosition(_activeMediaId, pos.inMilliseconds, dur.inMilliseconds, widget.title, widget.poster);
         }
 
-        // إظهار الترجمة
         if (_subtitles.isNotEmpty) {
           final sub = _subtitles.firstWhere((s) => pos >= s.start && pos <= s.end, orElse: () => Subtitle(index: -1, start: Duration.zero, end: Duration.zero, text: ''));
           if (sub.text != _currentSubText && mounted) {
@@ -1379,10 +1363,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
           }
         }
 
-        // فحص الانتقال التلقائي للحلقة التالية في آخر 30 ثانية
         if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
           final remaining = dur.inSeconds - pos.inSeconds;
-          if (remaining in Iterable.generate(31, (i) => i) && !_showAutoNext) {
+          if (remaining <= 30 && remaining > 0 && !_showAutoNext) {
             _triggerAutoNext();
           }
         }
@@ -1477,7 +1460,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.dispose();
   }
 
-  // معالجة إيماءات السحب للصوت والسطوع
   void _handleVerticalDrag(DragUpdateDetails details, BoxConstraints constraints) {
     if (_isLocked) return;
     final isRightSide = details.globalPosition.dx > constraints.maxWidth / 2;
@@ -1661,7 +1643,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // 1. الفيديو بالحجم الكامل للشاشة بدون انكماش
                   Center(
                     child: (_isReady && _controller != null)
                         ? SizedBox.expand(
@@ -1677,7 +1658,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         : const CircularProgressIndicator(color: Color(0xFFE50914)),
                   ),
 
-                  // 2. مؤشر رفع السطوع ومستوى الصوت بالإيماءات
                   if (_showIndicator)
                     Center(
                       child: Container(
@@ -1694,7 +1674,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // 3. النص المترجم
                   if (_currentSubText.isNotEmpty)
                     Positioned(
                       bottom: 60, left: 20, right: 20,
@@ -1712,7 +1691,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // 4. بانر الانتقال التلقائي للحلقة التالية مع العداد
                   if (_showAutoNext && widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length)
                     Positioned(
                       bottom: 85, right: 20,
@@ -1733,7 +1711,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // 5. زر القفل الدائم
                   if (_showControls)
                     Positioned(
                       left: 16, top: constraints.maxHeight / 2 - 20,
@@ -1743,7 +1720,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // 6. أدوات التحكم
                   if (_showControls && !_isLocked) ...[
                     Positioned(
                       top: 10, left: 14, right: 14,
@@ -2109,7 +2085,6 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
       body: TabBarView(
         controller: _tabCtrl,
         children: [
-          // 1. التنزيلات
           _completed.isEmpty
               ? const Center(child: Text('لا توجد ملفات مكتملة حالياً', style: TextStyle(color: Colors.white54)))
               : ListView.builder(
@@ -2123,8 +2098,6 @@ class _DownloadsScreenState extends State<DownloadsScreen> with SingleTickerProv
                     );
                   },
                 ),
-
-          // 2. قائمة المشاهدة لاحقاً
           _watchlist.isEmpty
               ? const Center(child: Text('لم تقم بحفظ أي عمل في قائمتك بعد', style: TextStyle(color: Colors.white54)))
               : GridView.builder(
