@@ -262,26 +262,24 @@ class MainHomeScreen extends StatefulWidget {
 class _MainHomeScreenState extends State<MainHomeScreen> {
   final ScrollController _scrollController = ScrollController();
 
-  // التصنيفات مع تصحيح المعرفات الحقيقية
-  final List<Map<String, dynamic>> _officialCategories = [
-    {'id': 0, 'ar': 'الرئيسية', 'kind': 1},
-    {'id': 999, 'ar': 'أنمي ياباني', 'kind': 2}, // معرف ذكي مخصص للأنمي
-    {'id': 57, 'ar': 'رسوم متحركة', 'kind': 1},
-    {'id': 84, 'ar': 'أكشن', 'kind': 1},
-    {'id': 62, 'ar': 'دراما', 'kind': 1},
-    {'id': 59, 'ar': 'كوميديا', 'kind': 1},
-    {'id': 70, 'ar': 'رعب', 'kind': 1},
-    {'id': 56, 'ar': 'مغامرة', 'kind': 1},
-    {'id': 60, 'ar': 'جريمة', 'kind': 1},
-    {'id': 78, 'ar': 'خيال علمي', 'kind': 1},
-    {'id': 77, 'ar': 'رومانسي', 'kind': 1},
-    {'id': 80, 'ar': 'إثارة', 'kind': 1},
-    {'id': 89, 'ar': 'حرب', 'kind': 1},
+  // مصفوفة التصنيفات بأسماء الفئات المطابقة تماماً لما اكتشفناه في كائنات السيرفر
+  final List<Map<String, String>> _categories = [
+    {'key': 'all', 'ar': 'الرئيسية'},
+    {'key': 'animation', 'ar': 'أنمي ورسوم'},
+    {'key': 'action', 'ar': 'أكشن'},
+    {'key': 'comedy', 'ar': 'كوميديا'},
+    {'key': 'drama', 'ar': 'دراما'},
+    {'key': 'romance', 'ar': 'رومانسي'},
+    {'key': 'horror', 'ar': 'رعب'},
+    {'key': 'crime', 'ar': 'جريمة'},
+    {'key': 'adventure', 'ar': 'مغامرة'},
+    {'key': 'thriller', 'ar': 'إثارة'},
+    {'key': 'sci-fi', 'ar': 'خيال علمي'},
   ];
 
-  Map<String, dynamic> _currentCategory = {'id': 0, 'ar': 'الرئيسية', 'kind': 1};
+  Map<String, String> _selectedCat = {'key': 'all', 'ar': 'الرئيسية'};
   List<dynamic> _items = [];
-  final Set<String> _loadedIds = {};
+  final Set<String> _uniqueIds = {};
 
   int _page = 0;
   bool _isLoading = false;
@@ -290,24 +288,24 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCategoryData(reset: true);
+    _loadData(reset: true);
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 350) {
         if (!_isLoading && _hasMore) {
-          _loadCategoryData(reset: false);
+          _loadData(reset: false);
         }
       }
     });
   }
 
-  Future<void> _loadCategoryData({bool reset = false}) async {
+  Future<void> _loadData({bool reset = false}) async {
     if (reset) {
       _page = 0;
       _hasMore = true;
-      _loadedIds.clear();
+      _uniqueIds.clear();
       setState(() {
-        _items.clear(); // تفريغ فوري حتى تفرغ الواجهة من الأعمال السابقة
+        _items.clear();
         _isLoading = true;
       });
     } else {
@@ -315,36 +313,32 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
 
     try {
-      List<dynamic> fetched = [];
+      List<dynamic> fresh = [];
 
-      if (_currentCategory['id'] == 0) {
+      if (_selectedCat['key'] == 'all') {
         final res = await Future.wait([
-          StreamService.fetchFeed(isSeries: false, page: _page, perPage: 12),
-          StreamService.fetchFeed(isSeries: true, page: _page, perPage: 12),
+          StreamService.fetchFeed(isSeries: false, page: _page, perPage: 14),
+          StreamService.fetchFeed(isSeries: true, page: _page, perPage: 14),
         ]);
-        fetched = [...res[0], ...res[1]]..shuffle();
+        fresh = [...res[0], ...res[1]]..shuffle();
       } else {
-        fetched = await StreamService.fetchByCategory(
-          _currentCategory['id'],
-          page: _page,
-          videoKind: _currentCategory['kind'],
-        );
+        fresh = await StreamService.fetchByCategoryName(_selectedCat['key']!, page: _page);
       }
 
-      final List<dynamic> freshList = [];
-      for (var item in fetched) {
-        final id = (item['nb'] ?? item['id'])?.toString();
-        if (id != null && !_loadedIds.contains(id)) {
-          _loadedIds.add(id);
-          freshList.add(item);
+      final List<dynamic> deduplicated = [];
+      for (var it in fresh) {
+        final id = (it['nb'] ?? it['id'])?.toString();
+        if (id != null && !_uniqueIds.contains(id)) {
+          _uniqueIds.add(id);
+          deduplicated.add(it);
         }
       }
 
       if (mounted) {
         setState(() {
-          _items.addAll(freshList);
+          _items.addAll(deduplicated);
           _isLoading = false;
-          if (freshList.isEmpty) _hasMore = false;
+          if (deduplicated.isEmpty && _selectedCat['key'] != 'all') _hasMore = false;
           _page++;
         });
       }
@@ -353,10 +347,10 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
-  void _switchCategory(Map<String, dynamic> cat) {
-    if (_currentCategory['id'] == cat['id']) return;
-    setState(() => _currentCategory = cat);
-    _loadCategoryData(reset: true);
+  void _onCategoryTapped(Map<String, String> cat) {
+    if (_selectedCat['key'] == cat['key']) return;
+    setState(() => _selectedCat = cat);
+    _loadData(reset: true);
   }
 
   void _openDetails(Map<String, dynamic> item) {
@@ -387,7 +381,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                _currentCategory['id'] == 0 ? 'سينما بلس' : _currentCategory['ar'],
+                _selectedCat['key'] == 'all' ? 'سينما بلس' : _selectedCat['ar']!,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
               ),
             ],
@@ -405,22 +399,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         ),
         body: Column(
           children: [
+            // شريط الفئات الأفقي
             SizedBox(
-              height: 46,
+              height: 48,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                itemCount: _officialCategories.length,
+                itemCount: _categories.length,
                 itemBuilder: (ctx, i) {
-                  final cat = _officialCategories[i];
-                  final isSelected = cat['id'] == _currentCategory['id'];
+                  final cat = _categories[i];
+                  final isSelected = cat['key'] == _selectedCat['key'];
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                     child: ChoiceChip(
                       selectedColor: const Color(0xFFE50914),
                       backgroundColor: const Color(0xFF131B2A),
                       label: Text(
-                        cat['ar'],
+                        cat['ar']!,
                         style: TextStyle(
                           color: isSelected ? Colors.white : Colors.white70,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -428,19 +423,20 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                         ),
                       ),
                       selected: isSelected,
-                      onSelected: (_) => _switchCategory(cat),
+                      onSelected: (_) => _onCategoryTapped(cat),
                     ),
                   );
                 },
               ),
             ),
 
+            // شبكة عرض الأعمال المتغيرة فوراً
             Expanded(
               child: _items.isEmpty && _isLoading
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)))
                   : RefreshIndicator(
                       color: const Color(0xFFE50914),
-                      onRefresh: () async => _loadCategoryData(reset: true),
+                      onRefresh: () async => _loadData(reset: true),
                       child: GridView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(12),
@@ -537,7 +533,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         ? (episodeData['nb'] ?? episodeData['id']).toString()
         : (widget.media['nb'] ?? widget.media['id']).toString();
 
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
+    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
     final source = await StreamService.getVideoSource(targetId);
     final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
 
@@ -562,7 +558,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
+    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
     final poster = StreamService.extractPoster(widget.media);
     final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? widget.media['content'] ?? '';
 
