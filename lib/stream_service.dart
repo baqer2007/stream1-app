@@ -8,7 +8,6 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب دفعة من الأعمال العامة مع تطبيق معامل الفلترة الحقيقي
   static Future<List<dynamic>> fetchFeed({
     required bool isSeries,
     int page = 0,
@@ -27,9 +26,7 @@ class StreamService {
           item['is_series_fixed'] = isSeries;
         }
 
-        // فلترة إضافية في جهة العميل لضمان نقاء المحتوى
         if (level == 2) {
-          // وضع الأطفال: الرسوم المتحركة والأعمال العائلية فقط
           return list.where((item) {
             final title = ((item['ar_title'] ?? '') + (item['en_title'] ?? '')).toString().toLowerCase();
             final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
@@ -37,7 +34,6 @@ class StreamService {
                    title.contains('moana') || title.contains('zenon') || title.contains('كرتون');
           }).toList();
         } else if (level == 1) {
-          // الوضع العائلي: استبعاد تصنيفات الرعب والمشاهد غير المناسبة
           return list.where((item) {
             final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
             return !cats.contains('horror') && !cats.contains('رعب');
@@ -50,16 +46,16 @@ class StreamService {
     return [];
   }
 
-  /// جلب عميق للتصنيفات
+  /// جلب عميق ومكثف للتصنيفات لضمان جلب عشرات الأعمال لأقسام الرعب وغيرها
   static Future<List<dynamic>> fetchByCategoryName(
     String categoryEn, {
     int page = 0,
     int level = 0,
   }) async {
     try {
-      final start = page * 3;
+      final start = page * 4;
       final requests = <Future<List<dynamic>>>[];
-      for (int i = 0; i < 3; i++) {
+      for (int i = 0; i < 4; i++) {
         requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40, level: level));
         requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40, level: level));
       }
@@ -84,7 +80,11 @@ class StreamService {
         if (target == 'horror' || target == 'رعب') {
           final en = (item['en_title'] ?? '').toString().toLowerCase();
           final ar = (item['ar_title'] ?? '').toString().toLowerCase();
-          if (en.contains('horror') || ar.contains('رعب')) return true;
+          final desc = ((item['ar_content'] ?? '') + (item['en_content'] ?? '')).toString().toLowerCase();
+          if (en.contains('horror') || ar.contains('رعب') || en.contains('ghost') || en.contains('dead') ||
+              en.contains('evil') || desc.contains('رعب') || desc.contains('خارق') || desc.contains('أشباح')) {
+            return true;
+          }
         }
         if (target == 'animation' || target == 'anime') {
           final enTitle = (item['en_title'] ?? '').toString().toLowerCase();
@@ -97,7 +97,6 @@ class StreamService {
     return [];
   }
 
-  /// البحث
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -113,7 +112,6 @@ class StreamService {
     return [];
   }
 
-  /// استخراج مصادر الفيديو
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -170,7 +168,6 @@ class StreamService {
     return null;
   }
 
-  /// معلومات وتفاصيل العمل والترجمة والإعلان
   static Future<Map<String, dynamic>> getVideoExtendedInfo(String videoId) async {
     try {
       final res = await http.get(
@@ -185,7 +182,6 @@ class StreamService {
     return {};
   }
 
-  /// الحلقات
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
@@ -206,7 +202,6 @@ class StreamService {
     return [];
   }
 
-  /// استخراج صورة عالية الدقة للبانر والبوسترات
   static String extractPoster(Map<String, dynamic> item, {bool highRes = false}) {
     if (highRes) {
       if (item['imgObjUrl'] != null && item['imgObjUrl'].toString().isNotEmpty) {
