@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class StreamService {
-  static Map<String, String> get stealthHeaders => {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+  static const Map<String, String> stealthHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Referer': 'https://cee.buzz/',
   };
 
+  /// جلب دفعة من الأعمال العامة (أفلام أو مسلسلات)
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -26,37 +27,41 @@ class StreamService {
     return [];
   }
 
-  /// مسار جلب التصنيفات الحقيقي مع الفحص المزدوج
-  static Future<List<dynamic>> fetchByCategory(int categoryId, {int page = 0, int? videoKind}) async {
+  /// جلب وتصفية الأعمال بحسب اسم التصنيف الفعلي المكتشف
+  static Future<List<dynamic>> fetchByCategoryName(String categoryEn, {int page = 0}) async {
     try {
-      final offset = page * 30;
-      
-      // إذا كان التصنيف هو الأنمي، نستخدم البحث المباشر لتوفير قائمة أنمي يابانية حقيقية ومضمونة 100%
-      if (categoryId == 999) {
-        final animeKeywords = ['انمي', 'Anime', 'Attack on Titan', 'One Piece', 'Jujutsu', 'Demon Slayer'];
-        final keyword = animeKeywords[page % animeKeywords.length];
-        return await searchContent(keyword);
-      }
+      // جلب دفعة أفلام ودفعة مسلسلات/أنمي بالتوازي لجمع محتوى التصنيف كاملاً
+      final results = await Future.wait([
+        fetchFeed(isSeries: false, page: page, perPage: 40),
+        fetchFeed(isSeries: true, page: page, perPage: 40),
+      ]);
 
-      final url = 'https://cee.buzz/api/android/videosByCategory?categoryId=$categoryId&orderby=desc&videoKind=${videoKind ?? 1}&offset=$offset&level=0';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+      final allItems = [...results[0], ...results[1]];
+      final target = categoryEn.toLowerCase().trim();
 
-      if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List list = [];
-        if (data is Map && data.containsKey('info') && data['info'] is List) {
-          list = data['info'];
-        } else if (data is List) {
-          list = data;
-        } else if (data is Map && data['articles'] is List) {
-          list = data['articles'];
+      return allItems.where((item) {
+        final cats = item['categories'];
+        if (cats is List) {
+          for (var c in cats) {
+            final en = (c['en_title'] ?? '').toString().toLowerCase();
+            final ar = (c['ar_title'] ?? '').toString().toLowerCase();
+            if (en.contains(target) || ar.contains(target)) return true;
+          }
         }
-        return list;
-      }
+
+        // دعم خاص للأنمي والرسوم المتحركة
+        if (target == 'animation' || target == 'anime') {
+          final enTitle = (item['en_title'] ?? '').toString().toLowerCase();
+          final arTitle = (item['ar_title'] ?? '').toString().toLowerCase();
+          if (enTitle.contains('anime') || arTitle.contains('أنمي') || arTitle.contains('انمي')) return true;
+        }
+        return false;
+      }).toList();
     } catch (_) {}
     return [];
   }
 
+  /// البحث المباشر
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -72,6 +77,7 @@ class StreamService {
     return [];
   }
 
+  /// روابط الفيديو
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -128,6 +134,7 @@ class StreamService {
     return null;
   }
 
+  /// استخراج الترجمة
   static Future<String> getArabicSubtitleUrl(String videoId) async {
     try {
       final res = await http.get(
@@ -143,6 +150,7 @@ class StreamService {
     return '';
   }
 
+  /// حلقات المسلسلات والأنمي
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
@@ -171,7 +179,8 @@ class StreamService {
       return item['imgThumbObjUrl'].toString();
     }
     if (item['img'] != null && item['img'].toString().isNotEmpty) {
-      return 'https://cnth2.cee.buzz/vascin-poster-images/${item['img']}';
+      final img = item['img'].toString();
+      return img.startsWith('http') ? img : 'https://cnth2.cee.buzz/vascin-poster-images/$img';
     }
     return '';
   }
