@@ -27,18 +27,22 @@ class StreamService {
     return [];
   }
 
-  /// جلب عميق للتصنيفات يجمع عدة صفحات لضمان وفرة الأعمال
+  /// جلب عميق ومكثف للتصنيفات لمنع نقص الأفلام
   static Future<List<dynamic>> fetchByCategoryName(String categoryEn, {int page = 0}) async {
     try {
-      final startPage = page * 2;
-      final results = await Future.wait([
-        fetchFeed(isSeries: false, page: startPage, perPage: 40),
-        fetchFeed(isSeries: true, page: startPage, perPage: 40),
-        fetchFeed(isSeries: false, page: startPage + 1, perPage: 40),
-        fetchFeed(isSeries: true, page: startPage + 1, perPage: 40),
-      ]);
+      final start = page * 3;
+      final requests = <Future<List<dynamic>>>[];
+      for (int i = 0; i < 3; i++) {
+        requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40));
+        requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40));
+      }
 
-      final allItems = [...results[0], ...results[1], ...results[2], ...results[3]];
+      final results = await Future.wait(requests);
+      final List<dynamic> allItems = [];
+      for (var r in results) {
+        allItems.addAll(r);
+      }
+
       final target = categoryEn.toLowerCase().trim();
 
       return allItems.where((item) {
@@ -49,6 +53,11 @@ class StreamService {
             final ar = (c['ar_title'] ?? '').toString().toLowerCase();
             if (en.contains(target) || ar.contains(target)) return true;
           }
+        }
+        if (target == 'horror' || target == 'رعب') {
+          final en = (item['en_title'] ?? '').toString().toLowerCase();
+          final ar = (item['ar_title'] ?? '').toString().toLowerCase();
+          if (en.contains('horror') || ar.contains('رعب')) return true;
         }
         if (target == 'animation' || target == 'anime') {
           final enTitle = (item['en_title'] ?? '').toString().toLowerCase();
@@ -134,8 +143,8 @@ class StreamService {
     return null;
   }
 
-  /// استخراج الترجمة
-  static Future<String> getArabicSubtitleUrl(String videoId) async {
+  /// تفاصيل الفيديو والترجمة والإعلان
+  static Future<Map<String, dynamic>> getVideoExtendedInfo(String videoId) async {
     try {
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
@@ -143,11 +152,10 @@ class StreamService {
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        return data['arTranslationFilePath']?.toString() ?? data['arTranslationFile']?.toString() ?? '';
+        return jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
       }
     } catch (_) {}
-    return '';
+    return {};
   }
 
   /// الحلقات
@@ -171,7 +179,13 @@ class StreamService {
     return [];
   }
 
-  static String extractPoster(Map<String, dynamic> item) {
+  /// استخراج صورة عالية الدقة للبانر والبوسترات
+  static String extractPoster(Map<String, dynamic> item, {bool highRes = false}) {
+    if (highRes) {
+      if (item['imgObjUrl'] != null && item['imgObjUrl'].toString().isNotEmpty) {
+        return item['imgObjUrl'].toString();
+      }
+    }
     if (item['imgMediumThumbObjUrl'] != null && item['imgMediumThumbObjUrl'].toString().isNotEmpty) {
       return item['imgMediumThumbObjUrl'].toString();
     }
