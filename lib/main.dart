@@ -580,6 +580,28 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 }
 
+class CategoriesScreen extends StatelessWidget {
+  const CategoriesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: Text('Categories Screen')),
+    );
+  }
+}
+
+class LibraryScreen extends StatelessWidget {
+  const LibraryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: Text('Library Screen')),
+    );
+  }
+}
+
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
 
