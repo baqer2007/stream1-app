@@ -8,7 +8,7 @@ class StreamService {
     'Referer': 'https://cee.buzz/',
   };
 
-  /// جلب دفعة من الأعمال العامة (أفلام أو مسلسلات)
+  /// جلب دفعة من التغذية العامة
   static Future<List<dynamic>> fetchFeed({required bool isSeries, int page = 0, int perPage = 30}) async {
     try {
       final vKind = isSeries ? 2 : 1;
@@ -27,16 +27,18 @@ class StreamService {
     return [];
   }
 
-  /// جلب وتصفية الأعمال بحسب اسم التصنيف الفعلي المكتشف
+  /// جلب عميق للتصنيفات يجمع عدة صفحات لضمان وفرة الأعمال
   static Future<List<dynamic>> fetchByCategoryName(String categoryEn, {int page = 0}) async {
     try {
-      // جلب دفعة أفلام ودفعة مسلسلات/أنمي بالتوازي لجمع محتوى التصنيف كاملاً
+      final startPage = page * 2;
       final results = await Future.wait([
-        fetchFeed(isSeries: false, page: page, perPage: 40),
-        fetchFeed(isSeries: true, page: page, perPage: 40),
+        fetchFeed(isSeries: false, page: startPage, perPage: 40),
+        fetchFeed(isSeries: true, page: startPage, perPage: 40),
+        fetchFeed(isSeries: false, page: startPage + 1, perPage: 40),
+        fetchFeed(isSeries: true, page: startPage + 1, perPage: 40),
       ]);
 
-      final allItems = [...results[0], ...results[1]];
+      final allItems = [...results[0], ...results[1], ...results[2], ...results[3]];
       final target = categoryEn.toLowerCase().trim();
 
       return allItems.where((item) {
@@ -48,8 +50,6 @@ class StreamService {
             if (en.contains(target) || ar.contains(target)) return true;
           }
         }
-
-        // دعم خاص للأنمي والرسوم المتحركة
         if (target == 'animation' || target == 'anime') {
           final enTitle = (item['en_title'] ?? '').toString().toLowerCase();
           final arTitle = (item['ar_title'] ?? '').toString().toLowerCase();
@@ -61,7 +61,7 @@ class StreamService {
     return [];
   }
 
-  /// البحث المباشر
+  /// البحث
   static Future<List<dynamic>> searchContent(String query) async {
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
@@ -77,7 +77,7 @@ class StreamService {
     return [];
   }
 
-  /// روابط الفيديو
+  /// استخراج روابط الفيديو
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
@@ -150,7 +150,7 @@ class StreamService {
     return '';
   }
 
-  /// حلقات المسلسلات والأنمي
+  /// الحلقات
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
