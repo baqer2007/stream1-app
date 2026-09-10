@@ -9,7 +9,6 @@ import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'stream_service.dart';
 
@@ -1399,10 +1398,19 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _shareMedia() {
+  void _shareMedia() async {
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
     final id = widget.media['nb'] ?? widget.media['id'] ?? '';
-    Share.share('شاهد $title بجودة عالية عبر ONEBR TV!\nhttps://onebr.tv/watch/$id');
+    final text = 'شاهد $title بجودة عالية عبر ONEBR TV!\nhttps://onebr.tv/watch/$id';
+    final uri = Uri.parse('sms:?body=${Uri.encodeComponent(text)}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      Clipboard.setData(ClipboardData(text: text));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط العمل بنجاح')));
+      }
+    }
   }
 
   void _playTrailer() {
