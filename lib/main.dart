@@ -262,24 +262,24 @@ class MainHomeScreen extends StatefulWidget {
 class _MainHomeScreenState extends State<MainHomeScreen> {
   final ScrollController _scrollController = ScrollController();
 
-  // التصنيفات الرسمية المستخرجة بمعرفاتها الدقيقة
+  // التصنيفات مع تصحيح المعرفات الحقيقية
   final List<Map<String, dynamic>> _officialCategories = [
-    {'id': 0, 'ar': 'الرئيسية'},
-    {'id': 88, 'ar': 'أنمي ياباني', 'kind': 2},
+    {'id': 0, 'ar': 'الرئيسية', 'kind': 1},
+    {'id': 999, 'ar': 'أنمي ياباني', 'kind': 2}, // معرف ذكي مخصص للأنمي
     {'id': 57, 'ar': 'رسوم متحركة', 'kind': 1},
-    {'id': 84, 'ar': 'أكشن'},
-    {'id': 62, 'ar': 'دراما'},
-    {'id': 59, 'ar': 'كوميديا'},
-    {'id': 70, 'ar': 'رعب'},
-    {'id': 56, 'ar': 'مغامرة'},
-    {'id': 60, 'ar': 'جريمة'},
-    {'id': 78, 'ar': 'خيال علمي'},
-    {'id': 77, 'ar': 'رومانسي'},
-    {'id': 80, 'ar': 'إثارة'},
-    {'id': 89, 'ar': 'حرب'},
+    {'id': 84, 'ar': 'أكشن', 'kind': 1},
+    {'id': 62, 'ar': 'دراما', 'kind': 1},
+    {'id': 59, 'ar': 'كوميديا', 'kind': 1},
+    {'id': 70, 'ar': 'رعب', 'kind': 1},
+    {'id': 56, 'ar': 'مغامرة', 'kind': 1},
+    {'id': 60, 'ar': 'جريمة', 'kind': 1},
+    {'id': 78, 'ar': 'خيال علمي', 'kind': 1},
+    {'id': 77, 'ar': 'رومانسي', 'kind': 1},
+    {'id': 80, 'ar': 'إثارة', 'kind': 1},
+    {'id': 89, 'ar': 'حرب', 'kind': 1},
   ];
 
-  Map<String, dynamic> _currentCategory = {'id': 0, 'ar': 'الرئيسية'};
+  Map<String, dynamic> _currentCategory = {'id': 0, 'ar': 'الرئيسية', 'kind': 1};
   List<dynamic> _items = [];
   final Set<String> _loadedIds = {};
 
@@ -307,7 +307,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       _hasMore = true;
       _loadedIds.clear();
       setState(() {
-        _items.clear();
+        _items.clear(); // تفريغ فوري حتى تفرغ الواجهة من الأعمال السابقة
         _isLoading = true;
       });
     } else {
@@ -405,7 +405,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         ),
         body: Column(
           children: [
-            // شريط الفئات الأفقي للتنقل المباشر
             SizedBox(
               height: 46,
               child: ListView.builder(
@@ -436,7 +435,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               ),
             ),
 
-            // شبكة عرض الأعمال
             Expanded(
               child: _items.isEmpty && _isLoading
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)))
@@ -539,7 +537,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         ? (episodeData['nb'] ?? episodeData['id']).toString()
         : (widget.media['nb'] ?? widget.media['id']).toString();
 
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
+    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
     final source = await StreamService.getVideoSource(targetId);
     final subUrl = await StreamService.getArabicSubtitleUrl(targetId);
 
@@ -564,7 +562,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? widget.media['title'] ?? '';
+    final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
     final poster = StreamService.extractPoster(widget.media);
     final story = widget.media['ar_content'] ?? widget.media['en_content'] ?? widget.media['content'] ?? '';
 
