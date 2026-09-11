@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -331,7 +332,7 @@ class AppSettings extends ChangeNotifier {
   bool enableDualSubtitles = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
-  String selectedFont = 'iPhone'; // iPhone style default
+  String selectedFont = 'iPhone';
   bool autoSmartDownload = false;
 
   String? userName;
@@ -471,7 +472,6 @@ class AppSettings extends ChangeNotifier {
       case 'Almarai':
         return GoogleFonts.almaraiTextTheme(ThemeData.dark().textTheme);
       default:
-        // خط نمط الآيفون المتقن (SF Pro Style)
         return GoogleFonts.ibmPlexSansArabicTextTheme(ThemeData.dark().textTheme);
     }
   }
@@ -932,14 +932,26 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(AppRadius.chip),
+                gradient: const LinearGradient(
+                  colors: [AppColors.primary, AppColors.primaryDark],
+                ),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: const Text('سينمانا', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+              child: const Icon(Icons.tv_rounded, color: Colors.white, size: 18),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
+            const Text(
+              'ONEBR TV',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const Spacer(),
             Text(isAr ? 'الملف: ${AppSettings.instance.activeProfile}' : 'Profile: ${AppSettings.instance.activeProfile}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
           ],
         ),
@@ -1627,7 +1639,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._seriesResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -1641,7 +1653,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -1731,7 +1743,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
 }
 
 // =========================================================================
-// شاشة تفاصيل العمل
+// شاشة تفاصيل العمل (ترتيب تصاعدي حقيقي للمواسم والحلقات)
 // =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -1797,15 +1809,30 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final seriesId = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
     final eps = await StreamService.getSeriesEpisodes(seriesId);
 
-    final Map<int, List<dynamic>> seasons = {};
+    // فرز وتجميع المواسم تصاعدياً بدقة
+    final Map<int, List<dynamic>> rawSeasons = {};
     for (var ep in eps) {
       final sNum = int.tryParse(ep['season']?.toString() ?? '1') ?? 1;
-      seasons.putIfAbsent(sNum, () => []).add(ep);
+      rawSeasons.putIfAbsent(sNum, () => []).add(ep);
+    }
+
+    // ترتيب أرقام المواسم تصاعدياً: 1, 2, 3, 4
+    final sortedKeys = rawSeasons.keys.toList()..sort((a, b) => a.compareTo(b));
+    final Map<int, List<dynamic>> sortedSeasons = {};
+    for (var k in sortedKeys) {
+      final epList = rawSeasons[k]!;
+      // ترتيب الحلقات تصاعدياً بحسب رقم الحلقة
+      epList.sort((a, b) {
+        final aNum = int.tryParse((a['episode_number'] ?? a['episode'] ?? '0').toString()) ?? 0;
+        final bNum = int.tryParse((b['episode_number'] ?? b['episode'] ?? '0').toString()) ?? 0;
+        return aNum.compareTo(bNum);
+      });
+      sortedSeasons[k] = epList;
     }
 
     if (mounted) {
       setState(() {
-        _seasonsMap = seasons.isNotEmpty ? seasons : {1: eps};
+        _seasonsMap = sortedSeasons.isNotEmpty ? sortedSeasons : {1: eps};
         _selectedSeason = _seasonsMap.keys.first;
       });
     }
@@ -1994,6 +2021,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final rawCats = widget.media['categories'];
     final List<dynamic> catList = rawCats is List ? rawCats : [];
 
+    // قائمة المواسم المرتبة تصاعدياً
+    final sortedSeasonKeys = _seasonsMap.keys.toList()..sort((a, b) => a.compareTo(b));
+
     return Directionality(
       textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -2159,12 +2189,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('الحلقات', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                          if (_seasonsMap.keys.length > 1)
+                          if (sortedSeasonKeys.length > 1)
                             DropdownButton<int>(
                               dropdownColor: AppColors.surface,
                               value: _selectedSeason,
                               underline: const SizedBox(),
-                              items: _seasonsMap.keys.map((s) => DropdownMenuItem(value: s, child: Text('الموسم $s', style: const TextStyle(color: Colors.white, fontSize: 12)))).toList(),
+                              items: sortedSeasonKeys.map((s) => DropdownMenuItem(value: s, child: Text('الموسم $s', style: const TextStyle(color: Colors.white, fontSize: 12)))).toList(),
                               onChanged: (v) {
                                 if (v != null) setState(() => _selectedSeason = v);
                               },
@@ -2290,7 +2320,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// مشغل الفيديو المتكامل
+// مشغل الفيديو المتكامل (مع شريط التقدم وزري التالي والسابق والترجمة الدقيقة)
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -2373,9 +2403,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _loadSubs(String url, {required bool isSecondary}) async {
     try {
-      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 6));
+      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
-        final parsed = _parseSrt(utf8.decode(res.bodyBytes, allowMalformed: true));
+        String decodedText;
+        try {
+          decodedText = utf8.decode(res.bodyBytes);
+        } catch (_) {
+          decodedText = latin1.decode(res.bodyBytes);
+        }
+        final parsed = _parseSrt(decodedText);
         setState(() {
           if (isSecondary) {
             _secondarySubtitles = parsed;
@@ -2389,14 +2425,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   List<Subtitle> _parseSrt(String text) {
     final List<Subtitle> list = [];
-    final pattern = RegExp(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n([\s\S]*?)(?=\n\n|\r\n\r\n|$)');
+    final pattern = RegExp(
+      r'(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\r?\n([\s\S]*?)(?=\n\r?\n\d+|\n\r?\n$|$)',
+      multiLine: true,
+    );
     final matches = pattern.allMatches(text);
     int idx = 0;
     for (var m in matches) {
-      final s = _durationFromStr(m.group(1)!);
-      final e = _durationFromStr(m.group(2)!);
-      final txt = m.group(3)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-      if (txt.isNotEmpty) list.add(Subtitle(index: idx++, start: s, end: e, text: txt));
+      try {
+        final s = _durationFromStr(m.group(1)!);
+        final e = _durationFromStr(m.group(2)!);
+        final txt = m.group(3)!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        if (txt.isNotEmpty) list.add(Subtitle(index: idx++, start: s, end: e, text: txt));
+      } catch (_) {}
     }
     return list;
   }
@@ -2485,6 +2526,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_activeEpIndex < widget.episodes.length) {
       final nextEp = widget.episodes[_activeEpIndex];
       _switchEpisode(nextEp, _activeEpIndex + 1);
+    }
+  }
+
+  void _playPreviousEpisode() {
+    _autoNextTimer?.cancel();
+    setState(() => _showAutoNext = false);
+    if (_activeEpIndex > 1) {
+      final prevEp = widget.episodes[_activeEpIndex - 2];
+      _switchEpisode(prevEp, _activeEpIndex - 1);
     }
   }
 
@@ -2711,6 +2761,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = AppSettings.instance;
+    final hasPrev = widget.episodes.isNotEmpty && _activeEpIndex > 1;
+    final hasNext = widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2783,7 +2835,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (_showAutoNext && widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length)
+                  if (_showAutoNext && hasNext)
                     Positioned(
                       bottom: 85, right: 20,
                       child: Container(
@@ -2829,170 +2881,93 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                     ),
+
+                    // أزرار التحكم في منتصف المشغل مع أزرار التنقل بين الحلقات
                     Center(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          if (widget.episodes.isNotEmpty)
+                            IconButton(
+                              iconSize: 32,
+                              icon: Icon(Icons.skip_previous_rounded, color: hasPrev ? Colors.white : Colors.white24),
+                              onPressed: hasPrev ? _playPreviousEpisode : null,
+                            ),
+                          const SizedBox(width: 10),
                           IconButton(
-                            iconSize: 34,
+                            iconSize: 32,
                             icon: const Icon(Icons.replay_10_rounded, color: Colors.white),
                             onPressed: () {
                               final p = _controller!.value.position - Duration(seconds: settings.seekDuration);
                               _controller!.seekTo(p < Duration.zero ? Duration.zero : p);
                             },
                           ),
-                          const SizedBox(width: 24),
+                          const SizedBox(width: 16),
                           IconButton(
-                            iconSize: 48,
+                            iconSize: 52,
                             icon: Icon(_controller != null && _controller!.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.white),
                             onPressed: () => setState(() => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play()),
                           ),
-                          const SizedBox(width: 24),
+                          const SizedBox(width: 16),
                           IconButton(
-                            iconSize: 34,
+                            iconSize: 32,
                             icon: const Icon(Icons.forward_10_rounded, color: Colors.white),
                             onPressed: () {
                               final p = _controller!.value.position + Duration(seconds: settings.seekDuration);
                               _controller!.seekTo(p);
                             },
                           ),
+                          const SizedBox(width: 10),
+                          if (widget.episodes.isNotEmpty)
+                            IconButton(
+                              iconSize: 32,
+                              icon: Icon(Icons.skip_next_rounded, color: hasNext ? Colors.white : Colors.white24),
+                              onPressed: hasNext ? _playNextEpisode : null,
+                            ),
                         ],
                       ),
                     ),
+
+                    // شريط تقدم الفيديو المتفاعل أسفل الشاشة
+                    if (_controller != null && _controller!.value.isInitialized)
+                      Positioned(
+                        bottom: 12, left: 16, right: 16,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 3,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                thumbColor: AppColors.primary,
+                                activeTrackColor: AppColors.primary,
+                                inactiveTrackColor: Colors.white24,
+                              ),
+                              child: Slider(
+                                value: _controller!.value.position.inMilliseconds.toDouble().clamp(0.0, _controller!.value.duration.inMilliseconds.toDouble()),
+                                min: 0.0,
+                                max: _controller!.value.duration.inMilliseconds.toDouble(),
+                                onChanged: (v) => _controller!.seekTo(Duration(milliseconds: v.toInt())),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(_formatTime(_controller!.value.position), style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                  Text(_formatTime(_controller!.value.duration), style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ],
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-// =========================================================================
-// شاشة إعدادات الترجمة
-// =========================================================================
-class SubtitleSettingsScreen extends StatefulWidget {
-  const SubtitleSettingsScreen({super.key});
-
-  @override
-  State<SubtitleSettingsScreen> createState() => _SubtitleSettingsScreenState();
-}
-
-class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
-  @override
-  Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.background,
-          title: const Text('إعدادات الترجمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              height: 140,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border, width: 0.5),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    bottom: (s.subBottomPadding / 140) * 90,
-                    left: 20, right: 20,
-                    child: Center(
-                      child: Text(
-                        'معاينة موقع ولون الترجمة المباشر\nLive Subtitle Preview',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: s.subColor,
-                          fontSize: s.subFontSize,
-                          fontWeight: FontWeight.bold,
-                          shadows: s.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            ListTile(
-              title: const Text('موقع الترجمة من الأسفل', style: TextStyle(color: Colors.white, fontSize: 13)),
-              subtitle: Slider(
-                value: s.subBottomPadding,
-                min: 30.0,
-                max: 140.0,
-                activeColor: AppColors.primary,
-                inactiveColor: Colors.white24,
-                onChanged: (v) => setState(() => s.updateSubStyle(bottomPadding: v)),
-              ),
-              trailing: Text('${s.subBottomPadding.toInt()} dp', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-            ),
-            const Divider(color: AppColors.border),
-            ListTile(
-              title: const Text('حجم خط الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
-              trailing: DropdownButton<double>(
-                dropdownColor: AppColors.surface,
-                value: s.subFontSize,
-                items: const [
-                  DropdownMenuItem(value: 14.0, child: Text('صغير', style: TextStyle(color: Colors.white))),
-                  DropdownMenuItem(value: 18.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
-                  DropdownMenuItem(value: 24.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
-                ],
-                onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
-              ),
-            ),
-            const Divider(color: AppColors.border),
-            ListTile(
-              title: const Text('لون الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
-                  _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
-                  _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
-                ],
-              ),
-            ),
-            const Divider(color: AppColors.border),
-            SwitchListTile(
-              title: const Text('ظل حواف الخط', style: TextStyle(color: Colors.white, fontSize: 13)),
-              value: s.subHasShadow,
-              activeColor: AppColors.primary,
-              onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
-            ),
-            const SizedBox(height: 30),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.border)),
-              onPressed: () => setState(() => s.resetSubtitles()),
-              child: const Text('إعادة ضبط الترجمة الافتراضية', style: TextStyle(color: Colors.white70)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
-    return GestureDetector(
-      onTap: tap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 8),
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: c,
-          shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
         ),
       ),
     );
