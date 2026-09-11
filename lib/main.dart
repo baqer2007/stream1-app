@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -540,38 +541,70 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
     const LibraryScreen(),
   ];
 
+  Future<bool> _onWillPop() async {
+    final shouldExit = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('الخروج من التطبيق'),
+        content: const Text('هل أنت متأكد من رغبتك في إغلاق ONEBR TV؟'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('إلغاء'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('خروج'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      ),
+    );
+    return shouldExit ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAr = AppSettings.instance.appLanguage == 'ar';
 
-    return Directionality(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
-        ),
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF090D15),
-            border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final shouldExit = await _onWillPop();
+        if (shouldExit) {
+          SystemNavigator.pop();
+        }
+      },
+      child: Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: Scaffold(
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
           ),
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            selectedItemColor: AppColors.primary,
-            unselectedItemColor: AppColors.textMuted,
-            type: BottomNavigationBarType.fixed,
-            selectedFontSize: 11,
-            unselectedFontSize: 11,
-            onTap: (i) => setState(() => _currentIndex = i),
-            items: [
-              BottomNavigationBarItem(icon: const Icon(Icons.home_filled, size: 24), label: isAr ? 'الرئيسية' : 'Home'),
-              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded, size: 24), label: isAr ? 'الأقسام' : 'Categories'),
-              BottomNavigationBarItem(icon: const Icon(Icons.search_rounded, size: 24), label: isAr ? 'بحث' : 'Search'),
-              BottomNavigationBarItem(icon: const Icon(Icons.person_rounded, size: 24), label: isAr ? 'الحساب' : 'Profile'),
-            ],
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF090D15),
+              border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              selectedItemColor: AppColors.primary,
+              unselectedItemColor: AppColors.textMuted,
+              type: BottomNavigationBarType.fixed,
+              selectedFontSize: 11,
+              unselectedFontSize: 11,
+              onTap: (i) => setState(() => _currentIndex = i),
+              items: [
+                BottomNavigationBarItem(icon: const Icon(Icons.home_filled, size: 24), label: isAr ? 'الرئيسية' : 'Home'),
+                BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded, size: 24), label: isAr ? 'الأقسام' : 'Categories'),
+                BottomNavigationBarItem(icon: const Icon(Icons.search_rounded, size: 24), label: isAr ? 'بحث' : 'Search'),
+                BottomNavigationBarItem(icon: const Icon(Icons.person_rounded, size: 24), label: isAr ? 'الحساب' : 'Profile'),
+              ],
+            ),
           ),
         ),
       ),
@@ -1638,7 +1671,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._seriesResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -1652,7 +1685,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -2182,7 +2215,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('الحالحلقات', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          const Text('الحلقات', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                           if (sortedSeasonKeys.length > 1)
                             DropdownButton<int>(
                               dropdownColor: AppColors.surface,
@@ -2385,9 +2418,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _activeMediaId = widget.mediaId;
     _activeHeader = widget.subtitleTextHeader;
     _loadWatchedState();
+    
+    // تشغيل الفيديو فوراً
     _initPlayer(widget.videoUrl);
-    if (widget.subtitleUrl.isNotEmpty) _loadSubs(widget.subtitleUrl, isSecondary: false);
-    if (widget.secondarySubtitleUrl.isNotEmpty) _loadSubs(widget.secondarySubtitleUrl, isSecondary: true);
+
+    // تأخير طلب ملفات الترجمة لثانية ونصف لتفريغ مسار النت بالكامل للفيديو
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        if (widget.subtitleUrl.isNotEmpty) _loadSubs(widget.subtitleUrl, isSecondary: false);
+        if (widget.secondarySubtitleUrl.isNotEmpty) _loadSubs(widget.secondarySubtitleUrl, isSecondary: true);
+      }
+    });
   }
 
   void _loadWatchedState() async {
@@ -2451,7 +2492,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await _controller?.dispose();
     if (mounted) setState(() => _isReady = false);
 
-    _controller = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: StreamService.stealthHeaders);
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: StreamService.stealthHeaders,
+      videoPlayerOptions: VideoPlayerOptions(
+        mixWithOthers: true, // يقلل تأخير مسار الصوت
+        allowBackgroundPlayback: false,
+      ),
+    );
     await _controller!.initialize();
 
     final savedMs = await LocalStorageService.getPlaybackPosition(_activeMediaId);
