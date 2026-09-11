@@ -147,6 +147,25 @@ class LocalStorageService {
     }
     await setList('user_watchlist', list);
   }
+
+  static Future<bool> isSubscribedToNotifications(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentProfile = prefs.getString('current_active_profile') ?? 'default';
+    final list = prefs.getStringList('subscribed_notifications_${currentProfile}_list') ?? [];
+    return list.contains(id);
+  }
+
+  static Future<void> toggleNotificationSubscription(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentProfile = prefs.getString('current_active_profile') ?? 'default';
+    final list = prefs.getStringList('subscribed_notifications_${currentProfile}_list') ?? [];
+    if (list.contains(id)) {
+      list.remove(id);
+    } else {
+      list.add(id);
+    }
+    await prefs.setStringList('subscribed_notifications_${currentProfile}_list', list);
+  }
 }
 
 class ActiveDownload {
@@ -826,7 +845,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
 }
 
 // =========================================================================
-// الصفحة الرئيسية مع زر الحيرة ووضع التلفاز
+// الصفحة الرئيسية
 // =========================================================================
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
@@ -1050,7 +1069,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               ),
             ),
             const Spacer(),
-            // زر وضع التلفاز One-Tap TV Mode
             IconButton(
               tooltip: 'وضع التلفاز',
               icon: Icon(isTv ? Icons.tv_rounded : Icons.phone_android_rounded, color: isTv ? AppColors.primary : Colors.white70, size: 20),
@@ -1059,7 +1077,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 AppSettings.instance.updateTvMode(!isTv);
               },
             ),
-            // زر الحيرة "شنو نباوع اليوم؟"
             IconButton(
               tooltip: 'شنو نباوع اليوم؟',
               icon: const Icon(Icons.casino_rounded, color: AppColors.star, size: 22),
@@ -1836,7 +1853,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(border: Border.all(color: AppColors.border, width: 0.8), borderRadius: BorderRadius.circular(4)),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: minAxisSize,
                       children: [
                         const Text('IMDb', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
                         const SizedBox(width: 4),
@@ -1891,7 +1908,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
 }
 
 // =========================================================================
-// شاشة تفاصيل العمل مع مكتبة الممثلين التفاعلية
+// شاشة تفاصيل العمل
 // =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -2182,7 +2199,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
             child: const Text('البحث عن أعماله في المنصة'),
             onPressed: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => AdvancedSearchScreen()));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvancedSearchScreen()));
             },
           ),
         ],
@@ -2209,7 +2226,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final List<dynamic> catList = rawCats is List ? rawCats : [];
     final sortedSeasonKeys = _seasonsMap.keys.toList()..sort((a, b) => a.compareTo(b));
 
-    // استخراج أبطال تجريبيين أو محاكاة للمكتبة التفاعلية
     final List<String> dummyActors = ['روبرت داوني', 'سكارليت جوهانسون', 'كريس هيمسوورث', 'توم هولاند'];
 
     return Directionality(
@@ -2356,7 +2372,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       ),
                     const SizedBox(height: 14),
 
-                    // مكتبة الممثلين التفاعلية
                     const Text('طاقم التمثيل', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -2564,7 +2579,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 }
 
 // =========================================================================
-// مشغل الفيديو مع زر تخطي المشاهد الذكي (Smart Skip) وصانع اللقطات
+// مشغل الفيديو
 // =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
@@ -2628,7 +2643,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _autoNextCountdown = 5;
   Timer? _autoNextTimer;
 
-  // زر تخطي المقدمة الذكي يظهر في أول 90 ثانية
   bool get _showSmartSkip => _controller != null && _controller!.value.isInitialized && _controller!.value.position.inSeconds < 90;
 
   @override
@@ -3028,7 +3042,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  // ميزة صانع اللقطات السريعة (Instant Scene Clipper)
   void _takeSceneClip() {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -3113,7 +3126,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  // زر تخطي المقدمة الذكي (Smart Skip)
                   if (_showSmartSkip)
                     Positioned(
                       bottom: 85, left: 20,
@@ -3178,7 +3190,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                // زر صانع اللقطات السريعة داخل المشغل
                                 IconButton(
                                   tooltip: 'صانع اللقطات السريعة',
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
@@ -3432,7 +3443,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
 }
 
 // =========================================================================
-// شاشة الحساب والمكتبة مع نظام التنبيه الذكي للمسلسلات
+// شاشة الحساب والمكتبة
 // =========================================================================
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
