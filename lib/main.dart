@@ -13,6 +13,14 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'stream_service.dart';
 
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 class AppColors {
   static const Color primary = Color(0xFFFF2D55);
   static const Color primaryDark = Color(0xFFD81E43);
@@ -150,21 +158,19 @@ class LocalStorageService {
 
   static Future<bool> isSubscribedToNotifications(String id) async {
     final prefs = await SharedPreferences.getInstance();
-    final currentProfile = prefs.getString('current_active_profile') ?? 'default';
-    final list = prefs.getStringList('subscribed_notifications_${currentProfile}_list') ?? [];
+    final list = prefs.getStringList('subscribed_notifications') ?? [];
     return list.contains(id);
   }
 
   static Future<void> toggleNotificationSubscription(String id) async {
     final prefs = await SharedPreferences.getInstance();
-    final currentProfile = prefs.getString('current_active_profile') ?? 'default';
-    final list = prefs.getStringList('subscribed_notifications_${currentProfile}_list') ?? [];
+    final list = prefs.getStringList('subscribed_notifications') ?? [];
     if (list.contains(id)) {
       list.remove(id);
     } else {
       list.add(id);
     }
-    await prefs.setStringList('subscribed_notifications_${currentProfile}_list', list);
+    await prefs.setStringList('subscribed_notifications', list);
   }
 }
 
@@ -328,10 +334,10 @@ class AppSettings extends ChangeNotifier {
 
   int seekDuration = 10;
   bool skipSensitiveScenes = true;
-  double subFontSize = 17.0;
+  double subFontSize = 18.0;
   Color subColor = Colors.white;
   bool subHasShadow = true;
-  double subBottomPadding = 65.0;
+  double subBottomPadding = 80.0;
   bool enableDualSubtitles = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
@@ -349,8 +355,8 @@ class AppSettings extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     seekDuration = p.getInt('player_seek_dur') ?? 10;
     skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
-    subFontSize = p.getDouble('player_sub_size') ?? 17.0;
-    subBottomPadding = p.getDouble('player_sub_bottom') ?? 65.0;
+    subFontSize = p.getDouble('player_sub_size') ?? 18.0;
+    subBottomPadding = p.getDouble('player_sub_bottom') ?? 80.0;
     enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
     appFilterMode = p.getInt('app_filter_mode') ?? 0;
     appLanguage = p.getString('app_lang') ?? 'ar';
@@ -440,14 +446,14 @@ class AppSettings extends ChangeNotifier {
   }
 
   void resetSubtitles() async {
-    subFontSize = 17.0;
+    subFontSize = 18.0;
     subColor = Colors.white;
     subHasShadow = true;
-    subBottomPadding = 65.0;
+    subBottomPadding = 80.0;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setDouble('player_sub_size', 17.0);
-    await p.setDouble('player_sub_bottom', 65.0);
+    await p.setDouble('player_sub_size', 18.0);
+    await p.setDouble('player_sub_bottom', 80.0);
   }
 
   void login(String name, String email) async {
@@ -500,6 +506,7 @@ class AppSettings extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = MyHttpOverrides();
   await AppSettings.instance.init();
   runApp(const OnebrTvApp());
 }
@@ -654,9 +661,6 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 }
 
-// =========================================================================
-// شاشة الأقسام
-// =========================================================================
 class CategoriesScreen extends StatelessWidget {
   CategoriesScreen({super.key});
 
@@ -844,9 +848,6 @@ class _FullCategoryViewState extends State<FullCategoryView> {
   }
 }
 
-// =========================================================================
-// الصفحة الرئيسية
-// =========================================================================
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
 
@@ -1338,7 +1339,20 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(isAr ? 'متابعة المشاهدة' : 'Continue Watching', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(isAr ? 'متابعة المشاهدة' : 'Continue Watching', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+              GestureDetector(
+                onTap: () async {
+                  HapticFeedback.lightImpact();
+                  await LocalStorageService.setList('resume_playback_list', []);
+                  setState(() => _resumeList = []);
+                },
+                child: Text(isAr ? 'إزالة الكل' : 'Clear All', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
         ),
         SizedBox(
           height: 115,
@@ -1351,47 +1365,67 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               final it = _resumeList[i];
               final progress = (it['position'] / it['duration']).clamp(0.0, 1.0);
 
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  StreamService.getVideoSource(it['id']).then((src) {
-                    if (src != null && mounted) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PlayerScreen(
-                            mediaId: it['id'],
-                            title: it['title'] ?? '',
-                            videoUrl: src['video_url'],
-                            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
-                          ),
-                        ),
-                      );
-                    }
-                  });
-                },
-                child: Container(
-                  width: 140,
-                  margin: const EdgeInsets.only(left: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    border: Border.all(color: AppColors.border, width: 0.5),
-                    image: it['poster'].toString().isNotEmpty ? DecorationImage(image: NetworkImage(it['poster']), fit: BoxFit.cover) : null,
-                  ),
-                  child: Stack(
-                    children: [
-                      Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
-                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 34)),
-                      Positioned(
-                        bottom: 0, left: 0, right: 0,
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppRadius.card)),
-                          child: LinearProgressIndicator(value: progress, minHeight: 3, backgroundColor: Colors.white24, valueColor: const AlwaysStoppedAnimation(AppColors.primary)),
-                        ),
+              return Stack(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      StreamService.getVideoSource(it['id']).then((src) {
+                        if (src != null && mounted) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PlayerScreen(
+                                mediaId: it['id'],
+                                title: it['title'] ?? '',
+                                videoUrl: src['video_url'],
+                                qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
+                              ),
+                            ),
+                          );
+                        }
+                      });
+                    },
+                    child: Container(
+                      width: 140,
+                      margin: const EdgeInsets.only(left: 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        border: Border.all(color: AppColors.border, width: 0.5),
+                        image: it['poster'].toString().isNotEmpty ? DecorationImage(image: NetworkImage(it['poster']), fit: BoxFit.cover) : null,
                       ),
-                    ],
+                      child: Stack(
+                        children: [
+                          Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
+                          const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 34)),
+                          Positioned(
+                            bottom: 0, left: 0, right: 0,
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppRadius.card)),
+                              child: LinearProgressIndicator(value: progress, minHeight: 3, backgroundColor: Colors.white24, valueColor: const AlwaysStoppedAnimation(AppColors.primary)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  Positioned(
+                    top: 4, right: 14,
+                    child: GestureDetector(
+                      onTap: () async {
+                        HapticFeedback.selectionClick();
+                        await LocalStorageService.removeItem('resume_playback_list', it['id'], idField: 'id');
+                        final l = await LocalStorageService.getList('resume_playback_list');
+                        setState(() => _resumeList = l);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -1480,9 +1514,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   }
 }
 
-// =========================================================================
-// شاشة البحث والفلترة السينمائية
-// =========================================================================
 class AdvancedSearchScreen extends StatefulWidget {
   const AdvancedSearchScreen({super.key});
 
@@ -1814,7 +1845,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
             ),
           ),
@@ -1907,9 +1938,6 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
   }
 }
 
-// =========================================================================
-// شاشة تفاصيل العمل
-// =========================================================================
 class MediaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> media;
   const MediaDetailScreen({super.key, required this.media});
@@ -2225,7 +2253,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final rawCats = widget.media['categories'];
     final List<dynamic> catList = rawCats is List ? rawCats : [];
     final sortedSeasonKeys = _seasonsMap.keys.toList()..sort((a, b) => a.compareTo(b));
-
     final List<String> dummyActors = ['روبرت داوني', 'سكارليت جوهانسون', 'كريس هيمسوورث', 'توم هولاند'];
 
     return Directionality(
@@ -2428,7 +2455,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         const SizedBox(width: 16),
                         const Icon(Icons.thumb_down_rounded, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
-                        const Text('84', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        const Text('84', style: TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
                     ),
                     const Divider(color: AppColors.border, height: 32),
@@ -2578,9 +2605,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// =========================================================================
-// مشغل الفيديو
-// =========================================================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -2621,6 +2645,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   String _activeQuality = '240p';
   BoxFit _videoFit = BoxFit.contain;
+  bool _isLandscape = true;
 
   List<Subtitle> _subtitles = [];
   List<Subtitle> _secondarySubtitles = [];
@@ -2653,6 +2678,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _activeHeader = widget.subtitleTextHeader;
     _loadWatchedState();
     
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
     _initPlayer(widget.videoUrl);
 
     Future.delayed(const Duration(milliseconds: 1500), () {
@@ -2838,11 +2868,94 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  void _toggleScreenOrientation() {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _isLandscape = !_isLandscape;
+      if (_isLandscape) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      } else {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      }
+    });
+  }
+
+  void _showEpisodesDrawer() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            color: AppColors.glassFill,
+            height: 350,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('قائمة الحلقات', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.builder(
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: widget.episodes.length,
+                    itemBuilder: (ctx, i) {
+                      final ep = widget.episodes[i];
+                      final idx = i + 1;
+                      final isCurrent = idx == _activeEpIndex;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border, width: 0.5),
+                        ),
+                        child: ListTile(
+                          title: Text('الحلقة $idx', style: TextStyle(color: Colors.white, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+                          trailing: isCurrent ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary) : null,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _switchEpisode(ep, idx);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _castToTv() async {
-    final url = widget.videoUrl;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final videoUrl = widget.videoUrl;
+    if (videoUrl.isEmpty) return;
+
+    final uri = Uri.parse(videoUrl);
+    final intentUri = Uri.parse("intent:$videoUrl#Intent;type=video/*;package=org.videolan.vlc;end");
+
+    if (await canLaunchUrl(intentUri)) {
+      await launchUrl(intentUri);
+    } else if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('قم بتثبيت مشغل يدعم البث مثل VLC أو Web Video Caster')),
+        );
+      }
     }
   }
 
@@ -2953,64 +3066,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         _showQualityPicker();
                       },
                     ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
-                      title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Text('${settings.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSeekPicker();
-                      },
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.closed_caption_rounded, color: Colors.white70),
-                      title: const Text('إعدادات ومكان الترجمة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white24, size: 20),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
-                      },
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
-                      title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Text(_videoFit == BoxFit.cover ? 'ملء الشاشة' : 'طبيعي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      onTap: () {
-                        setState(() {
-                          _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
-                        });
-                        Navigator.pop(context);
-                      },
-                    ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showSeekPicker() {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => CupertinoActionSheet(
-        title: const Text('فترة التقديم والتأخير'),
-        actions: [5, 10, 15, 30].map((s) => CupertinoActionSheetAction(
-          child: Text('$s ثوانٍ'),
-          onPressed: () {
-            AppSettings.instance.updateSeek(s);
-            Navigator.pop(context);
-          },
-        )).toList(),
-        cancelButton: CupertinoActionSheetAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.pop(context),
-          child: const Text('إلغاء'),
         ),
       ),
     );
@@ -3190,8 +3250,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
+                                if (widget.episodes.isNotEmpty)
+                                  IconButton(
+                                    tooltip: 'قائمة الحلقات',
+                                    icon: const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 24),
+                                    onPressed: _showEpisodesDrawer,
+                                  ),
                                 IconButton(
-                                  tooltip: 'صانع اللقطات السريعة',
+                                  tooltip: 'قلب الشاشة',
+                                  icon: Icon(_isLandscape ? Icons.screen_rotation_rounded : Icons.screen_lock_rotation_rounded, color: Colors.white),
+                                  onPressed: _toggleScreenOrientation,
+                                ),
+                                IconButton(
+                                  tooltip: 'صانع اللقطات',
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
                                   onPressed: _takeSceneClip,
                                 ),
@@ -3294,9 +3365,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-// =========================================================================
-// شاشة إعدادات الترجمة
-// =========================================================================
 class SubtitleSettingsScreen extends StatefulWidget {
   const SubtitleSettingsScreen({super.key});
 
@@ -3382,69 +3450,22 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                       underline: const SizedBox(),
                       items: const [
                         DropdownMenuItem(value: 14.0, child: Text('صغير', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 17.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(value: 18.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
                         DropdownMenuItem(value: 24.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
                       ],
                       onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
                     ),
                   ),
-                  const Divider(color: AppColors.border, height: 1),
-                  ListTile(
-                    title: const Text('لون الخط', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
-                        _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
-                        _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
-                      ],
-                    ),
-                  ),
-                  const Divider(color: AppColors.border, height: 1),
-                  ListTile(
-                    title: const Text('ظل حواف الخط', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: CupertinoSwitch(
-                      value: s.subHasShadow,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
-                    ),
-                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            CupertinoButton(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              onPressed: () => setState(() => s.resetSubtitles()),
-              child: const Text('إعادة ضبط الترجمة الافتراضية', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
       ),
     );
   }
-
-  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
-    return GestureDetector(
-      onTap: tap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 8),
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: c,
-          shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
-        ),
-      ),
-    );
-  }
 }
 
-// =========================================================================
-// شاشة الحساب والمكتبة
-// =========================================================================
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -3811,82 +3832,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => s.updateSmartDownload(v)),
                       ),
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: DropdownButton<String>(
-                        dropdownColor: AppColors.surface,
-                        value: s.appLanguage,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: Colors.white))),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateLanguage(v));
-                        },
-                      ),
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'خط التطبيق' : 'App Font', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: DropdownButton<String>(
-                        dropdownColor: AppColors.surface,
-                        value: s.selectedFont,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'iPhone', child: Text('iPhone (أبل الرسمي)', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Cairo', child: Text('Cairo', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: Colors.white))),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFont(v));
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-              const Text('وضع المحتوى', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Container(
-                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
-                child: Column(
-                  children: [
-                    RadioListTile<int>(
-                      title: Text(isAr ? 'الافتراضي (الكل)' : 'Default', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      value: 0,
-                      groupValue: s.appFilterMode,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) {
-                        if (v != null) setState(() => s.updateFilterMode(v));
-                      },
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    RadioListTile<int>(
-                      title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      value: 1,
-                      groupValue: s.appFilterMode,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) {
-                        if (v != null) setState(() => s.updateFilterMode(v));
-                      },
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    RadioListTile<int>(
-                      title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      value: 2,
-                      groupValue: s.appFilterMode,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) {
-                        if (v != null) setState(() => s.updateFilterMode(v));
-                      },
                     ),
                   ],
                 ),
