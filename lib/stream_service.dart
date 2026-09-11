@@ -52,9 +52,9 @@ class StreamService {
     int level = 0,
   }) async {
     try {
-      final start = page * 5;
+      final start = page * 6;
       final requests = <Future<List<dynamic>>>[];
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < 6; i++) {
         requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40, level: level));
         requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40, level: level));
       }
@@ -90,7 +90,7 @@ class StreamService {
           final desc = ((item['ar_content'] ?? '') + (item['en_content'] ?? '')).toString().toLowerCase();
           if (en.contains('horror') || ar.contains('رعب') || en.contains('ghost') || en.contains('dead') ||
               en.contains('evil') || en.contains('blood') || desc.contains('رعب') || desc.contains('خارق') ||
-              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('شياطين')) {
+              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('شياطين') || desc.contains('وحش')) {
             return true;
           }
         }
@@ -110,15 +110,14 @@ class StreamService {
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
         List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? []);
-        return list;
+        if (list.isNotEmpty) return list;
       }
     } catch (_) {}
 
-    // خطة بديلة للبحث في التغذية المباشرة عند تعثر استعلام السيرفر
     try {
       final qLower = query.toLowerCase().trim();
-      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 60, level: level);
-      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 60, level: level);
+      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 80, level: level);
+      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 80, level: level);
       final all = [...feed, ...feedSeries];
       return all.where((it) {
         final ar = (it['ar_title'] ?? '').toString().toLowerCase();
