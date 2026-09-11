@@ -1,23 +1,33 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class StreamService {
+  // ترويسات متوافقة مع سيرفرات البث وشاشات أندرويد لتفادي الرفض
   static const Map<String, String> stealthHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
+    'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+    'Connection': 'keep-alive',
     'Referer': 'https://cee.buzz/',
+    'Origin': 'https://cee.buzz',
   };
 
+  /// جلب القوائم العامة والمسلسلات مع تفادي مشاكل SSL في الشاشات
   static Future<List<dynamic>> fetchFeed({
     required bool isSeries,
     int page = 0,
     int perPage = 30,
     int level = 0,
   }) async {
+    final vKind = isSeries ? 2 : 1;
+    final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/$vKind/sortParam/desc/pageNumber/$page';
+
     try {
-      final vKind = isSeries ? 2 : 1;
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/$vKind/sortParam/desc/pageNumber/$page';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+      final client = http.Client();
+      final req = http.Request('GET', Uri.parse(url))..headers.addAll(stealthHeaders);
+      final streamedResponse = await client.send(req).timeout(const Duration(seconds: 15));
+      final res = await http.Response.fromStream(streamedResponse);
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
@@ -46,17 +56,18 @@ class StreamService {
     return [];
   }
 
+  /// جلب التصنيفات المخصصة
   static Future<List<dynamic>> fetchByCategoryName(
     String categoryEn, {
     int page = 0,
     int level = 0,
   }) async {
     try {
-      final start = page * 6;
+      final start = page * 4;
       final requests = <Future<List<dynamic>>>[];
-      for (int i = 0; i < 6; i++) {
-        requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 40, level: level));
-        requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 40, level: level));
+      for (int i = 0; i < 4; i++) {
+        requests.add(fetchFeed(isSeries: false, page: start + i, perPage: 35, level: level));
+        requests.add(fetchFeed(isSeries: true, page: start + i, perPage: 35, level: level));
       }
 
       final results = await Future.wait(requests);
@@ -90,7 +101,7 @@ class StreamService {
           final desc = ((item['ar_content'] ?? '') + (item['en_content'] ?? '')).toString().toLowerCase();
           if (en.contains('horror') || ar.contains('رعب') || en.contains('ghost') || en.contains('dead') ||
               en.contains('evil') || en.contains('blood') || desc.contains('رعب') || desc.contains('خارق') ||
-              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('شياطين') || desc.contains('وحش')) {
+              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('وحش')) {
             return true;
           }
         }
@@ -100,12 +111,13 @@ class StreamService {
     return [];
   }
 
+  /// البحث المباشر
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     if (query.trim().isEmpty) return [];
     try {
       final b64 = base64.encode(utf8.encode(query.trim()));
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$level';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 7));
+      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
@@ -116,10 +128,9 @@ class StreamService {
 
     try {
       final qLower = query.toLowerCase().trim();
-      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 80, level: level);
-      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 80, level: level);
-      final all = [...feed, ...feedSeries];
-      return all.where((it) {
+      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 60, level: level);
+      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 60, level: level);
+      return [...feed, ...feedSeries].where((it) {
         final ar = (it['ar_title'] ?? '').toString().toLowerCase();
         final en = (it['en_title'] ?? '').toString().toLowerCase();
         return ar.contains(qLower) || en.contains(qLower);
@@ -129,12 +140,13 @@ class StreamService {
     return [];
   }
 
+  /// جلب روابط الفيديو المباشرة بمختلف الجودات مع تحديد جودة البدء السريع
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
         Uri.parse('https://cee.buzz/api/android/transcoddedFiles/id/$videoId'),
         headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 10));
 
       List<Map<String, dynamic>> qualities = [];
       String mainVideoUrl = '';
@@ -144,7 +156,7 @@ class StreamService {
         List list = (filesData is List) ? filesData : [];
 
         for (var item in list) {
-          final res = item['resolution']?.toString() ?? '240p';
+          final res = item['resolution']?.toString() ?? '360p';
           final url = item['videoUrl']?.toString() ?? '';
           if (url.isNotEmpty) {
             qualities.add({'resolution': res, 'url': url});
@@ -152,9 +164,9 @@ class StreamService {
         }
 
         if (qualities.isNotEmpty) {
-          // تفضيل جودة خفيفة تبدأ فوراً على شبكة 2Mbps
+          // ترتيب الجودات واختيار جودة سريعة أولية
           Map<String, dynamic>? selected;
-          for (var q in ['360p', '240p', '480p', '720p']) {
+          for (var q in ['360p', '480p', '240p', '720p', '1080p']) {
             final match = qualities.firstWhere(
               (item) => item['resolution'] == q,
               orElse: () => {},
@@ -172,13 +184,13 @@ class StreamService {
         final infoRes = await http.get(
           Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
           headers: stealthHeaders,
-        ).timeout(const Duration(seconds: 6));
+        ).timeout(const Duration(seconds: 8));
 
         if (infoRes.statusCode == 200) {
           dynamic infoData = jsonDecode(utf8.decode(infoRes.bodyBytes, allowMalformed: true));
           mainVideoUrl = infoData['videoUrl']?.toString() ?? '';
           if (mainVideoUrl.isNotEmpty) {
-            qualities.add({'resolution': '240p', 'url': mainVideoUrl});
+            qualities.add({'resolution': '360p', 'url': mainVideoUrl});
           }
         }
       }
@@ -193,12 +205,13 @@ class StreamService {
     return null;
   }
 
+  /// جلب تفاصيل العمل وترجماته وإعلانه
   static Future<Map<String, dynamic>> getVideoExtendedInfo(String videoId) async {
     try {
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
         headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
         return jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
@@ -207,12 +220,13 @@ class StreamService {
     return {};
   }
 
+  /// جلب حلقات المسلسلات وفرزها
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
         Uri.parse('https://cee.buzz/api/android/videoSeason/id/$seriesId'),
         headers: stealthHeaders,
-      ).timeout(const Duration(seconds: 7));
+      ).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
@@ -227,6 +241,7 @@ class StreamService {
     return [];
   }
 
+  /// استخراج بوسترات الأفلام بدقة عالية
   static String extractPoster(Map<String, dynamic> item, {bool highRes = false}) {
     if (highRes) {
       if (item['imgObjUrl'] != null && item['imgObjUrl'].toString().isNotEmpty) {
