@@ -156,13 +156,13 @@ class LocalStorageService {
     await setList('user_watchlist', list);
   }
 
-  static Future<bool> isSubscribed(String id) async {
+  static Future<bool> isSubscribedToNotifications(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
     return list.contains(id);
   }
 
-  static Future<void> toggleSubscribed(String id) async {
+  static Future<void> toggleNotificationSubscription(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
     if (list.contains(id)) {
@@ -334,10 +334,10 @@ class AppSettings extends ChangeNotifier {
 
   int seekDuration = 10;
   bool skipSensitiveScenes = true;
-  double subFontSize = 18.0;
+  double subFontSize = 17.0;
   Color subColor = Colors.white;
   bool subHasShadow = true;
-  double subBottomPadding = 80.0;
+  double subBottomPadding = 26.0;
   bool enableDualSubtitles = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
@@ -355,8 +355,8 @@ class AppSettings extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     seekDuration = p.getInt('player_seek_dur') ?? 10;
     skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
-    subFontSize = p.getDouble('player_sub_size') ?? 18.0;
-    subBottomPadding = p.getDouble('player_sub_bottom') ?? 80.0;
+    subFontSize = p.getDouble('player_sub_size') ?? 17.0;
+    subBottomPadding = p.getDouble('player_sub_bottom') ?? 26.0;
     enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
     appFilterMode = p.getInt('app_filter_mode') ?? 0;
     appLanguage = p.getString('app_lang') ?? 'ar';
@@ -374,64 +374,55 @@ class AppSettings extends ChangeNotifier {
   void updateSeek(int sec) async {
     seekDuration = sec;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setInt('player_seek_dur', sec);
+    (await SharedPreferences.getInstance()).setInt('player_seek_dur', sec);
   }
 
   void updateFilterMode(int mode) async {
     appFilterMode = mode;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setInt('app_filter_mode', mode);
+    (await SharedPreferences.getInstance()).setInt('app_filter_mode', mode);
   }
 
   void updateLanguage(String lang) async {
     appLanguage = lang;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setString('app_lang', lang);
+    (await SharedPreferences.getInstance()).setString('app_lang', lang);
   }
 
   void updateFont(String font) async {
     selectedFont = font;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setString('app_font', font);
+    (await SharedPreferences.getInstance()).setString('app_font', font);
   }
 
   void updateDualSubtitles(bool val) async {
     enableDualSubtitles = val;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('player_dual_sub', val);
+    (await SharedPreferences.getInstance()).setBool('player_dual_sub', val);
   }
 
   void updateSmartDownload(bool val) async {
     autoSmartDownload = val;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('app_smart_dl', val);
+    (await SharedPreferences.getInstance()).setBool('app_smart_dl', val);
   }
 
   void updateSmartNotifications(bool val) async {
     smartNotifications = val;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('app_smart_notif', val);
+    (await SharedPreferences.getInstance()).setBool('app_smart_notif', val);
   }
 
   void updateTvMode(bool val) async {
     tvModeEnabled = val;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('app_tv_mode', val);
+    (await SharedPreferences.getInstance()).setBool('app_tv_mode', val);
   }
 
   void updateSkipScenes(bool val) async {
     skipSensitiveScenes = val;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('player_skip_sens', val);
+    (await SharedPreferences.getInstance()).setBool('player_skip_sens', val);
   }
 
   void updateSubStyle({double? size, Color? color, bool? shadow, double? bottomPadding}) async {
@@ -446,14 +437,14 @@ class AppSettings extends ChangeNotifier {
   }
 
   void resetSubtitles() async {
-    subFontSize = 18.0;
+    subFontSize = 17.0;
     subColor = Colors.white;
     subHasShadow = true;
-    subBottomPadding = 80.0;
+    subBottomPadding = 26.0;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setDouble('player_sub_size', 18.0);
-    await p.setDouble('player_sub_bottom', 80.0);
+    await p.setDouble('player_sub_size', 17.0);
+    await p.setDouble('player_sub_bottom', 26.0);
   }
 
   void login(String name, String email) async {
@@ -477,16 +468,14 @@ class AppSettings extends ChangeNotifier {
   void switchProfile(String profile) async {
     activeProfile = profile;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setString('current_active_profile', profile);
+    (await SharedPreferences.getInstance()).setString('current_active_profile', profile);
   }
 
   void addProfile(String profileName) async {
     if (!userProfiles.contains(profileName)) {
       userProfiles.add(profileName);
       notifyListeners();
-      final p = await SharedPreferences.getInstance();
-      await p.setStringList('user_profiles_list', userProfiles);
+      (await SharedPreferences.getInstance()).setStringList('user_profiles_list', userProfiles);
     }
   }
 
@@ -832,7 +821,9 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppRadius.card),
-                        child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: AppColors.surface),
+                        child: poster.isNotEmpty
+                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                            : Container(color: AppColors.surface),
                       ),
                     ),
                   ),
@@ -1417,7 +1408,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       },
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                         child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
                       ),
                     ),
@@ -1842,7 +1833,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
             ),
           ),
@@ -1895,7 +1886,9 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             const SizedBox(width: 14),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: poster.isNotEmpty ? Image.network(poster, width: 54, height: 78, fit: BoxFit.cover) : Container(width: 54, height: 78, color: AppColors.surface),
+              child: poster.isNotEmpty
+                  ? Image.network(poster, width: 54, height: 78, fit: BoxFit.cover)
+                  : Container(width: 54, height: 78, color: AppColors.surface),
             ),
           ],
         ),
@@ -1965,7 +1958,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final id = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
     final watched = await LocalStorageService.getWatchedEpisodes();
     final wl = await LocalStorageService.isWatchlist(id);
-    final sub = await LocalStorageService.isSubscribed(id);
+    final sub = await LocalStorageService.isSubscribedToNotifications(id);
     if (mounted) {
       setState(() {
         _watchedEpisodes = watched;
@@ -2056,7 +2049,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  // الدخول الفوري واللحظي بدون انتظار الشبكة
+  // تشغيل فوري بدون انتظار
   void _playEpisode(dynamic ep, int idx) {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
@@ -2086,7 +2079,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     );
   }
 
-  // تشغيل الفيلم فوراً
   void _playMovie() {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
@@ -2243,7 +2235,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     icon: Icon(_isSubscribed ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: _isSubscribed ? AppColors.primary : Colors.white),
                     onPressed: () async {
                       HapticFeedback.selectionClick();
-                      await LocalStorageService.toggleSubscribed(id);
+                      await LocalStorageService.toggleNotificationSubscription(id);
                       _loadState();
                     },
                   ),
@@ -2652,7 +2644,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    // إذا كان الرابط فارغاً، يتم جلبه فوراً من داخل المشغل
     if (widget.videoUrl.isEmpty) {
       _loadAndPlayMedia(_activeMediaId);
     } else {
@@ -2762,12 +2753,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
     await _controller!.initialize();
 
+    _controller!.play();
+
+    if (mounted) {
+      setState(() => _isReady = true);
+    }
+
     final savedMs = await LocalStorageService.getPlaybackPosition(_activeMediaId);
     if (savedMs > 0 && savedMs < _controller!.value.duration.inMilliseconds - 5000) {
       await _controller!.seekTo(Duration(milliseconds: savedMs));
     }
-
-    _controller!.play();
 
     _controller!.addListener(() {
       if (_controller != null && _controller!.value.isInitialized) {
@@ -2803,7 +2798,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
 
     _startTimer();
-    if (mounted) setState(() => _isReady = true);
   }
 
   void _triggerAutoNext() {
@@ -3078,16 +3072,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     ListTile(
-                      leading: const Icon(Icons.closed_caption_rounded, color: Colors.white70),
-                      title: const Text('إعدادات ومكان الترجمة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white24, size: 20),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
-                      },
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    ListTile(
                       leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
                       title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: Text(_videoFit == BoxFit.cover ? 'ملء الشاشة' : 'طبيعي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
@@ -3168,12 +3152,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final hasPrev = widget.episodes.isNotEmpty && _activeEpIndex > 1;
     final hasNext = widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length;
 
-    // حساب رفع الترجمة ديناميكياً لتصعد في الوضع العمودي فوق الحواف وعناصر التحكم
-    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-    final effectiveBottomPadding = isPortrait
-        ? (settings.subBottomPadding + 95.0)
-        : (settings.subBottomPadding + 10.0);
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -3185,16 +3163,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
+                  // تثبيت الترجمة داخل إطار الفيديو نفسه (نفس سينمانا)
                   Center(
                     child: (_isReady && _controller != null)
-                        ? SizedBox.expand(
-                            child: FittedBox(
-                              fit: _videoFit,
-                              child: SizedBox(
-                                width: _controller!.value.size.width,
-                                height: _controller!.value.size.height,
-                                child: VideoPlayer(_controller!),
-                              ),
+                        ? AspectRatio(
+                            aspectRatio: _controller!.value.aspectRatio,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                FittedBox(
+                                  fit: _videoFit,
+                                  child: SizedBox(
+                                    width: _controller!.value.size.width,
+                                    height: _controller!.value.size.height,
+                                    child: VideoPlayer(_controller!),
+                                  ),
+                                ),
+
+                                // الترجمة تلتصق دائماً فوق أسفل حافة الفيديو مباشرة
+                                if (_currentSubText.isNotEmpty)
+                                  Positioned(
+                                    bottom: settings.subBottomPadding,
+                                    left: 16.0,
+                                    right: 16.0,
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.35),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          _currentSubText,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: settings.subColor,
+                                            fontSize: settings.subFontSize,
+                                            fontWeight: FontWeight.bold,
+                                            shadows: const [
+                                              Shadow(blurRadius: 8, color: Colors.black, offset: Offset(1, 1)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           )
                         : const CircularProgressIndicator(color: AppColors.primary),
@@ -3224,33 +3238,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           _currentSecondarySubText,
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.yellowAccent, fontSize: 16, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 8, color: Colors.black)]),
-                        ),
-                      ),
-                    ),
-
-                  // الترجمة المرفوعة للأعلى ومتكيفة مع اتجاه الشاشة
-                  if (_currentSubText.isNotEmpty)
-                    Positioned(
-                      bottom: effectiveBottomPadding,
-                      left: 20,
-                      right: 20,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _currentSubText,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: settings.subColor,
-                              fontSize: isPortrait ? 15.0 : settings.subFontSize,
-                              fontWeight: FontWeight.bold,
-                              shadows: settings.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
-                            ),
-                          ),
                         ),
                       ),
                     ),
@@ -3499,11 +3486,11 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
               child: Column(
                 children: [
                   ListTile(
-                    title: const Text('موقع الترجمة من الأسفل', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    title: const Text('موقع الترجمة من أسفل الفيديو', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                     subtitle: Slider(
                       value: s.subBottomPadding,
-                      min: 30.0,
-                      max: 140.0,
+                      min: 10.0,
+                      max: 90.0,
                       activeColor: AppColors.primary,
                       inactiveColor: Colors.white24,
                       onChanged: (v) => setState(() => s.updateSubStyle(bottomPadding: v)),
@@ -3519,8 +3506,8 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                       underline: const SizedBox(),
                       items: const [
                         DropdownMenuItem(value: 14.0, child: Text('صغير', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 18.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 24.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(value: 17.0, child: Text('متوسط', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(value: 22.0, child: Text('كبير', style: TextStyle(color: Colors.white))),
                       ],
                       onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
                     ),
