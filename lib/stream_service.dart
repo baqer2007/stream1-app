@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 class StreamService {
   static const Map<String, String> stealthHeaders = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
+    'Accept': '*/*',
     'Referer': 'https://cee.buzz/',
   };
 
@@ -152,11 +152,19 @@ class StreamService {
         }
 
         if (qualities.isNotEmpty) {
-          final defaultQuality = qualities.firstWhere(
-            (q) => q['resolution'] == '240p',
-            orElse: () => qualities.last,
-          );
-          mainVideoUrl = defaultQuality['url'];
+          // تفضيل جودة خفيفة تبدأ فوراً على شبكة 2Mbps
+          Map<String, dynamic>? selected;
+          for (var q in ['360p', '240p', '480p', '720p']) {
+            final match = qualities.firstWhere(
+              (item) => item['resolution'] == q,
+              orElse: () => {},
+            );
+            if (match.isNotEmpty) {
+              selected = match;
+              break;
+            }
+          }
+          mainVideoUrl = selected?['url'] ?? qualities.first['url'];
         }
       }
 
