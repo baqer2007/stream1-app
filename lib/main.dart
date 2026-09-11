@@ -832,9 +832,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppRadius.card),
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
-                            : Container(color: AppColors.surface),
+                        child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: AppColors.surface),
                       ),
                     ),
                   ),
@@ -1351,7 +1349,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   await LocalStorageService.setList('resume_playback_list', []);
                   setState(() => _resumeList = []);
                 },
-                child: Text(isAr ? 'إزالة الكل' : 'Clear All', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+                child: Text(isAr ? 'إزالة الكل' : 'Clear All', style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -1372,21 +1370,18 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   GestureDetector(
                     onTap: () {
                       HapticFeedback.lightImpact();
-                      StreamService.getVideoSource(it['id']).then((src) {
-                        if (src != null && mounted) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PlayerScreen(
-                                mediaId: it['id'],
-                                title: it['title'] ?? '',
-                                videoUrl: src['video_url'],
-                                qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
-                              ),
-                            ),
-                          );
-                        }
-                      });
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PlayerScreen(
+                            mediaId: it['id'],
+                            title: it['title'] ?? '',
+                            videoUrl: '',
+                            qualities: const [],
+                            poster: it['poster'] ?? '',
+                          ),
+                        ),
+                      );
                     },
                     child: Container(
                       width: 140,
@@ -1422,7 +1417,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       },
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
                         child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
                       ),
                     ),
@@ -1847,7 +1842,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
             ),
           ),
@@ -1900,9 +1895,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             const SizedBox(width: 14),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: poster.isNotEmpty
-                  ? Image.network(poster, width: 54, height: 78, fit: BoxFit.cover)
-                  : Container(width: 54, height: 78, color: AppColors.surface),
+              child: poster.isNotEmpty ? Image.network(poster, width: 54, height: 78, fit: BoxFit.cover) : Container(width: 54, height: 78, color: AppColors.surface),
             ),
           ],
         ),
@@ -1949,7 +1942,6 @@ class MediaDetailScreen extends StatefulWidget {
 }
 
 class _MediaDetailScreenState extends State<MediaDetailScreen> {
-  bool _isLaunching = false;
   Map<int, List<dynamic>> _seasonsMap = {};
   int _selectedSeason = 1;
   Set<String> _watchedEpisodes = {};
@@ -2064,82 +2056,54 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     }
   }
 
-  void _playEpisode(dynamic ep, int idx) async {
-    setState(() => _isLaunching = true);
+  // الدخول الفوري واللحظي بدون انتظار الشبكة
+  void _playEpisode(dynamic ep, int idx) {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final src = await StreamService.getVideoSource(targetId);
-    final sub = await StreamService.getVideoExtendedInfo(targetId);
+    final poster = StreamService.extractPoster(widget.media);
 
-    await LocalStorageService.markEpisodeWatched(targetId);
+    LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
-    setState(() => _isLaunching = false);
 
-    if (AppSettings.instance.autoSmartDownload && idx < (_seasonsMap[_selectedSeason]?.length ?? 0)) {
-      final nextEp = _seasonsMap[_selectedSeason]![idx];
-      final nextId = (nextEp['nb'] ?? nextEp['id']).toString();
-      StreamService.getVideoSource(nextId).then((nextSrc) {
-        if (nextSrc != null) {
-          DownloadManager.instance.startDownload(
-            targetId: nextId,
-            title: '$title - حلقة ${idx + 1}',
-            url: nextSrc['video_url'],
-            poster: StreamService.extractPoster(widget.media),
-            quality: '720p',
-          );
-        }
-      });
-    }
-
-    if (src != null && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PlayerScreen(
-            mediaId: targetId,
-            title: title,
-            subtitleTextHeader: 'الموسم $_selectedSeason - الحلقة $idx',
-            videoUrl: src['video_url'],
-            subtitleUrl: sub['arTranslationFilePath']?.toString() ?? '',
-            secondarySubtitleUrl: sub['enTranslationFilePath']?.toString() ?? '',
-            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
-            episodes: _seasonsMap[_selectedSeason] ?? [],
-            currentEpIndex: idx,
-            poster: StreamService.extractPoster(widget.media),
-            onEpisodeChanged: (newId) {
-              LocalStorageService.markEpisodeWatched(newId);
-              _loadState();
-            },
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          mediaId: targetId,
+          title: title,
+          subtitleTextHeader: 'الموسم $_selectedSeason - الحلقة $idx',
+          videoUrl: '',
+          qualities: const [],
+          episodes: _seasonsMap[_selectedSeason] ?? [],
+          currentEpIndex: idx,
+          poster: poster,
+          onEpisodeChanged: (newId) {
+            LocalStorageService.markEpisodeWatched(newId);
+            _loadState();
+          },
         ),
-      );
-    }
+      ),
+    );
   }
 
-  void _playMovie() async {
-    setState(() => _isLaunching = true);
+  // تشغيل الفيلم فوراً
+  void _playMovie() {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = widget.media['ar_title'] ?? widget.media['en_title'] ?? '';
-    final src = await StreamService.getVideoSource(targetId);
-    final sub = await StreamService.getVideoExtendedInfo(targetId);
-    setState(() => _isLaunching = false);
+    final poster = StreamService.extractPoster(widget.media);
 
-    if (src != null && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PlayerScreen(
-            mediaId: targetId,
-            title: title,
-            videoUrl: src['video_url'],
-            subtitleUrl: sub['arTranslationFilePath']?.toString() ?? '',
-            secondarySubtitleUrl: sub['enTranslationFilePath']?.toString() ?? '',
-            qualities: List<Map<String, dynamic>>.from(src['qualities'] ?? []),
-            poster: StreamService.extractPoster(widget.media),
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          mediaId: targetId,
+          title: title,
+          videoUrl: '',
+          qualities: const [],
+          poster: poster,
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _showDownloadQualityPicker(String targetId, String title, String poster) async {
@@ -2350,7 +2314,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 borderRadius: BorderRadius.circular(AppRadius.button),
                                 padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 11),
                                 minSize: 0,
-                                onPressed: _isLaunching ? null : () => _isSeries && currentEpisodes.isNotEmpty ? _playEpisode(currentEpisodes.first, 1) : _playMovie(),
+                                onPressed: () => _isSeries && currentEpisodes.isNotEmpty ? _playEpisode(currentEpisodes.first, 1) : _playMovie(),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: const [
@@ -2648,6 +2612,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _activeQuality = '360p';
   BoxFit _videoFit = BoxFit.contain;
   bool _isLandscape = true;
+  List<Map<String, dynamic>> _currentQualities = [];
 
   List<Subtitle> _subtitles = [];
   List<Subtitle> _secondarySubtitles = [];
@@ -2678,26 +2643,57 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _activeEpIndex = widget.currentEpIndex;
     _activeMediaId = widget.mediaId;
     _activeHeader = widget.subtitleTextHeader;
+    _currentQualities = widget.qualities;
     _loadWatchedState();
-    
+
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
+      DeviceOrientation.portraitUp,
     ]);
 
-    _initPlayer(widget.videoUrl);
-
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        if (widget.subtitleUrl.isNotEmpty) _loadSubs(widget.subtitleUrl, isSecondary: false);
-        if (widget.secondarySubtitleUrl.isNotEmpty) _loadSubs(widget.secondarySubtitleUrl, isSecondary: true);
-      }
-    });
+    // إذا كان الرابط فارغاً، يتم جلبه فوراً من داخل المشغل
+    if (widget.videoUrl.isEmpty) {
+      _loadAndPlayMedia(_activeMediaId);
+    } else {
+      _initPlayer(widget.videoUrl);
+      _loadSubtitlesDelayed(widget.subtitleUrl, widget.secondarySubtitleUrl);
+    }
   }
 
   void _loadWatchedState() async {
     final w = await LocalStorageService.getWatchedEpisodes();
     if (mounted) setState(() => _watchedSet = w);
+  }
+
+  void _loadAndPlayMedia(String id) async {
+    final futures = await Future.wait([
+      StreamService.getVideoSource(id),
+      StreamService.getVideoExtendedInfo(id),
+    ]);
+
+    final source = futures[0];
+    final subInfo = futures[1];
+
+    if (source != null && mounted) {
+      setState(() {
+        _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
+      });
+      _initPlayer(source['video_url']);
+
+      final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
+      final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
+      _loadSubtitlesDelayed(subAr, subEn);
+    }
+  }
+
+  void _loadSubtitlesDelayed(String arUrl, String enUrl) {
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) {
+        if (arUrl.isNotEmpty) _loadSubs(arUrl, isSecondary: false);
+        if (enUrl.isNotEmpty) _loadSubs(enUrl, isSecondary: true);
+      }
+    });
   }
 
   void _loadSubs(String url, {required bool isSecondary}) async {
@@ -2862,11 +2858,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _loadWatchedState();
 
     if (source != null) {
+      setState(() {
+        _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
+      });
       _initPlayer(source['video_url']);
       final path = sub['arTranslationFilePath']?.toString() ?? '';
-      if (path.isNotEmpty) _loadSubs(path, isSecondary: false);
       final pathEn = sub['enTranslationFilePath']?.toString() ?? '';
-      if (pathEn.isNotEmpty) _loadSubs(pathEn, isSecondary: true);
+      _loadSubtitlesDelayed(path, pathEn);
     }
   }
 
@@ -2942,7 +2940,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _castToTv() async {
-    final videoUrl = widget.videoUrl;
+    final videoUrl = _controller?.dataSource ?? widget.videoUrl;
     if (videoUrl.isEmpty) return;
 
     final uri = Uri.parse(videoUrl);
@@ -3136,8 +3134,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context: context,
       builder: (_) => CupertinoActionSheet(
         title: const Text('اختر جودة العرض'),
-        actions: widget.qualities.map((q) {
-          final res = q['resolution'] ?? '240p';
+        actions: _currentQualities.map((q) {
+          final res = q['resolution'] ?? '360p';
           final url = q['url'] ?? '';
           return CupertinoActionSheetAction(
             child: Text(res),
@@ -3169,6 +3167,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final settings = AppSettings.instance;
     final hasPrev = widget.episodes.isNotEmpty && _activeEpIndex > 1;
     final hasNext = widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length;
+
+    // حساب رفع الترجمة ديناميكياً لتصعد في الوضع العمودي فوق الحواف وعناصر التحكم
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final effectiveBottomPadding = isPortrait
+        ? (settings.subBottomPadding + 95.0)
+        : (settings.subBottomPadding + 10.0);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -3224,18 +3228,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
+                  // الترجمة المرفوعة للأعلى ومتكيفة مع اتجاه الشاشة
                   if (_currentSubText.isNotEmpty)
                     Positioned(
-                      bottom: settings.subBottomPadding, left: 20, right: 20,
+                      bottom: effectiveBottomPadding,
+                      left: 20,
+                      right: 20,
                       child: Center(
-                        child: Text(
-                          _currentSubText,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: settings.subColor,
-                            fontSize: settings.subFontSize,
-                            fontWeight: FontWeight.bold,
-                            shadows: settings.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _currentSubText,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: settings.subColor,
+                              fontSize: isPortrait ? 15.0 : settings.subFontSize,
+                              fontWeight: FontWeight.bold,
+                              shadows: settings.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
+                            ),
                           ),
                         ),
                       ),
