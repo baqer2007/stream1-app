@@ -1853,7 +1853,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(border: Border.all(color: AppColors.border, width: 0.8), borderRadius: BorderRadius.circular(4)),
                     child: Row(
-                      mainAxisSize: minAxisSize,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text('IMDb', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
                         const SizedBox(width: 4),
