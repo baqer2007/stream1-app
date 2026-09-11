@@ -156,13 +156,13 @@ class LocalStorageService {
     await setList('user_watchlist', list);
   }
 
-  static Future<bool> isSubscribedToNotifications(String id) async {
+  static Future<bool> isSubscribed(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
     return list.contains(id);
   }
 
-  static Future<void> toggleNotificationSubscription(String id) async {
+  static Future<void> toggleSubscribed(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
     if (list.contains(id)) {
@@ -785,7 +785,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
   @override
   Widget build(BuildContext context) {
     final isTv = AppSettings.instance.tvModeEnabled;
-    final count = isTv ? 6 : 3;
+    final count = isTv ? 6 : (MediaQuery.of(context).size.width > 700 ? 5 : 3);
 
     return Directionality(
       textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
@@ -832,7 +832,9 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppRadius.card),
-                        child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: AppColors.surface),
+                        child: poster.isNotEmpty
+                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                            : Container(color: AppColors.surface),
                       ),
                     ),
                   ),
@@ -1414,7 +1416,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     child: GestureDetector(
                       onTap: () async {
                         HapticFeedback.selectionClick();
-                        await LocalStorageService.removeItem('resume_playback_list', it['id'], idField: 'id');
+                        await LocalStorageService.removeItem('resume_playback_list', it['id'].toString(), idField: 'id');
                         final l = await LocalStorageService.getList('resume_playback_list');
                         setState(() => _resumeList = l);
                       },
@@ -1845,7 +1847,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
             ),
           ),
@@ -1971,7 +1973,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final id = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
     final watched = await LocalStorageService.getWatchedEpisodes();
     final wl = await LocalStorageService.isWatchlist(id);
-    final sub = await LocalStorageService.isSubscribedToNotifications(id);
+    final sub = await LocalStorageService.isSubscribed(id);
     if (mounted) {
       setState(() {
         _watchedEpisodes = watched;
@@ -2277,7 +2279,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     icon: Icon(_isSubscribed ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: _isSubscribed ? AppColors.primary : Colors.white),
                     onPressed: () async {
                       HapticFeedback.selectionClick();
-                      await LocalStorageService.toggleNotificationSubscription(id);
+                      await LocalStorageService.toggleSubscribed(id);
                       _loadState();
                     },
                   ),
@@ -2643,7 +2645,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _showControls = true;
   Timer? _hideTimer;
 
-  String _activeQuality = '240p';
+  String _activeQuality = '360p';
   BoxFit _videoFit = BoxFit.contain;
   bool _isLandscape = true;
 
@@ -3066,11 +3068,64 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         _showQualityPicker();
                       },
                     ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
+                      title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text('${settings.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSeekPicker();
+                      },
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.closed_caption_rounded, color: Colors.white70),
+                      title: const Text('إعدادات ومكان الترجمة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white24, size: 20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
+                      },
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
+                      title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(_videoFit == BoxFit.cover ? 'ملء الشاشة' : 'طبيعي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      onTap: () {
+                        setState(() {
+                          _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
+                        });
+                        Navigator.pop(context);
+                      },
+                    ),
                   ],
                 ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showSeekPicker() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => CupertinoActionSheet(
+        title: const Text('فترة التقديم والتأخير'),
+        actions: [5, 10, 15, 30].map((s) => CupertinoActionSheetAction(
+          child: Text('$s ثوانٍ'),
+          onPressed: () {
+            AppSettings.instance.updateSeek(s);
+            Navigator.pop(context);
+          },
+        )).toList(),
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('إلغاء'),
         ),
       ),
     );
@@ -3456,10 +3511,54 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                       onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
                     ),
                   ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    title: const Text('لون الخط', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
+                        _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
+                        _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: AppColors.border, height: 1),
+                  ListTile(
+                    title: const Text('ظل حواف الخط', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: CupertinoSwitch(
+                      value: s.subHasShadow,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
+                    ),
+                  ),
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            CupertinoButton(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              onPressed: () => setState(() => s.resetSubtitles()),
+              child: const Text('إعادة ضبط الترجمة الافتراضية', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
+    return GestureDetector(
+      onTap: tap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
         ),
       ),
     );
@@ -3832,6 +3931,82 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => s.updateSmartDownload(v)),
                       ),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: DropdownButton<String>(
+                        dropdownColor: AppColors.surface,
+                        value: s.appLanguage,
+                        underline: const SizedBox(),
+                        items: const [
+                          DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: Colors.white))),
+                          DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: Colors.white))),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => s.updateLanguage(v));
+                        },
+                      ),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'خط التطبيق' : 'App Font', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: DropdownButton<String>(
+                        dropdownColor: AppColors.surface,
+                        value: s.selectedFont,
+                        underline: const SizedBox(),
+                        items: const [
+                          DropdownMenuItem(value: 'iPhone', child: Text('iPhone (أبل الرسمي)', style: TextStyle(color: Colors.white))),
+                          DropdownMenuItem(value: 'Cairo', child: Text('Cairo', style: TextStyle(color: Colors.white))),
+                          DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: Colors.white))),
+                          DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: Colors.white))),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => s.updateFont(v));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 18),
+              const Text('وضع المحتوى', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Container(
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
+                child: Column(
+                  children: [
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'الافتراضي (الكل)' : 'Default', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      value: 0,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      value: 1,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    RadioListTile<int>(
+                      title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      value: 2,
+                      groupValue: s.appFilterMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) {
+                        if (v != null) setState(() => s.updateFilterMode(v));
+                      },
                     ),
                   ],
                 ),
