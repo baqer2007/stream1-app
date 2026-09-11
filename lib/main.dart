@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -125,7 +124,6 @@ class LocalStorageService {
     if (!list.contains(epId)) {
       list.add(epId);
       await prefs.setStringList('watched_episodes_${currentProfile}_list', list);
-      
       int epCount = prefs.getInt('stats_episodes_$currentProfile') ?? 0;
       await prefs.setInt('stats_episodes_$currentProfile', epCount + 1);
     }
@@ -333,7 +331,7 @@ class AppSettings extends ChangeNotifier {
   bool enableDualSubtitles = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
-  String selectedFont = 'Cairo';
+  String selectedFont = 'iPhone'; // iPhone style default
   bool autoSmartDownload = false;
 
   String? userName;
@@ -350,7 +348,7 @@ class AppSettings extends ChangeNotifier {
     enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
     appFilterMode = p.getInt('app_filter_mode') ?? 0;
     appLanguage = p.getString('app_lang') ?? 'ar';
-    selectedFont = p.getString('app_font') ?? 'Cairo';
+    selectedFont = p.getString('app_font') ?? 'iPhone';
     autoSmartDownload = p.getBool('app_smart_dl') ?? false;
     userName = p.getString('auth_user_name');
     userEmail = p.getString('auth_user_email');
@@ -466,14 +464,15 @@ class AppSettings extends ChangeNotifier {
 
   TextTheme getCustomTextTheme() {
     switch (selectedFont) {
+      case 'Cairo':
+        return GoogleFonts.cairoTextTheme(ThemeData.dark().textTheme);
       case 'Tajawal':
         return GoogleFonts.tajawalTextTheme(ThemeData.dark().textTheme);
       case 'Almarai':
         return GoogleFonts.almaraiTextTheme(ThemeData.dark().textTheme);
-      case 'Changa':
-        return GoogleFonts.changaTextTheme(ThemeData.dark().textTheme);
       default:
-        return GoogleFonts.cairoTextTheme(ThemeData.dark().textTheme);
+        // خط نمط الآيفون المتقن (SF Pro Style)
+        return GoogleFonts.ibmPlexSansArabicTextTheme(ThemeData.dark().textTheme);
     }
   }
 }
@@ -569,10 +568,10 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
             unselectedFontSize: 11,
             onTap: (i) => setState(() => _currentIndex = i),
             items: [
-              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.house_fill, size: 21), label: isAr ? 'الرئيسية' : 'Home'),
-              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.square_grid_2x2_fill, size: 21), label: isAr ? 'الأقسام' : 'Categories'),
-              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.search, size: 21), label: isAr ? 'بحث' : 'Search'),
-              BottomNavigationBarItem(icon: const Icon(CupertinoIcons.person_crop_circle_fill, size: 21), label: isAr ? 'الحساب' : 'Profile'),
+              BottomNavigationBarItem(icon: const Icon(Icons.home_filled, size: 24), label: isAr ? 'الرئيسية' : 'Home'),
+              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded, size: 24), label: isAr ? 'الأقسام' : 'Categories'),
+              BottomNavigationBarItem(icon: const Icon(Icons.search_rounded, size: 24), label: isAr ? 'بحث' : 'Search'),
+              BottomNavigationBarItem(icon: const Icon(Icons.person_rounded, size: 24), label: isAr ? 'الحساب' : 'Profile'),
             ],
           ),
         ),
@@ -588,16 +587,16 @@ class CategoriesScreen extends StatelessWidget {
   CategoriesScreen({super.key});
 
   final List<Map<String, dynamic>> _allCategories = const [
-    {'key': 'horror', 'ar': 'رعب وتشويق', 'icon': CupertinoIcons.flame_fill},
-    {'key': 'action', 'ar': 'أكشن وحركة', 'icon': CupertinoIcons.bolt_fill},
-    {'key': 'animation', 'ar': 'أنمي ورسوم متحركة', 'icon': CupertinoIcons.sparkles},
-    {'key': 'comedy', 'ar': 'كوميديا وضحك', 'icon': CupertinoIcons.smiley_fill},
-    {'key': 'sci-fi', 'ar': 'خيال علمي وفضاء', 'icon': CupertinoIcons.rocket_fill},
-    {'key': 'drama', 'ar': 'دراما وقصص واقعية', 'icon': CupertinoIcons.film_fill},
-    {'key': 'romance', 'ar': 'رومانسية وحب', 'icon': CupertinoIcons.heart_fill},
-    {'key': 'crime', 'ar': 'جريمة وتحقيق', 'icon': CupertinoIcons.shield_fill},
-    {'key': 'adventure', 'ar': 'مغامرات واستكشاف', 'icon': CupertinoIcons.compass_fill},
-    {'key': 'thriller', 'ar': 'إثارة وغموض', 'icon': CupertinoIcons.eye_fill},
+    {'key': 'horror', 'ar': 'رعب وتشويق', 'icon': Icons.local_fire_department_rounded},
+    {'key': 'action', 'ar': 'أكشن وحركة', 'icon': Icons.flash_on_rounded},
+    {'key': 'animation', 'ar': 'أنمي ورسوم متحركة', 'icon': Icons.auto_awesome_rounded},
+    {'key': 'comedy', 'ar': 'كوميديا وضحك', 'icon': Icons.sentiment_very_satisfied_rounded},
+    {'key': 'sci-fi', 'ar': 'خيال علمي وفضاء', 'icon': Icons.rocket_launch_rounded},
+    {'key': 'drama', 'ar': 'دراما وقصص واقعية', 'icon': Icons.movie_rounded},
+    {'key': 'romance', 'ar': 'رومانسية وحب', 'icon': Icons.favorite_rounded},
+    {'key': 'crime', 'ar': 'جريمة وتحقيق', 'icon': Icons.shield_rounded},
+    {'key': 'adventure', 'ar': 'مغامرات واستكشاف', 'icon': Icons.explore_rounded},
+    {'key': 'thriller', 'ar': 'إثارة وغموض', 'icon': Icons.remove_red_eye_rounded},
   ];
 
   @override
@@ -622,9 +621,9 @@ class CategoriesScreen extends StatelessWidget {
               border: Border.all(color: AppColors.border, width: 0.5),
             ),
             child: ListTile(
-              leading: Icon(cat['icon'], color: AppColors.primary),
+              leading: Icon(cat['icon'], color: AppColors.primary, size: 24),
               title: Text(cat['ar'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
-              trailing: const Icon(CupertinoIcons.chevron_forward, color: AppColors.textMuted, size: 14),
+              trailing: const Icon(Icons.chevron_left_rounded, color: AppColors.textMuted, size: 20),
               onTap: () {
                 Navigator.push(
                   context,
@@ -968,7 +967,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(isAr ? 'استكشف المزيد من الأعمال' : 'Explore More Titles', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                          const Icon(CupertinoIcons.film, color: AppColors.primary, size: 18),
+                          const Icon(Icons.movie_filter_rounded, color: AppColors.primary, size: 18),
                         ],
                       ),
                     ),
@@ -1057,7 +1056,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(CupertinoIcons.play_rectangle_fill, color: AppColors.primary, size: 18),
+                    const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 20),
                     const SizedBox(width: 8),
                     Text(isAr ? 'الأفلام' : 'Movies', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
@@ -1080,7 +1079,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(CupertinoIcons.tv_fill, color: Colors.amber, size: 18),
+                    const Icon(Icons.tv_rounded, color: Colors.amber, size: 20),
                     const SizedBox(width: 8),
                     Text(isAr ? 'المسلسلات' : 'Series', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
@@ -1151,7 +1150,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           ),
                           onPressed: () => _openDetails(item),
-                          icon: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 16),
+                          icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
                           label: Text(AppSettings.instance.appLanguage == 'ar' ? 'شاهد الآن' : 'Watch', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                         ),
                       ],
@@ -1229,7 +1228,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   child: Stack(
                     children: [
                       Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
-                      const Center(child: Icon(CupertinoIcons.play_circle_fill, color: AppColors.primary, size: 34)),
+                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 34)),
                       Positioned(
                         bottom: 0, left: 0, right: 0,
                         child: ClipRRect(
@@ -1430,7 +1429,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                   ),
                   const Text('تصفية النتائج', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                   IconButton(
-                    icon: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 18),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -1471,7 +1470,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                   dropdownColor: AppColors.surface,
                   isExpanded: true,
                   underline: const SizedBox(),
-                  icon: const Icon(CupertinoIcons.chevron_down, color: Colors.white54, size: 16),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54, size: 20),
                   items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
                   onChanged: (v) {
                     if (v != null) setMState(() => _selectedCategory = v);
@@ -1541,7 +1540,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(11),
                         decoration: BoxDecoration(color: const Color(0xFF131A29), borderRadius: BorderRadius.circular(12)),
-                        child: const Icon(CupertinoIcons.slider_horizontal_3, color: Colors.white70, size: 20),
+                        child: const Icon(Icons.tune_rounded, color: Colors.white70, size: 20),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1556,7 +1555,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                             hintText: 'ابحث عن أفلام، مسلسلات، ممثلين...',
                             hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
                             border: InputBorder.none,
-                            prefixIcon: Icon(CupertinoIcons.search, color: Colors.white38, size: 20),
+                            prefixIcon: Icon(Icons.search_rounded, color: Colors.white38, size: 22),
                             contentPadding: EdgeInsets.symmetric(vertical: 12),
                           ),
                           onSubmitted: (_) => _search(),
@@ -1628,7 +1627,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._seriesResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج المسلسلات', isSeriesOnly: true))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -1642,7 +1641,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it)),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: 'نتائج الأفلام', isSeriesOnly: false))),
               child: const Text('عرض الكل', style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ),
@@ -1958,9 +1957,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   final res = q['resolution'] ?? '720p';
                   final url = q['url'] ?? '';
                   return ListTile(
-                    leading: const Icon(CupertinoIcons.film, color: AppColors.primary),
+                    leading: const Icon(Icons.movie_rounded, color: AppColors.primary),
                     title: Text('دقة $res', style: const TextStyle(color: Colors.white)),
-                    trailing: const Icon(CupertinoIcons.arrow_down_circle, color: Colors.white70),
+                    trailing: const Icon(Icons.arrow_downward_rounded, color: Colors.white70),
                     onTap: () {
                       Navigator.pop(context);
                       DownloadManager.instance.startDownload(
@@ -2005,19 +2004,19 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               expandedHeight: 480,
               pinned: true,
               backgroundColor: AppColors.background,
-              leading: IconButton(icon: const Icon(CupertinoIcons.chevron_forward, color: Colors.white), onPressed: () => Navigator.pop(context)),
+              leading: IconButton(icon: const Icon(Icons.chevron_left_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
               actions: [
-                IconButton(icon: const Icon(CupertinoIcons.share, color: Colors.white), onPressed: _shareMedia),
+                IconButton(icon: const Icon(Icons.share_rounded, color: Colors.white), onPressed: _shareMedia),
                 if (_isSeries)
                   IconButton(
-                    icon: Icon(_isSubscribed ? CupertinoIcons.bell_fill : CupertinoIcons.bell, color: _isSubscribed ? AppColors.primary : Colors.white),
+                    icon: Icon(_isSubscribed ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: _isSubscribed ? AppColors.primary : Colors.white),
                     onPressed: () async {
                       await LocalStorageService.toggleNotificationSubscription(id);
                       _loadState();
                     },
                   ),
                 IconButton(
-                  icon: Icon(_isWatchlist ? CupertinoIcons.bookmark_fill : CupertinoIcons.bookmark, color: _isWatchlist ? AppColors.primary : Colors.white),
+                  icon: Icon(_isWatchlist ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: _isWatchlist ? AppColors.primary : Colors.white),
                   onPressed: () async {
                     await LocalStorageService.toggleWatchlist(widget.media);
                     _loadState();
@@ -2069,7 +2068,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 },
                                 child: Column(
                                   children: [
-                                    Icon(_isWatchlist ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.plus_circle, color: Colors.white, size: 24),
+                                    Icon(_isWatchlist ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded, color: Colors.white, size: 24),
                                     const SizedBox(height: 4),
                                     const Text('المشاهدة لاحقاً', style: TextStyle(color: Colors.white70, fontSize: 10)),
                                   ],
@@ -2083,7 +2082,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 10),
                                 ),
                                 onPressed: _isLaunching ? null : () => _isSeries && currentEpisodes.isNotEmpty ? _playEpisode(currentEpisodes.first, 1) : _playMovie(),
-                                icon: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 16),
+                                icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
                                 label: const Text('شاهد الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                               ),
                               const SizedBox(width: 34),
@@ -2091,7 +2090,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 onTap: () => _showDownloadQualityPicker(id, title, poster),
                                 child: const Column(
                                   children: [
-                                    Icon(CupertinoIcons.arrow_down_circle, color: Colors.white, size: 24),
+                                    Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 24),
                                     SizedBox(height: 4),
                                     Text('تحميل', style: TextStyle(color: Colors.white70, fontSize: 10)),
                                   ],
@@ -2130,7 +2129,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       onTap: _playTrailer,
                       child: Row(
                         children: const [
-                          Icon(CupertinoIcons.play_circle, color: AppColors.primary, size: 22),
+                          Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 22),
                           SizedBox(width: 6),
                           Text('مشاهدة الإعلان الرسمي', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                           Spacer(),
@@ -2144,11 +2143,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        const Icon(CupertinoIcons.hand_thumbsup, color: Colors.white54, size: 16),
+                        const Icon(Icons.thumb_up_rounded, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
                         Text(rateCount, style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         const SizedBox(width: 16),
-                        const Icon(CupertinoIcons.hand_thumbsdown, color: Colors.white54, size: 16),
+                        const Icon(Icons.thumb_down_rounded, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
                         const Text('84', style: TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
@@ -2194,7 +2193,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               child: Row(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(CupertinoIcons.arrow_down_to_line, color: Colors.white54, size: 18),
+                                    icon: const Icon(Icons.download_rounded, color: Colors.white54, size: 20),
                                     onPressed: () => _showDownloadQualityPicker(targetId, '$title - حلقة $idx', poster),
                                   ),
                                   const SizedBox(width: 8),
@@ -2209,7 +2208,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: const [
-                                              Icon(CupertinoIcons.eye_fill, color: Colors.greenAccent, size: 14),
+                                              Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
                                               SizedBox(width: 4),
                                               Text('تمت المشاهدة', style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                                             ],
@@ -2228,7 +2227,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                         Container(
                                           width: 28, height: 28,
                                           decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
-                                          child: const Icon(CupertinoIcons.play_arrow_solid, color: Colors.white, size: 14),
+                                          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
                                         ),
                                       ],
                                     ),
@@ -2349,7 +2348,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _brightnessLevel = 0.5;
   bool _showIndicator = false;
   String _indicatorText = '';
-  IconData _indicatorIcon = CupertinoIcons.volume_up;
+  IconData _indicatorIcon = Icons.volume_up_rounded;
 
   bool _showAutoNext = false;
   int _autoNextCountdown = 5;
@@ -2568,11 +2567,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (isRightSide) {
         _volumeLevel = (_volumeLevel + delta).clamp(0.0, 1.0);
         _controller?.setVolume(_volumeLevel);
-        _indicatorIcon = _volumeLevel == 0 ? CupertinoIcons.volume_off : CupertinoIcons.volume_up;
+        _indicatorIcon = _volumeLevel == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded;
         _indicatorText = '${(_volumeLevel * 100).toInt()}%';
       } else {
         _brightnessLevel = (_brightnessLevel + delta).clamp(0.1, 1.0);
-        _indicatorIcon = CupertinoIcons.sun_max;
+        _indicatorIcon = Icons.brightness_6_rounded;
         _indicatorText = '${(_brightnessLevel * 100).toInt()}%';
       }
     });
@@ -2604,7 +2603,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SwitchListTile(
-                    secondary: const Icon(CupertinoIcons.text_bubble, color: Colors.white70),
+                    secondary: const Icon(Icons.subtitles_rounded, color: Colors.white70),
                     title: const Text('الترجمة المزدوجة (عربي + إنجليزي)', style: TextStyle(color: Colors.white, fontSize: 13)),
                     value: settings.enableDualSubtitles,
                     activeColor: AppColors.primary,
@@ -2612,7 +2611,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   SwitchListTile(
-                    secondary: const Icon(CupertinoIcons.shield, color: Colors.white70),
+                    secondary: const Icon(Icons.shield_rounded, color: Colors.white70),
                     title: const Text('إزالة اللقطات الحساسة تلقائياً', style: TextStyle(color: Colors.white, fontSize: 13)),
                     value: settings.skipSensitiveScenes,
                     activeColor: AppColors.primary,
@@ -2620,7 +2619,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   ListTile(
-                    leading: const Icon(CupertinoIcons.gear_alt, color: Colors.white70),
+                    leading: const Icon(Icons.settings_rounded, color: Colors.white70),
                     title: const Text('دقة الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
                     trailing: Text(_activeQuality, style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     onTap: () {
@@ -2630,7 +2629,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   ListTile(
-                    leading: const Icon(CupertinoIcons.forward, color: Colors.white70),
+                    leading: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
                     title: const Text('فترة تمرير الفيديو', style: TextStyle(color: Colors.white, fontSize: 13)),
                     trailing: Text('${settings.seekDuration} ثوانٍ', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     onTap: () {
@@ -2640,9 +2639,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   ListTile(
-                    leading: const Icon(CupertinoIcons.captions_bubble, color: Colors.white70),
+                    leading: const Icon(Icons.closed_caption_rounded, color: Colors.white70),
                     title: const Text('إعدادات ومكان الترجمة', style: TextStyle(color: Colors.white, fontSize: 13)),
-                    trailing: const Icon(CupertinoIcons.chevron_forward, color: Colors.white24, size: 14),
+                    trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white24, size: 20),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
@@ -2650,7 +2649,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   ListTile(
-                    leading: const Icon(CupertinoIcons.device_phone_landscape, color: Colors.white70),
+                    leading: const Icon(Icons.aspect_ratio_rounded, color: Colors.white70),
                     title: const Text('أبعاد الشاشة', style: TextStyle(color: Colors.white, fontSize: 13)),
                     trailing: Text(_videoFit == BoxFit.cover ? 'ملء الشاشة' : 'طبيعي', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     onTap: () {
@@ -2697,7 +2696,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           final url = q['url'] ?? '';
           return ListTile(
             title: Text(res, style: const TextStyle(color: Colors.white)),
-            trailing: _activeQuality == res ? const Icon(CupertinoIcons.check_mark, color: AppColors.primary) : null,
+            trailing: _activeQuality == res ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
             onTap: () {
               Navigator.pop(context);
               setState(() => _activeQuality = res);
@@ -2822,8 +2821,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                IconButton(icon: const Icon(CupertinoIcons.tv, color: Colors.white), onPressed: _castToTv),
-                                IconButton(icon: const Icon(CupertinoIcons.slider_horizontal_3, color: Colors.white), onPressed: _openSettingsBottomSheet),
+                                IconButton(icon: const Icon(Icons.tv_rounded, color: Colors.white), onPressed: _castToTv),
+                                IconButton(icon: const Icon(Icons.tune_rounded, color: Colors.white), onPressed: _openSettingsBottomSheet),
                               ],
                             ),
                           ],
@@ -2836,7 +2835,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         children: [
                           IconButton(
                             iconSize: 34,
-                            icon: const Icon(CupertinoIcons.gobackward_10, color: Colors.white),
+                            icon: const Icon(Icons.replay_10_rounded, color: Colors.white),
                             onPressed: () {
                               final p = _controller!.value.position - Duration(seconds: settings.seekDuration);
                               _controller!.seekTo(p < Duration.zero ? Duration.zero : p);
@@ -2845,13 +2844,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           const SizedBox(width: 24),
                           IconButton(
                             iconSize: 48,
-                            icon: Icon(_controller != null && _controller!.value.isPlaying ? CupertinoIcons.pause_circle_fill : CupertinoIcons.play_circle_fill, color: Colors.white),
+                            icon: Icon(_controller != null && _controller!.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.white),
                             onPressed: () => setState(() => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play()),
                           ),
                           const SizedBox(width: 24),
                           IconButton(
                             iconSize: 34,
-                            icon: const Icon(CupertinoIcons.goforward_10, color: Colors.white),
+                            icon: const Icon(Icons.forward_10_rounded, color: Colors.white),
                             onPressed: () {
                               final p = _controller!.value.position + Duration(seconds: settings.seekDuration);
                               _controller!.seekTo(p);
@@ -3144,7 +3143,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         actions: [
           IconButton(
             tooltip: 'تفريغ الكاش',
-            icon: const Icon(CupertinoIcons.trash, color: Colors.white70),
+            icon: const Icon(Icons.delete_sweep_rounded, color: Colors.white70),
             onPressed: _cleanCache,
           ),
         ],
@@ -3188,7 +3187,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text('${d.speedKbs.toStringAsFixed(1)} KB/s', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                              IconButton(icon: const Icon(CupertinoIcons.xmark_circle, color: Colors.white54, size: 18), onPressed: () => DownloadManager.instance.cancelDownload(d.id)),
+                              IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 18), onPressed: () => DownloadManager.instance.cancelDownload(d.id)),
                             ],
                           ),
                         ],
@@ -3198,10 +3197,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: const Icon(CupertinoIcons.check_mark_circled_solid, color: AppColors.primary),
+                        leading: const Icon(Icons.check_circle_rounded, color: AppColors.primary),
                         title: Text(it['title'] ?? '', style: const TextStyle(color: Colors.white)),
                         subtitle: Text(it['size'] ?? '', style: const TextStyle(color: Colors.white54)),
-                        trailing: IconButton(icon: const Icon(CupertinoIcons.delete, color: Colors.white38), onPressed: () async {
+                        trailing: IconButton(icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38), onPressed: () async {
                           await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
                           _loadData();
                         }),
@@ -3241,7 +3240,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 ),
                 child: Column(
                   children: [
-                    const Icon(CupertinoIcons.chart_bar_alt_fill, color: AppColors.primary, size: 40),
+                    const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 40),
                     const SizedBox(height: 10),
                     Text(isAr ? 'إحصائيات الملف: ${s.activeProfile}' : 'Stats for: ${s.activeProfile}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     const Divider(color: AppColors.border, height: 24),
@@ -3276,7 +3275,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.card)),
                 child: Row(
                   children: [
-                    const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(CupertinoIcons.person_fill, color: Colors.white)),
+                    const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(Icons.person_rounded, color: Colors.white)),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -3314,7 +3313,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     },
                   )),
                   ActionChip(
-                    avatar: const Icon(CupertinoIcons.plus, size: 16),
+                    avatar: const Icon(Icons.add_rounded, size: 16),
                     label: const Text('إضافة بروفايل'),
                     onPressed: _showAddProfileDialog,
                   ),
@@ -3325,7 +3324,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               SwitchListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                secondary: const Icon(CupertinoIcons.sparkles, color: AppColors.primary),
+                secondary: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
                 title: const Text('التنزيل الذكي للحلقات', style: TextStyle(color: Colors.white, fontSize: 13)),
                 subtitle: const Text('تنزيل الحلقة التالية ومسح المنتهية تلقائياً', style: TextStyle(color: Colors.white54, fontSize: 11)),
                 value: s.autoSmartDownload,
@@ -3337,7 +3336,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                leading: const Icon(CupertinoIcons.globe, color: AppColors.primary),
+                leading: const Icon(Icons.language_rounded, color: AppColors.primary),
                 title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 trailing: DropdownButton<String>(
                   dropdownColor: AppColors.surface,
@@ -3356,16 +3355,16 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ListTile(
                 tileColor: AppColors.surface,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
-                leading: const Icon(CupertinoIcons.textformat, color: AppColors.primary),
+                leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
                 title: Text(isAr ? 'خط التطبيق' : 'App Font', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 trailing: DropdownButton<String>(
                   dropdownColor: AppColors.surface,
                   value: s.selectedFont,
                   items: const [
+                    DropdownMenuItem(value: 'iPhone', child: Text('iPhone (أبل الرسمي)', style: TextStyle(color: Colors.white))),
                     DropdownMenuItem(value: 'Cairo', child: Text('Cairo (سينمانا)', style: TextStyle(color: Colors.white))),
                     DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: Colors.white))),
                     DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: Colors.white))),
-                    DropdownMenuItem(value: 'Changa', child: Text('Changa', style: TextStyle(color: Colors.white))),
                   ],
                   onChanged: (v) {
                     if (v != null) setState(() => s.updateFont(v));
