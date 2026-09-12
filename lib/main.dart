@@ -470,22 +470,16 @@ void main() async {
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Firebase init error: $e');
+    debugPrint("Firebase error: $e");
   }
 
   try {
     await AppSettings.instance.init();
   } catch (e) {
-    debugPrint('Settings init error: $e');
+    debugPrint("Settings error: $e");
   }
 
   runApp(const OnebrTvApp());
-
-  try {
-    await BackgroundDownloadService.initialize();
-  } catch (e) {
-    debugPrint('BackgroundDownload init error: $e');
-  }
 }
 
 class OnebrTvApp extends StatefulWidget {
