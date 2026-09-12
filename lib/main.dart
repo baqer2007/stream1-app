@@ -1,3 +1,6 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -459,6 +462,11 @@ class AppSettings extends ChangeNotifier {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = MyHttpOverrides();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
+  }
   await AppSettings.instance.init();
   await BackgroundDownloadService.initialize();
   runApp(const OnebrTvApp());
@@ -2032,7 +2040,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _shareMedia(bool isAr) async {
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final id = widget.media['nb'] ?? widget.media['id'] ?? '';
-    final text = isAr ? 'شاهد $title بجودة عالية عبر ONEBR TV!\\nhttps://onebr.tv/watch/$id' : 'Watch $title in HD on ONEBR TV!\\nhttps://onebr.tv/watch/$id';
+    final text = isAr ? 'شاهد $title بجودة عالية عبر ONEBR TV!\nhttps://onebr.tv/watch/$id' : 'Watch $title in HD on ONEBR TV!\nhttps://onebr.tv/watch/$id';
     final uri = Uri.parse('sms:?body=${Uri.encodeComponent(text)}');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -3582,7 +3590,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               : const BorderRadius.horizontal(right: Radius.circular(100)),
                         ),
                         child: Column(
-                          mainAxisAlignment: ChangeMode ? MainAxisAlignment.center : MainAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(_isDoubleTapForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded, size: 40, color: Colors.white),
                             const SizedBox(height: 6),
@@ -3883,7 +3891,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\\nLive Subtitle Preview' : 'Live Subtitle Preview\\nمعاينة الترجمة الحية',
+                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\nLive Subtitle Preview' : 'Live Subtitle Preview\nمعاينة الترجمة الحية',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: s.subColor,
@@ -4093,6 +4101,47 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 
+  Future<void> _handleGoogleSignIn(bool isAr) async {
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) return;
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user != null) {
+        AppSettings.instance.login(
+          user.displayName ?? (isAr ? 'مستخدم' : 'User'),
+          user.email ?? '',
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isAr ? 'تم تسجيل الدخول بنجاح: ${user.displayName}' : 'Logged in as ${user.displayName}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAr ? 'فشل تسجيل الدخول: $e' : 'Sign in failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   void _showAuthDialog(bool isAr) {
     final s = AppSettings.instance;
     showCupertinoDialog(
@@ -4100,34 +4149,44 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
       builder: (_) => CupertinoAlertDialog(
         title: Text(isAr ? 'تسجيل الحساب والمزامنة' : 'Account & Sync'),
         content: Padding(
-          padding: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.only(top: 14),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              CupertinoTextField(
-                controller: _nameCtrl,
-                placeholder: isAr ? 'الاسم المستعار' : 'Username',
-                style: TextStyle(color: s.textPrimary),
+              Text(
+                isAr
+                    ? 'سجّل الدخول بحساب Google لحفظ ومزامنة قائمة المشاهدة والإحصائيات عبر السحابة.'
+                    : 'Sign in with Google to sync your watchlist and statistics across devices.',
+                style: TextStyle(fontSize: 12, color: s.textSecondary),
               ),
-              const SizedBox(height: 8),
-              CupertinoTextField(
-                controller: _emailCtrl,
-                placeholder: isAr ? 'البريد الإلكتروني' : 'Email Address',
-                style: TextStyle(color: s.textPrimary),
+              const SizedBox(height: 16),
+              CupertinoButton(
+                color: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                borderRadius: BorderRadius.circular(12),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _handleGoogleSignIn(isAr);
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: 6),
+                    Text(
+                      isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         actions: [
-          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: Text(isAr ? 'إلغاء' : 'Cancel')),
           CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              if (_nameCtrl.text.isNotEmpty) {
-                AppSettings.instance.login(_nameCtrl.text, _emailCtrl.text);
-                Navigator.pop(context);
-              }
-            },
-            child: Text(isAr ? 'حفظ' : 'Save'),
+            onPressed: () => Navigator.pop(context),
+            child: Text(isAr ? 'إلغاء' : 'Cancel'),
           ),
         ],
       ),
@@ -4440,13 +4499,3 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 }
-'''
-
-# Fix ChangeMode typo if any
-full_main_code = full_main_code.replace("ChangeMode ? MainAxisAlignment.center : MainAxisAlignment.center", "MainAxisAlignment.center")
-
-with open('main.dart', 'w', encoding='utf-8') as f:
-    f.write(full_main_code)
-
-import os
-print("Size of main.dart:", os.path.getsize('main.dart'))
