@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
+import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
 
 class MyHttpOverrides extends HttpOverrides {
@@ -27,7 +30,6 @@ class AppColors {
   static const Color primaryDark = Color(0xFFD81E43);
   static const Color star = Color(0xFFFFCC00);
 
-  // الوضع الغامق
   static const Color darkBackground = Color(0xFF000000);
   static const Color darkSurface = Color(0xFF1C1C1E);
   static const Color darkSurfaceLight = Color(0xFF2C2C2E);
@@ -36,7 +38,6 @@ class AppColors {
   static const Color darkBorder = Color(0x28FFFFFF);
   static const Color darkGlassFill = Color(0xB3161618);
 
-  // الوضع الفاتح
   static const Color lightBackground = Color(0xFFF2F2F7);
   static const Color lightSurface = Color(0xFFFFFFFF);
   static const Color lightSurfaceLight = Color(0xFFE5E5EA);
@@ -65,6 +66,12 @@ class Subtitle {
     required this.end,
     required this.text,
   });
+}
+
+class SubtitleCache {
+  static final Map<String, List<Subtitle>> _mem = {};
+  static List<Subtitle>? get(String url) => _mem[url];
+  static void set(String url, List<Subtitle> list) => _mem[url] = list;
 }
 
 class LocalStorageService {
@@ -185,157 +192,65 @@ class LocalStorageService {
   }
 }
 
-class ActiveDownload {
-  final String id;
-  final String title;
-  final String url;
-  final String poster;
-  final String quality;
-  double progress;
-  int downloadedBytes;
-  int totalBytes;
-  double speedKbs;
-  http.Client? client;
-  bool isCancelled = false;
+class BackgroundDownloadService {
+  static final ReceivePort _port = ReceivePort();
 
-  ActiveDownload({
-    required this.id,
-    required this.title,
-    required this.url,
-    required this.poster,
-    required this.quality,
-    this.progress = 0.0,
-    this.downloadedBytes = 0,
-    this.totalBytes = 0,
-    this.speedKbs = 0.0,
-  });
-}
-
-class DownloadManager extends ChangeNotifier {
-  static final DownloadManager instance = DownloadManager._();
-  DownloadManager._();
-
-  final Map<String, ActiveDownload> activeDownloads = {};
-
-  Future<String> getAppStoragePath() async {
-    final paths = [
-      '/storage/emulated/0/Download/ONEBR_TV',
-      '/sdcard/Download/ONEBR_TV',
-    ];
-    for (var p in paths) {
-      final d = Directory(p);
-      try {
-        if (!d.existsSync()) d.createSync(recursive: true);
-        return d.path;
-      } catch (_) {}
-    }
-    return Directory.systemTemp.path;
+  static Future<void> initialize() async {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+    IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
+    FlutterDownloader.registerCallback(downloadCallback);
   }
 
-  Future<void> startDownload({
+  @pragma('vm:entry-point')
+  static void downloadCallback(String id, int status, int progress) {
+    final SendPort? send = IsolateNameServer.lookupPortByName('downloader_send_port');
+    send?.send([id, status, progress]);
+  }
+
+  static Future<String?> startDownload({
+    required String url,
+    required String fileName,
     required String targetId,
     required String title,
-    required String url,
     required String poster,
-    required String quality,
   }) async {
-    if (activeDownloads.containsKey(targetId)) return;
-
-    final download = ActiveDownload(
-      id: targetId,
-      title: title,
-      url: url,
-      poster: poster,
-      quality: quality,
-    );
-    activeDownloads[targetId] = download;
-    notifyListeners();
-
-    try {
-      final basePath = await getAppStoragePath();
-      final safeName = '${targetId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}_$quality.mp4';
-      final filePath = '$basePath/$safeName';
-      final file = File(filePath);
-
-      int downloadedBytes = 0;
-      if (file.existsSync()) {
-        downloadedBytes = file.lengthSync();
+    Directory? baseDir;
+    if (Platform.isAndroid) {
+      baseDir = Directory('/storage/emulated/0/Download/ONEBR_TV');
+      if (!baseDir.existsSync()) {
+        try {
+          baseDir.createSync(recursive: true);
+        } catch (_) {
+          baseDir = await getExternalStorageDirectory();
+        }
       }
+    } else {
+      baseDir = await getApplicationDocumentsDirectory();
+    }
 
+    final path = baseDir?.path ?? '';
+    final taskId = await FlutterDownloader.enqueue(
+      url: url,
+      headers: StreamService.stealthHeaders,
+      savedDir: path,
+      fileName: fileName,
+      showNotification: true,
+      openFileFromNotification: false,
+      saveInPublicStorage: true,
+    );
+
+    if (taskId != null) {
       await LocalStorageService.appendItem('downloaded_works_list', {
         'nb': targetId,
-        'title': '$title ($quality)',
-        'path': filePath,
-        'size': 'قيد التنزيل...',
+        'taskId': taskId,
+        'title': title,
+        'path': '$path/$fileName',
         'poster': poster,
+        'date': DateTime.now().millisecondsSinceEpoch,
       });
-      notifyListeners();
-
-      final client = http.Client();
-      download.client = client;
-
-      final request = http.Request('GET', Uri.parse(url));
-      request.headers.addAll(StreamService.stealthHeaders);
-      if (downloadedBytes > 0) {
-        request.headers['Range'] = 'bytes=$downloadedBytes-';
-      }
-
-      final response = await client.send(request);
-      final total = (response.contentLength ?? 0) + downloadedBytes;
-      download.totalBytes = total;
-
-      final sink = file.openWrite(mode: FileMode.append);
-      int lastTimestamp = DateTime.now().millisecondsSinceEpoch;
-      int bytesSinceLast = 0;
-
-      await response.stream.listen((chunk) {
-        if (download.isCancelled) {
-          sink.close();
-          return;
-        }
-        downloadedBytes += chunk.length;
-        bytesSinceLast += chunk.length;
-        download.downloadedBytes = downloadedBytes;
-        sink.add(chunk);
-
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (now - lastTimestamp >= 1000) {
-          download.speedKbs = (bytesSinceLast / 1024) / ((now - lastTimestamp) / 1000);
-          lastTimestamp = now;
-          bytesSinceLast = 0;
-        }
-
-        if (total > 0) {
-          download.progress = (downloadedBytes / total).clamp(0.0, 1.0);
-          notifyListeners();
-        }
-      }).asFuture();
-
-      await sink.close();
-
-      if (!download.isCancelled && file.existsSync()) {
-        final fileSizeMb = (file.lengthSync() / (1024 * 1024)).toStringAsFixed(1);
-        await LocalStorageService.appendItem('downloaded_works_list', {
-          'nb': targetId,
-          'title': '$title ($quality)',
-          'path': filePath,
-          'size': '$fileSizeMb ميغابايت',
-          'poster': poster,
-        });
-      }
-    } catch (_) {}
-
-    activeDownloads.remove(targetId);
-    notifyListeners();
-  }
-
-  void cancelDownload(String targetId) {
-    if (activeDownloads.containsKey(targetId)) {
-      activeDownloads[targetId]!.isCancelled = true;
-      activeDownloads[targetId]!.client?.close();
-      activeDownloads.remove(targetId);
-      notifyListeners();
     }
+
+    return taskId;
   }
 }
 
@@ -350,7 +265,7 @@ class AppSettings extends ChangeNotifier {
   Color subColor = Colors.white;
   bool subHasShadow = true;
   double subBottomPadding = 26.0;
-  String subBackgroundMode = 'semi'; // 'transparent', 'semi', 'dark'
+  String subBackgroundMode = 'semi';
   bool enableDualSubtitles = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
@@ -545,6 +460,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = MyHttpOverrides();
   await AppSettings.instance.init();
+  await BackgroundDownloadService.initialize();
   runApp(const OnebrTvApp());
 }
 
@@ -2116,7 +2032,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _shareMedia(bool isAr) async {
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final id = widget.media['nb'] ?? widget.media['id'] ?? '';
-    final text = isAr ? 'شاهد $title بجودة عالية عبر ONEBR TV!\nhttps://onebr.tv/watch/$id' : 'Watch $title in HD on ONEBR TV!\nhttps://onebr.tv/watch/$id';
+    final text = isAr ? 'شاهد $title بجودة عالية عبر ONEBR TV!\\nhttps://onebr.tv/watch/$id' : 'Watch $title in HD on ONEBR TV!\\nhttps://onebr.tv/watch/$id';
     final uri = Uri.parse('sms:?body=${Uri.encodeComponent(text)}');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -2232,10 +2148,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isAr ? 'اختر جودة التنزيل' : 'Select Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text(isAr ? 'اختر جودة التنزيل في الخلفية' : 'Select Background Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 10),
                         ...qualities.map((q) {
-                          final res = q['resolution'] ?? '720p';
+                          final res = q['resolution'] ?? '360p';
                           final url = q['url'] ?? '';
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
@@ -2245,20 +2161,24 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               border: Border.all(color: s.border, width: 0.5),
                             ),
                             child: ListTile(
-                              leading: const Icon(Icons.movie_rounded, color: AppColors.primary),
+                              leading: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary),
                               title: Text(isAr ? 'دقة $res' : '$res Resolution', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
+                              subtitle: Text(isAr ? 'تنزيل مستمر حتى بعد إغلاق التطبيق' : 'Persists after closing app', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                               trailing: Icon(Icons.arrow_downward_rounded, color: s.textSecondary),
-                              onTap: () {
+                              onTap: () async {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
-                                DownloadManager.instance.startDownload(
-                                  targetId: targetId,
-                                  title: title,
+                                final safeFileName = '${targetId}_$res.mp4';
+                                await BackgroundDownloadService.startDownload(
                                   url: url,
+                                  fileName: safeFileName,
+                                  targetId: targetId,
+                                  title: '$title ($res)',
                                   poster: poster,
-                                  quality: res,
                                 );
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'بدأ التنزيل بدقة $res' : 'Downloading $res...')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(isAr ? 'تم جدولة التنزيل في خلفية النظام!' : 'Download started in system background!')),
+                                );
                               },
                             ),
                           );
@@ -2705,10 +2625,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _showControls = true;
   Timer? _hideTimer;
 
-  String _activeQuality = '360p';
+  bool _isAutoQuality = true;
+  String _activeQuality = 'تلقائي (Auto)';
+  String _currentStreamUrl = '';
+  List<Map<String, dynamic>> _currentQualities = [];
+  int _bufferingStallCount = 0;
+  DateTime _lastBufferTime = DateTime.now();
+
   BoxFit _videoFit = BoxFit.contain;
   bool _isLandscape = true;
-  List<Map<String, dynamic>> _currentQualities = [];
+  double _playbackSpeed = 1.0;
 
   List<Subtitle> _subtitles = [];
   List<Subtitle> _secondarySubtitles = [];
@@ -2721,17 +2647,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Set<String> _watchedSet = {};
 
   bool _isLocked = false;
+  Timer? _sleepTimer;
+  int? _sleepMinutesRemaining;
+
   double _volumeLevel = 0.5;
   double _brightnessLevel = 0.5;
   bool _showIndicator = false;
   String _indicatorText = '';
   IconData _indicatorIcon = Icons.volume_up_rounded;
 
+  bool _showDoubleTapRipple = false;
+  bool _isDoubleTapForward = true;
+  int _doubleTapAccumulatedSeconds = 0;
+  Timer? _doubleTapTimer;
+
   bool _showAutoNext = false;
   int _autoNextCountdown = 5;
   Timer? _autoNextTimer;
 
-  bool get _showSmartSkip => _controller != null && _controller!.value.isInitialized && _controller!.value.position.inSeconds < 90;
+  bool get _showSmartSkip =>
+      _controller != null &&
+      _controller!.value.isInitialized &&
+      _controller!.value.position.inSeconds < 95;
 
   @override
   void initState() {
@@ -2753,6 +2690,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (widget.videoUrl.isEmpty) {
       _loadAndPlayMedia(_activeMediaId);
     } else {
+      _currentStreamUrl = widget.videoUrl;
       _initPlayer(widget.videoUrl);
       _loadSubtitlesDelayed(widget.subtitleUrl, widget.secondarySubtitleUrl);
     }
@@ -2776,7 +2714,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
       });
-      _initPlayer(source['video_url']);
+
+      final url = source['video_url'] ?? '';
+      _currentStreamUrl = url;
+      _initPlayer(url);
 
       final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
@@ -2785,7 +2726,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSubtitlesDelayed(String arUrl, String enUrl) {
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
         if (arUrl.isNotEmpty) _loadSubs(arUrl, isSecondary: false);
         if (enUrl.isNotEmpty) _loadSubs(enUrl, isSecondary: true);
@@ -2794,6 +2735,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSubs(String url, {required bool isSecondary}) async {
+    final cached = SubtitleCache.get(url);
+    if (cached != null) {
+      setState(() {
+        if (isSecondary) {
+          _secondarySubtitles = cached;
+        } else {
+          _subtitles = cached;
+        }
+      });
+      return;
+    }
+
     try {
       final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
@@ -2804,6 +2757,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           decodedText = latin1.decode(res.bodyBytes);
         }
         final parsed = _parseSrt(decodedText);
+        SubtitleCache.set(url, parsed);
         setState(() {
           if (isSecondary) {
             _secondarySubtitles = parsed;
@@ -2864,11 +2818,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  void _initPlayer(String url) async {
-    await _controller?.dispose();
+  void _initPlayer(String url, {Duration? startAt}) async {
+    final oldController = _controller;
+    _controller = null;
+    await oldController?.dispose();
+
     if (mounted) setState(() => _isReady = false);
 
-    _controller = VideoPlayerController.networkUrl(
+    final ctrl = VideoPlayerController.networkUrl(
       Uri.parse(url),
       httpHeaders: StreamService.stealthHeaders,
       videoPlayerOptions: VideoPlayerOptions(
@@ -2876,67 +2833,118 @@ class _PlayerScreenState extends State<PlayerScreen> {
         allowBackgroundPlayback: false,
       ),
     );
-    await _controller!.initialize();
 
-    _controller!.play();
+    _controller = ctrl;
+    await ctrl.initialize();
+    await ctrl.setPlaybackSpeed(_playbackSpeed);
+
+    if (startAt != null) {
+      await ctrl.seekTo(startAt);
+    } else {
+      final savedMs = await LocalStorageService.getPlaybackPosition(_activeMediaId);
+      if (savedMs > 0 && savedMs < ctrl.value.duration.inMilliseconds - 5000) {
+        await ctrl.seekTo(Duration(milliseconds: savedMs));
+      }
+    }
+
+    ctrl.play();
 
     if (mounted) {
       setState(() => _isReady = true);
     }
 
-    final savedMs = await LocalStorageService.getPlaybackPosition(_activeMediaId);
-    if (savedMs > 0 && savedMs < _controller!.value.duration.inMilliseconds - 5000) {
-      await _controller!.seekTo(Duration(milliseconds: savedMs));
+    ctrl.addListener(_videoPlayerListener);
+    _startTimer();
+  }
+
+  void _videoPlayerListener() {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    final pos = ctrl.value.position;
+    final dur = ctrl.value.duration;
+
+    if (_isAutoQuality && ctrl.value.isBuffering) {
+      final now = DateTime.now();
+      if (now.difference(_lastBufferTime).inSeconds < 15) {
+        _bufferingStallCount++;
+        if (_bufferingStallCount >= 2) {
+          _bufferingStallCount = 0;
+          _downgradeQualitySilently(pos);
+        }
+      } else {
+        _bufferingStallCount = 1;
+      }
+      _lastBufferTime = now;
     }
 
-    _controller!.addListener(() {
-      if (_controller != null && _controller!.value.isInitialized) {
-        final pos = _controller!.value.position;
-        final dur = _controller!.value.duration;
+    if (pos.inSeconds % 5 == 0) {
+      LocalStorageService.savePlaybackPosition(
+        _activeMediaId,
+        pos.inMilliseconds,
+        dur.inMilliseconds,
+        widget.title,
+        widget.poster,
+      );
+    }
 
-        if (pos.inSeconds % 5 == 0) {
-          LocalStorageService.savePlaybackPosition(_activeMediaId, pos.inMilliseconds, dur.inMilliseconds, widget.title, widget.poster);
-        }
-
-        if (_subtitles.isNotEmpty) {
-          Subtitle? activeSub;
-          for (var s in _subtitles) {
-            if (pos >= s.start && pos <= s.end) {
-              activeSub = s;
-              break;
-            }
-          }
-          final newText = activeSub?.text ?? '';
-          if (newText != _currentSubText && mounted) {
-            setState(() => _currentSubText = newText);
-          }
-        }
-
-        if (AppSettings.instance.enableDualSubtitles && _secondarySubtitles.isNotEmpty) {
-          Subtitle? activeSub2;
-          for (var s in _secondarySubtitles) {
-            if (pos >= s.start && pos <= s.end) {
-              activeSub2 = s;
-              break;
-            }
-          }
-          final newText2 = activeSub2?.text ?? '';
-          if (newText2 != _currentSecondarySubText && mounted) {
-            setState(() => _currentSecondarySubText = newText2);
-          }
-        }
-
-        if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
-          final remaining = dur.inSeconds - pos.inSeconds;
-          if (remaining <= 30 && remaining > 0 && !_showAutoNext) {
-            _triggerAutoNext();
-          }
+    if (_subtitles.isNotEmpty) {
+      Subtitle? activeSub;
+      for (var s in _subtitles) {
+        if (pos >= s.start && pos <= s.end) {
+          activeSub = s;
+          break;
         }
       }
-      if (mounted) setState(() {});
-    });
+      final newText = activeSub?.text ?? '';
+      if (newText != _currentSubText && mounted) {
+        setState(() => _currentSubText = newText);
+      }
+    }
 
-    _startTimer();
+    if (AppSettings.instance.enableDualSubtitles && _secondarySubtitles.isNotEmpty) {
+      Subtitle? activeSub2;
+      for (var s in _secondarySubtitles) {
+        if (pos >= s.start && pos <= s.end) {
+          activeSub2 = s;
+          break;
+        }
+      }
+      final newText2 = activeSub2?.text ?? '';
+      if (newText2 != _currentSecondarySubText && mounted) {
+        setState(() => _currentSecondarySubText = newText2);
+      }
+    }
+
+    if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
+      final remaining = dur.inSeconds - pos.inSeconds;
+      if (remaining <= 30 && remaining > 0 && !_showAutoNext) {
+        _triggerAutoNext();
+      }
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  void _downgradeQualitySilently(Duration currentPosition) {
+    if (_currentQualities.length <= 1) return;
+
+    final order = ['1080p', '720p', '480p', '360p', '240p'];
+    int currentIndex = order.indexOf(_activeQuality.replaceAll(' (Auto)', ''));
+    if (currentIndex == -1) currentIndex = 2;
+
+    for (int i = currentIndex + 1; i < order.length; i++) {
+      final targetRes = order[i];
+      final match = _currentQualities.firstWhere(
+        (q) => (q['resolution'] ?? '').toString().toLowerCase().contains(targetRes),
+        orElse: () => {},
+      );
+      if (match.isNotEmpty && match['url'] != _currentStreamUrl) {
+        _currentStreamUrl = match['url'];
+        _initPlayer(match['url'], startAt: currentPosition);
+        break;
+      }
+    }
   }
 
   void _triggerAutoNext() {
@@ -2994,11 +3002,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
       });
+      _currentStreamUrl = source['video_url'];
       _initPlayer(source['video_url']);
       final path = sub['arTranslationFilePath']?.toString() ?? '';
       final pathEn = sub['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesDelayed(path, pathEn);
     }
+  }
+
+  void _onDoubleTapSeek(bool isForward) {
+    if (_isLocked || _controller == null || !_controller!.value.isInitialized) return;
+
+    final seekStep = AppSettings.instance.seekDuration;
+    HapticFeedback.lightImpact();
+
+    setState(() {
+      _isDoubleTapForward = isForward;
+      _showDoubleTapRipple = true;
+      if (_doubleTapTimer != null && _doubleTapTimer!.isActive) {
+        _doubleTapAccumulatedSeconds += seekStep;
+      } else {
+        _doubleTapAccumulatedSeconds = seekStep;
+      }
+    });
+
+    final currentPos = _controller!.value.position;
+    final newPos = isForward
+        ? currentPos + Duration(seconds: seekStep)
+        : currentPos - Duration(seconds: seekStep);
+
+    _controller!.seekTo(newPos < Duration.zero ? Duration.zero : (newPos > _controller!.value.duration ? _controller!.value.duration : newPos));
+
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _showDoubleTapRipple = false);
+    });
   }
 
   void _toggleScreenOrientation() {
@@ -3106,8 +3144,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _toggleControls() {
+    if (_isLocked) {
+      setState(() => _showControls = !_showControls);
+      return;
+    }
     setState(() => _showControls = !_showControls);
-    if (_showControls && !_isLocked) _startTimer();
+    if (_showControls) _startTimer();
   }
 
   String _formatTime(Duration d) {
@@ -3122,6 +3164,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     WakelockPlus.disable();
     _autoNextTimer?.cancel();
     _hideTimer?.cancel();
+    _doubleTapTimer?.cancel();
+    _sleepTimer?.cancel();
+    _controller?.removeListener(_videoPlayerListener);
     _controller?.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -3172,71 +3217,93 @@ class _PlayerScreenState extends State<PlayerScreen> {
             child: Container(
               color: settings.glassFill,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.subtitles_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'الترجمة المزدوجة (عربي + إنجليزي)' : 'Dual Subtitles (AR + EN)', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: CupertinoSwitch(
-                      value: settings.enableDualSubtitles,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) => setState(() => settings.updateDualSubtitles(v)),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.speed_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text('${_playbackSpeed}x', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSpeedPicker(isAr);
+                      },
                     ),
-                  ),
-                  Divider(color: settings.border, height: 1),
-                  ListTile(
-                    leading: Icon(Icons.shield_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'إزالة اللقطات الحساسة تلقائياً' : 'Auto Skip Sensitive Scenes', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: CupertinoSwitch(
-                      value: settings.skipSensitiveScenes,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.hd_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'دقة وجودة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(_isAutoQuality ? (isAr ? 'تلقائي (Auto)' : 'Auto') : _activeQuality, style: TextStyle(color: _isAutoQuality ? AppColors.primary : settings.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showQualityPicker(isAr);
+                      },
                     ),
-                  ),
-                  Divider(color: settings.border, height: 1),
-                  ListTile(
-                    leading: Icon(Icons.settings_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'دقة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Text(_activeQuality, style: TextStyle(color: settings.textSecondary, fontSize: 12)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showQualityPicker(isAr);
-                    },
-                  ),
-                  Divider(color: settings.border, height: 1),
-                  ListTile(
-                    leading: Icon(Icons.fast_forward_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'فترة تمرير الفيديو' : 'Seek Duration', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Text(isAr ? '${settings.seekDuration} ثوانٍ' : '${settings.seekDuration}s', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showSeekPicker(isAr);
-                    },
-                  ),
-                  Divider(color: settings.border, height: 1),
-                  ListTile(
-                    leading: Icon(Icons.closed_caption_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'إعدادات ومكان الترجمة' : 'Subtitle Settings & Position', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: settings.textSecondary, size: 20),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
-                    },
-                  ),
-                  Divider(color: settings.border, height: 1),
-                  ListTile(
-                    leading: Icon(Icons.aspect_ratio_rounded, color: settings.textSecondary),
-                    title: Text(isAr ? 'أبعاد الشاشة' : 'Aspect Ratio', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Text(_videoFit == BoxFit.cover ? (isAr ? 'ملء الشاشة' : 'Fit Screen') : (isAr ? 'طبيعي' : 'Original'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
-                    onTap: () {
-                      setState(() {
-                        _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.timer_outlined, color: settings.textSecondary),
+                      title: Text(isAr ? 'مؤقت النوم' : 'Sleep Timer', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(_sleepMinutesRemaining != null ? '$_sleepMinutesRemaining min' : (isAr ? 'معطل' : 'Off'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSleepTimerPicker(isAr);
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.subtitles_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'الترجمة المزدوجة (عربي + إنجليزي)' : 'Dual Subtitles (AR + EN)', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: CupertinoSwitch(
+                        value: settings.enableDualSubtitles,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) => setState(() => settings.updateDualSubtitles(v)),
+                      ),
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.shield_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'إزالة اللقطات الحساسة تلقائياً' : 'Auto Skip Sensitive Scenes', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: CupertinoSwitch(
+                        value: settings.skipSensitiveScenes,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
+                      ),
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.fast_forward_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'فترة تمرير الفيديو' : 'Seek Duration', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(isAr ? '${settings.seekDuration} ثوانٍ' : '${settings.seekDuration}s', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSeekPicker(isAr);
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.closed_caption_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'إعدادات ومكان الترجمة' : 'Subtitle Settings & Position', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: settings.textSecondary, size: 20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.aspect_ratio_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'أبعاد الشاشة' : 'Aspect Ratio', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(_videoFit == BoxFit.cover ? (isAr ? 'ملء الشاشة' : 'Fit Screen') : (isAr ? 'طبيعي' : 'Original'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      onTap: () {
+                        setState(() {
+                          _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
+                        });
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -3270,19 +3337,56 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'اختر جودة العرض' : 'Select Quality'),
-        actions: _currentQualities.map((q) {
-          final res = q['resolution'] ?? '360p';
-          final url = q['url'] ?? '';
-          return CupertinoActionSheetAction(
-            child: Text(res),
+        title: Text(isAr ? 'اختر دقة العرض' : 'Select Quality'),
+        actions: [
+          CupertinoActionSheetAction(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(isAr ? 'تلقائي (حسب سرعة النت)' : 'Auto (Adaptive)'),
+                if (_isAutoQuality) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 18),
+                ],
+              ],
+            ),
             onPressed: () {
               Navigator.pop(context);
-              setState(() => _activeQuality = res);
-              _initPlayer(url);
+              setState(() {
+                _isAutoQuality = true;
+                _activeQuality = 'تلقائي (Auto)';
+              });
+              _downgradeQualitySilently(_controller?.value.position ?? Duration.zero);
             },
-          );
-        }).toList(),
+          ),
+          ..._currentQualities.map((q) {
+            final res = q['resolution'] ?? '360p';
+            final url = q['url'] ?? '';
+            final isSelected = !_isAutoQuality && _activeQuality == res;
+
+            return CupertinoActionSheetAction(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(res),
+                  if (isSelected) ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 18),
+                  ],
+                ],
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _isAutoQuality = false;
+                  _activeQuality = res;
+                });
+                _currentStreamUrl = url;
+                _initPlayer(url, startAt: _controller?.value.position);
+              },
+            );
+          }).toList(),
+        ],
         cancelButton: CupertinoActionSheetAction(
           isDestructiveAction: true,
           onPressed: () => Navigator.pop(context),
@@ -3292,11 +3396,87 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  void _showSpeedPicker(bool isAr) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => CupertinoActionSheet(
+        title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed'),
+        actions: [0.75, 1.0, 1.25, 1.5, 2.0].map((s) => CupertinoActionSheetAction(
+          child: Text('${s}x'),
+          onPressed: () {
+            setState(() => _playbackSpeed = s);
+            _controller?.setPlaybackSpeed(s);
+            Navigator.pop(context);
+          },
+        )).toList(),
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(context),
+          child: Text(isAr ? 'إلغاء' : 'Cancel'),
+        ),
+      ),
+    );
+  }
+
+  void _showSleepTimerPicker(bool isAr) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => CupertinoActionSheet(
+        title: Text(isAr ? 'إيقاف بعد وقت محدد' : 'Sleep Timer'),
+        actions: [15, 30, 45, 60].map((mins) => CupertinoActionSheetAction(
+          child: Text(isAr ? '$mins دقيقة' : '$mins minutes'),
+          onPressed: () {
+            Navigator.pop(context);
+            _sleepTimer?.cancel();
+            setState(() => _sleepMinutesRemaining = mins);
+            _sleepTimer = Timer(Duration(minutes: mins), () {
+              _controller?.pause();
+              if (mounted) Navigator.pop(context);
+            });
+          },
+        )).toList(),
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () {
+            _sleepTimer?.cancel();
+            setState(() => _sleepMinutesRemaining = null);
+            Navigator.pop(context);
+          },
+          child: Text(isAr ? 'إلغاء المؤقت' : 'Turn Off'),
+        ),
+      ),
+    );
+  }
+
   void _takeSceneClip(bool isAr) {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(isAr ? 'تم حفظ لقطة الشاشة والمقطع القصير في استوديو الهاتف! 📸' : 'Snapshot saved to gallery! 📸')),
+      SnackBar(content: Text(isAr ? 'تم حفظ لقطة الشاشة في استوديو الهاتف! 📸' : 'Snapshot saved to gallery! 📸')),
     );
+  }
+
+  KeyEventResult _handleRemoteKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.select ||
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
+      if (_controller != null) {
+        setState(() => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play());
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _onDoubleTapSeek(true);
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _onDoubleTapSeek(false);
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+               event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _toggleControls();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -3306,15 +3486,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final hasPrev = widget.episodes.isNotEmpty && _activeEpIndex > 1;
     final hasNext = widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (ctx, constraints) {
-            return GestureDetector(
-              onTap: _toggleControls,
-              onVerticalDragUpdate: (d) => _handleVerticalDrag(d, constraints),
-              child: Stack(
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleRemoteKey,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (ctx, constraints) {
+              return Stack(
                 fit: StackFit.expand,
                 children: [
                   Center(
@@ -3366,6 +3546,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         : const CircularProgressIndicator(color: AppColors.primary),
                   ),
 
+                  Positioned.fill(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: _toggleControls,
+                            onDoubleTap: () => _onDoubleTapSeek(false),
+                            onVerticalDragUpdate: (d) => _handleVerticalDrag(d, constraints),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: _toggleControls,
+                            onDoubleTap: () => _onDoubleTapSeek(true),
+                            onVerticalDragUpdate: (d) => _handleVerticalDrag(d, constraints),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (_showDoubleTapRipple)
+                    Align(
+                      alignment: _isDoubleTapForward ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        width: constraints.maxWidth * 0.38,
+                        height: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: _isDoubleTapForward
+                              ? const BorderRadius.horizontal(left: Radius.circular(100))
+                              : const BorderRadius.horizontal(right: Radius.circular(100)),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: ChangeMode ? MainAxisAlignment.center : MainAxisAlignment.center,
+                          children: [
+                            Icon(_isDoubleTapForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded, size: 40, color: Colors.white),
+                            const SizedBox(height: 6),
+                            Text('${_doubleTapAccumulatedSeconds}s', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   if (_showIndicator)
                     Center(
                       child: Container(
@@ -3394,7 +3620,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (_showSmartSkip)
+                  if (_showSmartSkip && !_isLocked)
                     Positioned(
                       bottom: 85, left: 20,
                       child: CupertinoButton(
@@ -3418,7 +3644,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (_showAutoNext && hasNext)
+                  if (_showAutoNext && hasNext && !_isLocked)
                     Positioned(
                       bottom: 85, right: 20,
                       child: Container(
@@ -3440,7 +3666,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (_showControls) ...[
+                  if (_showControls)
+                    Positioned(
+                      left: 16,
+                      top: MediaQuery.of(context).size.height / 2 - 20,
+                      child: IconButton(
+                        icon: Icon(_isLocked ? Icons.lock_rounded : Icons.lock_open_rounded, color: _isLocked ? AppColors.primary : Colors.white, size: 26),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _isLocked = !_isLocked);
+                        },
+                      ),
+                    ),
+
+                  if (_showControls && !_isLocked) ...[
                     Positioned(
                       top: 10, left: 14, right: 14,
                       child: Directionality(
@@ -3448,13 +3687,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                                if (_activeHeader.isNotEmpty)
-                                  Text(_activeHeader, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                              ],
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                                  if (_activeHeader.isNotEmpty)
+                                    Text(_activeHeader, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                                ],
+                              ),
                             ),
                             Row(
                               children: [
@@ -3581,9 +3826,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                   ],
                 ],
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -3638,7 +3883,7 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\nLive Subtitle Preview' : 'Live Subtitle Preview\nمعاينة الترجمة الحية',
+                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\\nLive Subtitle Preview' : 'Live Subtitle Preview\\nمعاينة الترجمة الحية',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: s.subColor,
@@ -3782,18 +4027,12 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
     _loadData();
-    DownloadManager.instance.addListener(_onDownloadUpdated);
   }
 
   @override
   void dispose() {
-    DownloadManager.instance.removeListener(_onDownloadUpdated);
     _tabCtrl.dispose();
     super.dispose();
-  }
-
-  void _onDownloadUpdated() {
-    _loadData();
   }
 
   void _loadData() async {
@@ -3930,53 +4169,35 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         body: TabBarView(
           controller: _tabCtrl,
           children: [
-            _completed.isEmpty && DownloadManager.instance.activeDownloads.isEmpty
+            _completed.isEmpty
                 ? Center(child: Text(isAr ? 'لا توجد تنزيلات حالياً' : 'No downloads yet', style: TextStyle(color: s.textSecondary)))
-                : ListView(
+                : ListView.builder(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.all(16),
-                    children: [
-                      ...DownloadManager.instance.activeDownloads.values.map((d) => Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(child: Text(d.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
-                                Text('${(d.progress * 100).toInt()}%', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            LinearProgressIndicator(value: d.progress, backgroundColor: Colors.white24, color: AppColors.primary),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('${d.speedKbs.toStringAsFixed(1)} KB/s', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                IconButton(icon: Icon(Icons.close_rounded, color: s.textSecondary, size: 18), onPressed: () => DownloadManager.instance.cancelDownload(d.id)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      )),
-                      ..._completed.map((it) => Container(
+                    itemCount: _completed.length,
+                    itemBuilder: (ctx, i) {
+                      final it = _completed[i];
+                      return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
                         child: ListTile(
-                          leading: const Icon(Icons.check_circle_rounded, color: AppColors.primary),
+                          leading: const Icon(Icons.download_done_rounded, color: AppColors.primary),
                           title: Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                          subtitle: Text(it['size'] ?? '', style: TextStyle(color: s.textSecondary)),
-                          trailing: IconButton(icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary), onPressed: () async {
-                            await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
-                            _loadData();
-                          }),
+                          subtitle: Text(it['path'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 10)),
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
+                            onPressed: () async {
+                              final taskId = it['taskId']?.toString();
+                              if (taskId != null) {
+                                await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+                              }
+                              await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
+                              _loadData();
+                            },
+                          ),
                         ),
-                      )),
-                    ],
+                      );
+                    },
                   ),
 
             _watchlist.isEmpty
@@ -4219,3 +4440,13 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 }
+'''
+
+# Fix ChangeMode typo if any
+full_main_code = full_main_code.replace("ChangeMode ? MainAxisAlignment.center : MainAxisAlignment.center", "MainAxisAlignment.center")
+
+with open('main.dart', 'w', encoding='utf-8') as f:
+    f.write(full_main_code)
+
+import os
+print("Size of main.dart:", os.path.getsize('main.dart'))
