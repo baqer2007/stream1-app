@@ -5,7 +5,7 @@
     "project_id": "cee-stream",
     "storage_bucket": "cee-stream.firebasestorage.app"
   },
-  "عميل": [
+  "client": [
     {
       "client_info": {
         "mobilesdk_app_id": "1:598398160963:android:2dd706c1f1acda707084f6",
@@ -15,8 +15,16 @@
       },
       "oauth_client": [
         {
+          "client_id": "598398160963-uamugdm1hvum523sgfva5mf8pq14ujrh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.onebr_tv",
+            "certificate_hash": "ea9255add429e5422854f6ddb0d074c6bb553d9d"
+          }
+        },
+        {
           "client_id": "598398160963-7qus9g8t7kaniqh5offjhbqe2snk9471.apps.googleusercontent.com",
-          "نوع_العميل": 3
+          "client_type": 3
         }
       ],
       "api_key": [
@@ -24,12 +32,12 @@
           "current_key": "AIzaSyAXcymZVyz33lE2Th1VLVSck_xcVVzt8hU"
         }
       ],
-      "خدمات": {
+      "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
               "client_id": "598398160963-7qus9g8t7kaniqh5offjhbqe2snk9471.apps.googleusercontent.com",
-              "نوع_العميل": 3
+              "client_type": 3
             }
           ]
         }
