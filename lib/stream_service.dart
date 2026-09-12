@@ -152,9 +152,8 @@ class StreamService {
         }
 
         if (qualities.isNotEmpty) {
-          // تفضيل الجودة الخفيفة للبدء الفوري على سرعات 2 ميغا
           Map<String, dynamic>? selected;
-          for (var q in ['360p', '240p', '480p', '720p', '1080p']) {
+          for (var q in ['360p', '480p', '240p', '720p', '1080p']) {
             final match = qualities.firstWhere(
               (item) => item['resolution'] == q,
               orElse: () => {},
