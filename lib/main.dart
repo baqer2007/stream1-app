@@ -462,14 +462,26 @@ class AppSettings extends ChangeNotifier {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = MyHttpOverrides();
+
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Firebase init error: $e');
+    debugPrint("Firebase error: $e");
   }
-  await AppSettings.instance.init();
-  await BackgroundDownloadService.initialize();
+
+  try {
+    await AppSettings.instance.init();
+  } catch (e) {
+    debugPrint("Settings error: $e");
+  }
+
   runApp(const OnebrTvApp());
+
+  try {
+    await BackgroundDownloadService.initialize();
+  } catch (e) {
+    debugPrint("Downloader error: $e");
+  }
 }
 
 class OnebrTvApp extends StatefulWidget {
