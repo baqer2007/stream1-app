@@ -199,9 +199,11 @@ class BackgroundDownloadService {
   static final ReceivePort _port = ReceivePort();
 
   static Future<void> initialize() async {
-    await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
-    IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
-    FlutterDownloader.registerCallback(downloadCallback);
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+      IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
+      FlutterDownloader.registerCallback(downloadCallback);
+    } catch (_) {}
   }
 
   @pragma('vm:entry-point')
@@ -303,25 +305,27 @@ class AppSettings extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    final p = await SharedPreferences.getInstance();
-    isDarkMode = p.getBool('app_is_dark_mode') ?? true;
-    seekDuration = p.getInt('player_seek_dur') ?? 10;
-    skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
-    subFontSize = p.getDouble('player_sub_size') ?? 18.0;
-    subBottomPadding = p.getDouble('player_sub_bottom') ?? 26.0;
-    subBackgroundMode = p.getString('player_sub_bg_mode') ?? 'semi';
-    enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
-    appFilterMode = p.getInt('app_filter_mode') ?? 0;
-    appLanguage = p.getString('app_lang') ?? 'ar';
-    selectedFont = p.getString('app_font') ?? 'iPhone';
-    autoSmartDownload = p.getBool('app_smart_dl') ?? false;
-    smartNotifications = p.getBool('app_smart_notif') ?? true;
-    tvModeEnabled = p.getBool('app_tv_mode') ?? false;
-    userName = p.getString('auth_user_name');
-    userEmail = p.getString('auth_user_email');
-    activeProfile = p.getString('current_active_profile') ?? 'الرئيسي';
-    final rawP = p.getStringList('user_profiles_list');
-    if (rawP != null) userProfiles = rawP;
+    try {
+      final p = await SharedPreferences.getInstance();
+      isDarkMode = p.getBool('app_is_dark_mode') ?? true;
+      seekDuration = p.getInt('player_seek_dur') ?? 10;
+      skipSensitiveScenes = p.getBool('player_skip_sens') ?? true;
+      subFontSize = p.getDouble('player_sub_size') ?? 18.0;
+      subBottomPadding = p.getDouble('player_sub_bottom') ?? 26.0;
+      subBackgroundMode = p.getString('player_sub_bg_mode') ?? 'semi';
+      enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
+      appFilterMode = p.getInt('app_filter_mode') ?? 0;
+      appLanguage = p.getString('app_lang') ?? 'ar';
+      selectedFont = p.getString('app_font') ?? 'iPhone';
+      autoSmartDownload = p.getBool('app_smart_dl') ?? false;
+      smartNotifications = p.getBool('app_smart_notif') ?? true;
+      tvModeEnabled = p.getBool('app_tv_mode') ?? false;
+      userName = p.getString('auth_user_name');
+      userEmail = p.getString('auth_user_email');
+      activeProfile = p.getString('current_active_profile') ?? 'الرئيسي';
+      final rawP = p.getStringList('user_profiles_list');
+      if (rawP != null) userProfiles = rawP;
+    } catch (_) {}
   }
 
   void toggleTheme() async {
@@ -466,13 +470,13 @@ void main() async {
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint("Firebase error: $e");
+    debugPrint('Firebase init error: $e');
   }
 
   try {
     await AppSettings.instance.init();
   } catch (e) {
-    debugPrint("Settings error: $e");
+    debugPrint('Settings init error: $e');
   }
 
   runApp(const OnebrTvApp());
@@ -480,7 +484,7 @@ void main() async {
   try {
     await BackgroundDownloadService.initialize();
   } catch (e) {
-    debugPrint("Downloader error: $e");
+    debugPrint('BackgroundDownload init error: $e');
   }
 }
 
