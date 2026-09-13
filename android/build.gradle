@@ -1,16 +1,3 @@
-buildscript {
-    ext.kotlin_version = '2.1.0'
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.1'
-        classpath 'com.google.gms:google-services:4.4.2'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-    }
-}
-
 allprojects {
     repositories {
         google()
@@ -22,21 +9,8 @@ rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
-
-// حقن Mock للتوافق مع الملحقات القديمة بدون استخدام afterEvaluate
-subprojects { subproject ->
-    subproject.plugins.withId("com.android.library") {
-        def androidExt = subproject.extensions.findByName("android")
-        if (androidExt != null) {
-            try {
-                androidExt.extensions.create("flutter", Map, [
-                    compileSdkVersion: 34,
-                    minSdkVersion: 23,
-                    targetSdkVersion: 34
-                ])
-            } catch (Exception ignored) {}
-        }
-    }
+subprojects {
+    project.evaluationDependsOn(':app')
 }
 
 tasks.register("clean", Delete) {
