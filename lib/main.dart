@@ -2256,7 +2256,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               leading: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary),
                               title: Text(isAr ? 'دقة $res' : '$res Resolution', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
                               subtitle: Text(isAr ? 'تنزيل مستمر حتى بعد إغلاق التطبيق' : 'Persists after closing app', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                              trailing: Icon(Icons.arrow_downward_rounded, color: s.textSecondary),
+                              trailing: const Icon(Icons.arrow_downward_rounded, color: Colors.white70),
                               onTap: () async {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
@@ -2736,12 +2736,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _showControls = true;
   Timer? _hideTimer;
 
-  bool _isAutoQuality = true;
-  String _activeQuality = 'تلقائي (Auto)';
+  bool _isAutoQuality = false;
+  String _activeQuality = '720p';
   String _currentStreamUrl = '';
   List<Map<String, dynamic>> _currentQualities = [];
-  int _bufferingStallCount = 0;
-  DateTime _lastBufferTime = DateTime.now();
 
   BoxFit _videoFit = BoxFit.contain;
   bool _isLandscape = true;
@@ -2820,13 +2818,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final subInfo = futures[1];
 
     if (source != null && mounted) {
+      final qualitiesList = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
       setState(() {
-        _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
+        _currentQualities = qualitiesList;
       });
 
-      final url = source['video_url'] ?? '';
-      _currentStreamUrl = url;
-      _initPlayer(url);
+      String targetUrl = source['video_url'] ?? '';
+      if (qualitiesList.isNotEmpty) {
+        final preferred = qualitiesList.firstWhere(
+          (q) => (q['resolution'] ?? '').toString().contains('720'),
+          orElse: () => qualitiesList.first,
+        );
+        targetUrl = preferred['url'] ?? targetUrl;
+        _activeQuality = preferred['resolution'] ?? 'Default';
+      }
+
+      _currentStreamUrl = targetUrl;
+      _initPlayer(targetUrl);
 
       final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
@@ -2835,7 +2843,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSubtitlesDelayed(String arUrl, String enUrl) {
-    Future.delayed(const Duration(milliseconds: 600), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         if (arUrl.isNotEmpty) _loadSubs(arUrl, isSecondary: false);
         if (enUrl.isNotEmpty) _loadSubs(enUrl, isSecondary: true);
@@ -2846,18 +2854,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _loadSubs(String url, {required bool isSecondary}) async {
     final cached = SubtitleCache.get(url);
     if (cached != null) {
-      setState(() {
-        if (isSecondary) {
-          _secondarySubtitles = cached;
-        } else {
-          _subtitles = cached;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (isSecondary) {
+            _secondarySubtitles = cached;
+          } else {
+            _subtitles = cached;
+          }
+        });
+      }
       return;
     }
 
     try {
-      final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 8));
+      final res = await http.get(
+        Uri.parse(url),
+        headers: StreamService.stealthHeaders,
+      ).timeout(const Duration(seconds: 12));
+
       if (res.statusCode == 200 && mounted) {
         String decodedText;
         try {
@@ -2867,28 +2881,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
         final parsed = _parseSrt(decodedText);
         SubtitleCache.set(url, parsed);
-        setState(() {
-          if (isSecondary) {
-            _secondarySubtitles = parsed;
-          } else {
-            _subtitles = parsed;
-          }
-        });
+        if (mounted) {
+          setState(() {
+            if (isSecondary) {
+              _secondarySubtitles = parsed;
+            } else {
+              _subtitles = parsed;
+            }
+          });
+        }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint("Subtitle fetch error: $e");
+    }
   }
 
   List<Subtitle> _parseSrt(String text) {
     final List<Subtitle> list = [];
-    final blocks = text.trim().split(RegExp(r'(\r?\n){2,}'));
+    final blocks = text.trim().split(RegExp(r'(\r\n|\r|\n){2,}'));
     int idx = 0;
 
     for (var block in blocks) {
-      final lines = block.trim().split(RegExp(r'\r?\n'));
+      final lines = block.trim().split(RegExp(r'\r\n|\r|\n'));
       if (lines.length < 2) continue;
 
       String timeLine = '';
-      int textStartIndex = 1;
+      int textStartIndex = -1;
 
       for (int i = 0; i < lines.length; i++) {
         if (lines[i].contains('-->')) {
@@ -2898,7 +2916,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
       }
 
-      if (timeLine.isEmpty) continue;
+      if (timeLine.isEmpty || textStartIndex == -1 || textStartIndex >= lines.length) continue;
       final times = timeLine.split('-->');
       if (times.length != 2) continue;
 
@@ -2973,20 +2991,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final pos = ctrl.value.position;
     final dur = ctrl.value.duration;
 
-    if (_isAutoQuality && ctrl.value.isBuffering) {
-      final now = DateTime.now();
-      if (now.difference(_lastBufferTime).inSeconds < 15) {
-        _bufferingStallCount++;
-        if (_bufferingStallCount >= 2) {
-          _bufferingStallCount = 0;
-          _downgradeQualitySilently(pos);
-        }
-      } else {
-        _bufferingStallCount = 1;
-      }
-      _lastBufferTime = now;
-    }
-
     if (pos.inSeconds % 5 == 0) {
       LocalStorageService.savePlaybackPosition(
         _activeMediaId,
@@ -3027,33 +3031,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
       final remaining = dur.inSeconds - pos.inSeconds;
-      if (remaining <= 30 && remaining > 0 && !_showAutoNext) {
+      if (remaining <= 20 && remaining > 0 && !_showAutoNext) {
         _triggerAutoNext();
       }
     }
 
     if (mounted) setState(() {});
-  }
-
-  void _downgradeQualitySilently(Duration currentPosition) {
-    if (_currentQualities.length <= 1) return;
-
-    final order = ['1080p', '720p', '480p', '360p', '240p'];
-    int currentIndex = order.indexOf(_activeQuality.replaceAll(' (Auto)', ''));
-    if (currentIndex == -1) currentIndex = 2;
-
-    for (int i = currentIndex + 1; i < order.length; i++) {
-      final targetRes = order[i];
-      final match = _currentQualities.firstWhere(
-        (q) => (q['resolution'] ?? '').toString().toLowerCase().contains(targetRes),
-        orElse: () => <String, dynamic>{},
-      );
-      if (match.isNotEmpty && match['url'] != _currentStreamUrl) {
-        _currentStreamUrl = match['url'];
-        _initPlayer(match['url'], startAt: currentPosition);
-        break;
-      }
-    }
   }
 
   void _triggerAutoNext() {
@@ -3098,6 +3081,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeMediaId = epId;
       _activeHeader = AppSettings.instance.appLanguage == 'ar' ? 'الحلقة $epIdx' : 'Episode $epIdx';
       _showAutoNext = false;
+      _subtitles.clear();
+      _secondarySubtitles.clear();
+      _currentSubText = '';
+      _currentSecondarySubText = '';
     });
 
     final source = await StreamService.getVideoSource(epId);
@@ -3454,26 +3441,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (_) => CupertinoActionSheet(
         title: Text(isAr ? 'اختر دقة العرض' : 'Select Quality'),
         actions: [
-          CupertinoActionSheetAction(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(isAr ? 'تلقائي (حسب سرعة النت)' : 'Auto (Adaptive)'),
-                if (_isAutoQuality) ...[
-                  const SizedBox(width: 8),
-                  const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 18),
-                ],
-              ],
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                _isAutoQuality = true;
-                _activeQuality = 'تلقائي (Auto)';
-              });
-              _downgradeQualitySilently(_controller?.value.position ?? Duration.zero);
-            },
-          ),
           ..._currentQualities.map<Widget>((q) {
             final res = q['resolution'] ?? '360p';
             final url = q['url'] ?? '';
@@ -3631,18 +3598,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 if (_currentSubText.isNotEmpty)
                                   Positioned(
                                     bottom: settings.subBottomPadding,
-                                    left: 16.0,
-                                    right: 16.0,
+                                    left: 20.0,
+                                    right: 20.0,
                                     child: Center(
                                       child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                         decoration: BoxDecoration(
                                           color: settings.subtitleBackgroundColor,
-                                          borderRadius: BorderRadius.circular(6),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           _currentSubText,
                                           textAlign: TextAlign.center,
+                                          textDirection: TextDirection.rtl,
                                           style: TextStyle(
                                             color: settings.subColor,
                                             fontSize: settings.subFontSize,
@@ -4134,9 +4102,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _completed = [];
   List<Map<String, dynamic>> _watchlist = [];
-
-  final TextEditingController _nameCtrl = TextEditingController();
-  final TextEditingController _emailCtrl = TextEditingController();
 
   int _statMinutes = 0;
   int _statEpisodes = 0;
