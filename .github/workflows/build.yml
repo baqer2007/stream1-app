@@ -41,6 +41,10 @@ jobs:
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
+      - name: Print APK SHA-1 Fingerprint
+        run: |
+          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
