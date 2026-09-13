@@ -25,7 +25,7 @@ subprojects {
 
 class FlutterSdkMock {
     int compileSdkVersion = 34
-    int minSdkVersion = 21
+    int minSdkVersion = 23
     int targetSdkVersion = 34
 }
 
@@ -47,7 +47,7 @@ subprojects { subproject ->
                 }
                 compileSdkVersion 34
                 defaultConfig {
-                    minSdkVersion 21
+                    minSdkVersion 23
                     targetSdkVersion 34
                 }
                 compileOptions {
