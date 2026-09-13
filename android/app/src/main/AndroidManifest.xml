@@ -12,10 +12,10 @@
     <application
         android:label="ONEBR TV"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
-    
+
         <activity
             android:name="com.example.onebr_tv.MainActivity"
             android:exported="true"
@@ -24,24 +24,22 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            
+
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-                
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- مزود خدمة التنزيلات (بدون تعطيل WorkManager) -->
+        <!-- مزود خدمة التنزيلات -->
         <provider
             android:name="vn.hunghd.flutterdownloader.DownloadedFileProvider"
             android:authorities="${applicationId}.flutter_downloader.provider"
