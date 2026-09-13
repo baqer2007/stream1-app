@@ -1,3 +1,4 @@
+}
 buildscript {
     ext.kotlin_version = '2.1.0'
     repositories {
@@ -50,13 +51,16 @@ subprojects { subproject ->
                     minSdkVersion 21
                     targetSdkVersion 34
                 }
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
             }
         }
         
-        // تمرير خيار تجاهل فحص إصدار Kotlin لجميع مهام الترجمة
         tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
             kotlinOptions {
-                jvmTarget = "1.8"
+                jvmTarget = "17"
                 freeCompilerArgs += ["-Xskip-metadata-version-check"]
             }
         }
