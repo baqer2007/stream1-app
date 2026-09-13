@@ -3138,16 +3138,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
 
-    final currentPos = _controller!.value.position;
-    final newPos = isForward
-        ? currentPos + Duration(seconds: seekStep)
-        : currentPos - Duration(seconds: seekStep);
-
-    _controller!.seekTo(newPos < Duration.zero ? Duration.zero : (newPos > _controller!.value.duration ? _controller!.value.duration : newPos));
-
     _doubleTapTimer?.cancel();
-    _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
-      if (mounted) setState(() => _showDoubleTapRipple = false);
+    
+    _doubleTapTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() => _showDoubleTapRipple = false);
+        
+        final currentPos = _controller!.value.position;
+        final newPos = isForward
+            ? currentPos + Duration(seconds: _doubleTapAccumulatedSeconds)
+            : currentPos - Duration(seconds: _doubleTapAccumulatedSeconds);
+
+        _controller!.seekTo(newPos < Duration.zero 
+            ? Duration.zero 
+            : (newPos > _controller!.value.duration ? _controller!.value.duration : newPos));
+      }
     });
   }
 
@@ -4159,18 +4164,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     final prefs = await SharedPreferences.getInstance();
     final curP = prefs.getString('current_active_profile') ?? 'default';
 
-    // فحص وتحديث قائمة الملفات الموجودة فعلياً في التخزين
-    final verifiedDownloads = <Map<String, dynamic>>[];
-    for (var d in downloads) {
-      final p = d['path']?.toString() ?? '';
-      if (p.isNotEmpty && File(p).existsSync()) {
-        verifiedDownloads.add(d);
-      }
-    }
-
     if (mounted) {
       setState(() {
-        _completed = verifiedDownloads;
+        _completed = downloads;
         _watchlist = wl;
         _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
         _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
