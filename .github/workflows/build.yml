@@ -30,6 +30,11 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Setup Gradle Wrapper
+        run: |
+          cd android
+          gradle wrapper --gradle-version 8.7
+
       - name: Get dependencies
         run: flutter pub get
 
