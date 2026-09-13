@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.onebr_tv"
-    compileSdk = 34
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = "25.1.8937393"
 
     compileOptions {
@@ -22,9 +22,9 @@ android {
     defaultConfig {
         applicationId = "com.example.onebr_tv"
         minSdk = 23
-        targetSdk = 34
-        versionCode = flutterVersionCode.toInteger()
-        versionName = flutterVersionName
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
         multiDexEnabled = true
     }
 
