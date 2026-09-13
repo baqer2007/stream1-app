@@ -1269,7 +1269,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
                   ),
                   child: Row(
-                    mainAxisAlignment: Center(mainAxisAlignment: MainAxisAlignment.center).mainAxisAlignment,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
                       const SizedBox(width: 8),
@@ -3136,18 +3136,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
 
     _doubleTapTimer?.cancel();
-    
+
     _doubleTapTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted) {
         setState(() => _showDoubleTapRipple = false);
-        
+
         final currentPos = _controller!.value.position;
         final newPos = isForward
             ? currentPos + Duration(seconds: _doubleTapAccumulatedSeconds)
             : currentPos - Duration(seconds: _doubleTapAccumulatedSeconds);
 
-        _controller!.seekTo(newPos < Duration.zero 
-            ? Duration.zero 
+        _controller!.seekTo(newPos < Duration.zero
+            ? Duration.zero
             : (newPos > _controller!.value.duration ? _controller!.value.duration : newPos));
       }
     });
@@ -3763,7 +3763,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     Positioned(
                       bottom: 85, right: 20,
                       child: Container(
-                        padding: const EdgeInsets.horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24, width: 0.5)),
                         child: Row(
                           children: [
