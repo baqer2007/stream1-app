@@ -22,19 +22,29 @@ subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 
-subprojects { project ->
-    // توفير كائن flutter الوهمي مع خصائص SDK للمكتبات الخارجية
-    project.ext {
-        set("flutter.compileSdkVersion", 34)
-        set("flutter.minSdkVersion", 21)
-        set("flutter.targetSdkVersion", 34)
+// تعريف كائن يحمل أرقام الـ SDK المطلوبة للمكتبات القديمة
+class FlutterSdkMock {
+    int compileSdkVersion = 34
+    int minSdkVersion = 21
+    int targetSdkVersion = 34
+}
+
+subprojects { subproject ->
+    // حقن الكائن فور تفعيل مكتبة الأندرويد وقبل تنفيذ أسطر المكتبة
+    subproject.plugins.withId("com.android.library") {
+        def androidExt = subproject.extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                androidExt.extensions.create("flutter", FlutterSdkMock)
+            } catch (Exception ignored) {}
+        }
     }
 
-    afterEvaluate {
-        if (project.hasProperty('android')) {
-            project.android {
+    subproject.afterEvaluate {
+        if (subproject.hasProperty('android')) {
+            subproject.android {
                 if (namespace == null) {
-                    namespace project.group
+                    namespace subproject.group
                 }
                 compileSdkVersion 34
                 defaultConfig {
