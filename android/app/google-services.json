@@ -15,11 +15,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "598398160963-6jsc5i154pgosb8jcukonijtcca6rlsk.apps.googleusercontent.com",
+          "client_id": "598398160963-dc49ic6cov8m9e5rfo9k0bpi0rp3qigc.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.onebr_tv",
-            "certificate_hash": "8237e2af2ae94c17c7ee8b8d7a092358372cffc0"
+            "certificate_hash": "2b85d67896d327c40947ce72b687599f4defb9e3"
           }
         },
         {
