@@ -1,3 +1,16 @@
+buildscript {
+    ext.kotlin_version = '2.1.0'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.1'
+        classpath 'com.google.gms:google-services:4.4.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
 allprojects {
     repositories {
         google()
@@ -9,8 +22,22 @@ rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
-subprojects {
-    project.evaluationDependsOn(':app')
+
+class FlutterSdkMock {
+    int compileSdkVersion = 34
+    int minSdkVersion = 23
+    int targetSdkVersion = 34
+}
+
+subprojects { subproject ->
+    subproject.plugins.withId("com.android.library") {
+        def androidExt = subproject.extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                androidExt.extensions.create("flutter", FlutterSdkMock)
+            } catch (Exception ignored) {}
+        }
+    }
 }
 
 tasks.register("clean", Delete) {
