@@ -30,40 +30,38 @@ class FlutterSdkMock {
 }
 
 subprojects { subproject ->
-    // تطبيق التعديل فقط على ملحقات فلاتر الخارجية وتجاوز تطبيق app الأساسي
-    if (subproject.name != "app") {
-        subproject.plugins.withId("com.android.library") {
-            def androidExt = subproject.extensions.findByName("android")
-            if (androidExt != null) {
-                try {
-                    androidExt.extensions.create("flutter", FlutterSdkMock)
-                } catch (Exception ignored) {}
+    subproject.plugins.withId("com.android.library") {
+        def androidExt = subproject.extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                androidExt.extensions.create("flutter", FlutterSdkMock)
+            } catch (Exception ignored) {}
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    subprojects { subproject ->
+        if (subproject.hasProperty('android')) {
+            subproject.android {
+                if (namespace == null) {
+                    namespace subproject.group
+                }
+                compileSdkVersion 34
+                defaultConfig {
+                    minSdkVersion 23
+                    targetSdkVersion 34
+                }
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
             }
         }
-
-        subproject.afterEvaluate {
-            if (subproject.hasProperty('android')) {
-                subproject.android {
-                    if (namespace == null) {
-                        namespace subproject.group
-                    }
-                    compileSdkVersion 34
-                    defaultConfig {
-                        minSdkVersion 23
-                        targetSdkVersion 34
-                    }
-                    compileOptions {
-                        sourceCompatibility JavaVersion.VERSION_17
-                        targetCompatibility JavaVersion.VERSION_17
-                    }
-                }
-            }
-            
-            tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                kotlinOptions {
-                    jvmTarget = "17"
-                    freeCompilerArgs += ["-Xskip-metadata-version-check"]
-                }
+        subproject.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                jvmTarget = "17"
+                freeCompilerArgs += ["-Xskip-metadata-version-check"]
             }
         }
     }
