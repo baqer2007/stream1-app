@@ -257,6 +257,7 @@ class BackgroundDownloadService {
   static Future<void> initialize() async {
     try {
       await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+      IsolateNameServer.removePortNameMapping('downloader_send_port');
       IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
       FlutterDownloader.registerCallback(downloadCallback);
     } catch (_) {}
@@ -275,29 +276,20 @@ class BackgroundDownloadService {
     required String title,
     required String poster,
   }) async {
-    Directory? baseDir;
-    if (Platform.isAndroid) {
-      baseDir = Directory('/storage/emulated/0/Download/ONEBR_TV');
-      if (!baseDir.existsSync()) {
-        try {
-          baseDir.createSync(recursive: true);
-        } catch (_) {
-          baseDir = await getExternalStorageDirectory();
-        }
-      }
-    } else {
-      baseDir = await getApplicationDocumentsDirectory();
+    final baseDir = await getApplicationDocumentsDirectory();
+    final downloadDir = Directory('${baseDir.path}/downloads');
+    if (!downloadDir.existsSync()) {
+      downloadDir.createSync(recursive: true);
     }
 
-    final path = baseDir?.path ?? '';
     final taskId = await FlutterDownloader.enqueue(
       url: url,
       headers: StreamService.stealthHeaders,
-      savedDir: path,
+      savedDir: downloadDir.path,
       fileName: fileName,
       showNotification: true,
       openFileFromNotification: false,
-      saveInPublicStorage: true,
+      saveInPublicStorage: false,
     );
 
     if (taskId != null) {
@@ -305,8 +297,10 @@ class BackgroundDownloadService {
         'nb': targetId,
         'taskId': taskId,
         'title': title,
-        'path': '$path/$fileName',
+        'path': '${downloadDir.path}/$fileName',
         'poster': poster,
+        'progress': 0,
+        'status': 1,
         'date': DateTime.now().millisecondsSinceEpoch,
       });
     }
@@ -945,6 +939,18 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     if (mounted) setState(() {});
   }
 
+  bool _isMarvelContent(dynamic it) {
+    final title = '${it['ar_title'] ?? ''} ${it['en_title'] ?? ''}'.toLowerCase();
+    final marvelKeywords = [
+      'marvel', 'مارفل', 'avengers', 'المنتقمون', 'iron man', 'الرجل الحديدي',
+      'spider-man', 'spiderman', 'سبايدرمان', 'thor', 'ثور', 'captain america',
+      'كابتن أمريكا', 'hulk', 'هالك', 'deadpool', 'ديدبول', 'wolverine', 'ولفرين',
+      'loki', 'لوكي', 'doctor strange', 'دكتور سترينج', 'black panther', 'النمر الأسود',
+      'guardians of the galaxy', 'حراس المجرة', 'ant-man', 'الرجل النملة', 'thanos', 'ثانوس'
+    ];
+    return marvelKeywords.any((keyword) => title.contains(keyword));
+  }
+
   Future<void> _loadFeed() async {
     setState(() => _isLoading = true);
     _resumeList = await LocalStorageService.getList('resume_playback_list');
@@ -954,7 +960,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
     try {
       final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 25, level: level),
+        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 40, level: level),
         StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
       ]);
 
@@ -965,16 +971,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
       final marvel = allMovies.where((it) {
-        final t = (it['ar_title'] ?? it['en_title'] ?? '').toString().toLowerCase();
         final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) &&
-            (t.contains('iron') || t.contains('thor') || t.contains('avengers') || t.contains('hulk') || t.contains('captain') || t.contains('marvel') || t.contains('war'));
-      }).take(10).toList();
+        return !heroIds.contains(id) && _isMarvelContent(it);
+      }).take(12).toList();
       final marvelIds = marvel.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
       final featured = allMovies.where((it) {
         final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) && !marvelIds.contains(id);
+        final score = double.tryParse((it['stars'] ?? '0').toString()) ?? 0.0;
+        return !heroIds.contains(id) && !marvelIds.contains(id) && score >= 6.8;
       }).take(12).toList();
       final featuredIds = featured.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
@@ -2240,7 +2245,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isAr ? 'اختر جودة التنزيل في الخلفية' : 'Select Background Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text(isAr ? 'اختر جودة التنزيل' : 'Select Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 10),
                         ...qualities.map<Widget>((q) {
                           final res = q['resolution'] ?? '360p';
@@ -2255,7 +2260,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             child: ListTile(
                               leading: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary),
                               title: Text(isAr ? 'دقة $res' : '$res Resolution', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                              subtitle: Text(isAr ? 'تنزيل مستمر حتى بعد إغلاق التطبيق' : 'Persists after closing app', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                              subtitle: Text(isAr ? 'تخزين خاص يُحذف مع إزالة التطبيق' : 'Private app storage', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                               trailing: const Icon(Icons.arrow_downward_rounded, color: Colors.white70),
                               onTap: () async {
                                 HapticFeedback.lightImpact();
@@ -2269,7 +2274,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   poster: poster,
                                 );
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isAr ? 'تم جدولة التنزيل في خلفية النظام!' : 'Download started in system background!')),
+                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل! يمكنك متابعة التقدم في تبويب التنزيلات' : 'Download started!')),
                                 );
                               },
                             ),
@@ -4102,6 +4107,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _completed = [];
   List<Map<String, dynamic>> _watchlist = [];
+  final ReceivePort _downloadPort = ReceivePort();
 
   int _statMinutes = 0;
   int _statEpisodes = 0;
@@ -4111,10 +4117,34 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
     _loadData();
+    _setupDownloadPort();
+  }
+
+  void _setupDownloadPort() {
+    IsolateNameServer.removePortNameMapping('downloader_send_port');
+    IsolateNameServer.registerPortWithName(_downloadPort.sendPort, 'downloader_send_port');
+    _downloadPort.listen((dynamic data) {
+      final String id = data[0];
+      final int status = data[1];
+      final int progress = data[2];
+
+      if (mounted) {
+        setState(() {
+          for (var item in _completed) {
+            if (item['taskId'] == id) {
+              item['status'] = status;
+              item['progress'] = progress;
+              break;
+            }
+          }
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    IsolateNameServer.removePortNameMapping('downloader_send_port');
     _tabCtrl.dispose();
     super.dispose();
   }
@@ -4216,9 +4246,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         } catch (_) {}
 
         if (mounted) {
+          setState(() {});
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isAr ? 'تم تسجيل الدخول بنجاح ومزامنة البيانات: ${user.displayName}' : 'Logged in & synced: ${user.displayName}'),
+              content: Text(isAr ? 'تم تسجيل الدخول بنجاح: ${user.displayName}' : 'Logged in: ${user.displayName}'),
               backgroundColor: Colors.green,
             ),
           );
@@ -4331,51 +4362,92 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final it = _completed[i];
                       final filePath = it['path'] ?? '';
-                      return FocusBuilder(
-                        builder: (context, hasFocus) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: hasFocus ? s.surfaceLight : s.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
-                          ),
-                          child: ListTile(
-                            leading: const Icon(Icons.download_done_rounded, color: AppColors.primary),
-                            title: Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                            subtitle: Text(filePath, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 10)),
-                            onTap: () {
-                              if (File(filePath).existsSync()) {
-                                ExternalPlayerService.playInExternalPlayer(
-                                  videoUrl: filePath,
-                                  title: it['title'] ?? '',
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
-                                );
-                              }
-                            },
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
-                              onPressed: () async {
-                                final taskId = it['taskId']?.toString();
-                                if (taskId != null) {
-                                  try {
-                                    await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
-                                  } catch (_) {}
-                                }
-                                if (filePath.isNotEmpty) {
-                                  final file = File(filePath);
-                                  if (file.existsSync()) {
-                                    try {
-                                      file.deleteSync();
-                                    } catch (_) {}
-                                  }
-                                }
-                                await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
-                                _loadData();
-                              },
-                            ),
+                      final int progress = it['progress'] ?? 0;
+                      final int status = it['status'] ?? 3;
+                      final bool isCompleted = status == 3 || File(filePath).existsSync();
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: s.border, width: 0.5),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: it['poster'].toString().isNotEmpty
+                                        ? Image.network(it['poster'], width: 50, height: 70, fit: BoxFit.cover)
+                                        : Container(width: 50, height: 70, color: s.surfaceLight),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          isCompleted
+                                              ? (isAr ? 'جاهز للمشاهدة بدون إنترنت' : 'Ready to watch offline')
+                                              : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)'),
+                                          style: TextStyle(color: isCompleted ? Colors.greenAccent : s.textSecondary, fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isCompleted)
+                                    IconButton(
+                                      icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
+                                      onPressed: () {
+                                        if (File(filePath).existsSync()) {
+                                          ExternalPlayerService.playInExternalPlayer(videoUrl: filePath, title: it['title'] ?? '');
+                                        } else {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
+                                    onPressed: () async {
+                                      if (it['taskId'] != null) {
+                                        try {
+                                          await FlutterDownloader.remove(taskId: it['taskId'], shouldDeleteContent: true);
+                                        } catch (_) {}
+                                      }
+                                      final file = File(filePath);
+                                      if (file.existsSync()) {
+                                        try {
+                                          file.deleteSync();
+                                        } catch (_) {}
+                                      }
+                                      await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
+                                      _loadData();
+                                    },
+                                  ),
+                                ],
+                              ),
+                              if (!isCompleted) ...[
+                                const SizedBox(height: 10),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: progress / 100.0,
+                                    backgroundColor: Colors.white12,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                    minHeight: 4,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       );
