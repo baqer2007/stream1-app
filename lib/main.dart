@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_intent_plus/android_intent.dart';
-import 'package:android_intent_plus/flag_object.dart';
+import 'package:android_intent_plus/flag.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -733,7 +733,7 @@ class CategoriesScreen extends StatelessWidget {
             final cat = _allCategories[i];
             final title = isAr ? cat['ar'] : cat['en'];
 
-            return Focus(
+            return FocusBuilder(
               builder: (context, hasFocus) => Container(
                 decoration: BoxDecoration(
                   color: hasFocus ? s.surfaceLight : s.surface,
@@ -861,7 +861,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
             final poster = StreamService.extractPoster(it);
             final title = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
 
-            return Focus(
+            return FocusBuilder(
               builder: (context, hasFocus) => InkWell(
                 borderRadius: BorderRadius.circular(AppRadius.card),
                 onTap: () {
@@ -1197,7 +1197,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             final t = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
                             final score = (it['stars'] ?? '7.0').toString();
 
-                            return Focus(
+                            return FocusBuilder(
                               builder: (context, hasFocus) => InkWell(
                                 onTap: () => _openDetails(it),
                                 borderRadius: BorderRadius.circular(AppRadius.card),
@@ -1255,7 +1255,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       child: Row(
         children: [
           Expanded(
-            child: Focus(
+            child: FocusBuilder(
               builder: (context, hasFocus) => InkWell(
                 onTap: () {
                   HapticFeedback.lightImpact();
@@ -1283,7 +1283,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Focus(
+            child: FocusBuilder(
               builder: (context, hasFocus) => InkWell(
                 onTap: () {
                   HapticFeedback.lightImpact();
@@ -1326,7 +1326,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             autoPlayInterval: const Duration(seconds: 5),
             onPageChanged: (idx, _) => setState(() => _currentHeroIdx = idx),
           ),
-          items: _heroItems.map((item) {
+          items: _heroItems.map<Widget>((item) {
             final poster = StreamService.extractPoster(item, highRes: true);
             final title = isAr ? (item['ar_title'] ?? item['en_title'] ?? '') : (item['en_title'] ?? item['ar_title'] ?? '');
 
@@ -1387,7 +1387,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: _heroItems.asMap().entries.map((entry) {
+          children: _heroItems.asMap().entries.map<Widget>((entry) {
             final isSel = entry.key == _currentHeroIdx;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 200),
@@ -1545,7 +1545,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               return Container(
                 width: 105,
                 margin: const EdgeInsets.only(left: 10),
-                child: Focus(
+                child: FocusBuilder(
                   builder: (context, hasFocus) => InkWell(
                     borderRadius: BorderRadius.circular(AppRadius.card),
                     onTap: () => _openDetails(it),
@@ -1753,7 +1753,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                         isExpanded: true,
                         underline: const SizedBox(),
                         icon: Icon(Icons.keyboard_arrow_down_rounded, color: s.textSecondary, size: 20),
-                        items: _categories.map((c) {
+                        items: _categories.map<DropdownMenuItem<String>>((c) {
                           final label = isAr ? c['ar']! : c['en']!;
                           return DropdownMenuItem(value: c['key'], child: Text(label, style: TextStyle(color: s.textPrimary)));
                         }).toList(),
@@ -1921,7 +1921,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(isAr ? 'مسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
-          ..._seriesResults.take(4).map((it) => _buildMediaSearchRow(it, isAr)),
+          ..._seriesResults.take(4).map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
           Center(
             child: TextButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: isAr ? 'نتائج المسلسلات' : 'Series Results', isSeriesOnly: true))),
@@ -1935,7 +1935,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(isAr ? 'أفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
-          ..._movieResults.take(4).map((it) => _buildMediaSearchRow(it, isAr)),
+          ..._movieResults.take(4).map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
           Center(
             child: TextButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: isAr ? 'نتائج الأفلام' : 'Movie Results', isSeriesOnly: false))),
@@ -2027,7 +2027,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           ],
         ),
         const SizedBox(height: 10),
-        ..._recentSearches.map((it) => _buildMediaSearchRow(it, isAr)),
+        ..._recentSearches.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
       ],
     );
   }
@@ -2243,7 +2243,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       children: [
                         Text(isAr ? 'اختر جودة التنزيل في الخلفية' : 'Select Background Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 10),
-                        ...qualities.map((q) {
+                        ...qualities.map<Widget>((q) {
                           final res = q['resolution'] ?? '360p';
                           final url = q['url'] ?? '';
                           return Container(
@@ -2275,7 +2275,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               },
                             ),
                           );
-                        }),
+                        }).toList(),
                       ],
                     ),
                   );
@@ -2463,7 +2463,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: catList.map((c) {
+                        children: catList.map<Widget>((c) {
                           final name = isAr ? (c['ar_title'] ?? c['en_title'] ?? '') : (c['en_title'] ?? c['ar_title'] ?? '');
                           return Chip(
                             backgroundColor: s.surface,
@@ -2552,7 +2552,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 dropdownColor: s.surface,
                                 value: _selectedSeason,
                                 underline: const SizedBox(),
-                                items: sortedSeasonKeys.map((season) => DropdownMenuItem(value: season, child: Text(isAr ? 'الموسم $season' : 'Season $season', style: TextStyle(color: s.textPrimary, fontSize: 12)))).toList(),
+                                items: sortedSeasonKeys.map<DropdownMenuItem<int>>((season) => DropdownMenuItem(value: season, child: Text(isAr ? 'الموسم $season' : 'Season $season', style: TextStyle(color: s.textPrimary, fontSize: 12)))).toList(),
                                 onChanged: (v) {
                                   if (v != null) {
                                     setState(() {
@@ -2568,13 +2568,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       KeyedSubtree(
                         key: ValueKey<int>(_selectedSeason),
                         child: Column(
-                          children: currentEpisodes.asMap().entries.map((e) {
+                          children: currentEpisodes.asMap().entries.map<Widget>((e) {
                             final ep = e.value;
                             final idx = e.key + 1;
                             final targetId = (ep['nb'] ?? ep['id']).toString();
                             final isWatched = _watchedEpisodes.contains(targetId);
 
-                            return Focus(
+                            return FocusBuilder(
                               builder: (context, hasFocus) => Container(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 decoration: BoxDecoration(
@@ -2658,7 +2658,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             return Container(
                               width: 105,
                               margin: const EdgeInsets.only(left: 10),
-                              child: Focus(
+                              child: FocusBuilder(
                                 builder: (context, hasFocus) => InkWell(
                                   borderRadius: BorderRadius.circular(AppRadius.card),
                                   onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
@@ -3049,7 +3049,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final targetRes = order[i];
       final match = _currentQualities.firstWhere(
         (q) => (q['resolution'] ?? '').toString().toLowerCase().contains(targetRes),
-        orElse: () => {},
+        orElse: () => <String, dynamic>{},
       );
       if (match.isNotEmpty && match['url'] != _currentStreamUrl) {
         _currentStreamUrl = match['url'];
@@ -3198,7 +3198,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         final ep = widget.episodes[i];
                         final idx = i + 1;
                         final isCurrent = idx == _activeEpIndex;
-                        return Focus(
+                        return FocusBuilder(
                           builder: (context, hasFocus) => Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
@@ -3431,7 +3431,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context: context,
       builder: (_) => CupertinoActionSheet(
         title: Text(isAr ? 'فترة التقديم والتأخير' : 'Seek Duration'),
-        actions: [5, 10, 15, 30].map((s) => CupertinoActionSheetAction(
+        actions: [5, 10, 15, 30].map<Widget>((s) => CupertinoActionSheetAction(
           child: Text(isAr ? '$s ثوانٍ' : '${s}s'),
           onPressed: () {
             AppSettings.instance.updateSeek(s);
@@ -3473,7 +3473,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               _downgradeQualitySilently(_controller?.value.position ?? Duration.zero);
             },
           ),
-          ..._currentQualities.map((q) {
+          ..._currentQualities.map<Widget>((q) {
             final res = q['resolution'] ?? '360p';
             final url = q['url'] ?? '';
             final isSelected = !_isAutoQuality && _activeQuality == res;
@@ -3515,7 +3515,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context: context,
       builder: (_) => CupertinoActionSheet(
         title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed'),
-        actions: [0.75, 1.0, 1.25, 1.5, 2.0].map((s) => CupertinoActionSheetAction(
+        actions: [0.75, 1.0, 1.25, 1.5, 2.0].map<Widget>((s) => CupertinoActionSheetAction(
           child: Text('${s}x'),
           onPressed: () {
             setState(() => _playbackSpeed = s);
@@ -3537,7 +3537,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context: context,
       builder: (_) => CupertinoActionSheet(
         title: Text(isAr ? 'إيقاف بعد وقت محدد' : 'Sleep Timer'),
-        actions: [15, 30, 45, 60].map((mins) => CupertinoActionSheetAction(
+        actions: [15, 30, 45, 60].map<Widget>((mins) => CupertinoActionSheetAction(
           child: Text(isAr ? '$mins دقيقة' : '$mins minutes'),
           onPressed: () {
             Navigator.pop(context);
@@ -3696,7 +3696,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               : const BorderRadius.horizontal(right: Radius.circular(100)),
                         ),
                         child: Column(
-                          mainAxisAlignment: ParseInt(lines: 10),
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(_isDoubleTapForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded, size: 40, color: Colors.white),
                             const SizedBox(height: 6),
@@ -3952,8 +3952,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 }
-
-MainAxisAlignment ParseInt({required int lines}) => MainAxisAlignment.center;
 
 class SubtitleSettingsScreen extends StatefulWidget {
   const SubtitleSettingsScreen({super.key});
@@ -4374,7 +4372,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final it = _completed[i];
                       final filePath = it['path'] ?? '';
-                      return Focus(
+                      return FocusBuilder(
                         builder: (context, hasFocus) => Container(
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
@@ -4435,7 +4433,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final item = _watchlist[i];
                       final poster = StreamService.extractPoster(item);
-                      return Focus(
+                      return FocusBuilder(
                         builder: (context, hasFocus) => InkWell(
                           borderRadius: BorderRadius.circular(AppRadius.card),
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
@@ -4534,7 +4532,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 Wrap(
                   spacing: 8,
                   children: [
-                    ...s.userProfiles.map((p) => ChoiceChip(
+                    ...s.userProfiles.map<Widget>((p) => ChoiceChip(
                       label: Text(p, style: TextStyle(color: s.activeProfile == p ? Colors.white : s.textPrimary)),
                       selected: s.activeProfile == p,
                       selectedColor: AppColors.primary,
@@ -4546,7 +4544,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                           _loadData();
                         });
                       },
-                    )),
+                    )).toList(),
                     ActionChip(
                       avatar: const Icon(Icons.add_rounded, size: 16),
                       backgroundColor: s.surface,
@@ -4669,6 +4667,24 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// الكلاس المساعد الذي يعالج مشكلة الـ Focus بدون تكرار الكود
+class FocusBuilder extends StatelessWidget {
+  final Widget Function(BuildContext context, bool hasFocus) builder;
+  const FocusBuilder({super.key, required this.builder});
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      child: Builder(
+        builder: (context) {
+          final hasFocus = Focus.of(context).hasFocus;
+          return builder(context, hasFocus);
+        },
       ),
     );
   }
