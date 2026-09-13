@@ -30,15 +30,15 @@ jobs:
       - name: Setup Persistent Keystore
         run: |
           mkdir -p ~/.android
-          if [ ! -f android/app/debug.keystore ]; then
-            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ ! -f android/app/release.keystore ]; then
+            keytool -genkey -v -keystore android/app/release.keystore -storepass onebrtv123 -alias onebrkey -keypass onebrtv123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ONEBR TV,OU=Media,O=ONEBR,C=IQ"
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
-            git add android/app/debug.keystore
-            git commit -m "chore: persist debug keystore [skip ci]" || true
+            git add android/app/release.keystore
+            git commit -m "chore: add release keystore [skip ci]" || true
             git push origin HEAD:${{ github.ref_name }} || true
           fi
-          cp android/app/debug.keystore ~/.android/debug.keystore
+          cp android/app/release.keystore ~/.android/debug.keystore
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -56,7 +56,7 @@ jobs:
 
       - name: Print Persistent APK SHA-1
         run: |
-          keytool -list -v -keystore android/app/debug.keystore -alias androiddebugkey -storepass android -keypass android
+          keytool -list -v -keystore android/app/release.keystore -alias onebrkey -storepass onebrtv123 -keypass onebrtv123
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
