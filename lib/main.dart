@@ -1269,7 +1269,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: Center(mainAxisAlignment: MainAxisAlignment.center).mainAxisAlignment,
                     children: [
                       const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
                       const SizedBox(width: 8),
@@ -1977,7 +1977,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(border: Border.all(color: s.border, width: 0.8), borderRadius: BorderRadius.circular(4)),
                     child: Row(
-                      mainAxisSize: min(MainAxisSize.min, MainAxisSize.max),
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('IMDb', style: TextStyle(color: s.textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
                         const SizedBox(width: 4),
@@ -3763,7 +3763,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     Positioned(
                       bottom: 85, right: 20,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24, width: 0.5)),
                         child: Row(
                           children: [
