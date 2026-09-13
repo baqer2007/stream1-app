@@ -13,14 +13,20 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// هذا الجزء يحل مشكلة compileSdkVersion و flutter extension لمكتبة wakelock_plus
-subprojects {
-    afterEvaluate { project ->
+subprojects { project ->
+    def setCompileSdk = {
         if (project.hasProperty("android")) {
-            android {
+            project.android {
                 compileSdkVersion 34
                 buildToolsVersion "34.0.0"
             }
+        }
+    }
+    if (project.state.executed) {
+        setCompileSdk()
+    } else {
+        project.afterEvaluate {
+            setCompileSdk()
         }
     }
 }
