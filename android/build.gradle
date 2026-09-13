@@ -20,11 +20,10 @@ allprojects {
 rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-    project.evaluationDependsOn(':app')
 }
 
-subprojects {
-    afterEvaluate { project ->
+subprojects { project ->
+    def configureAndroid = {
         if (project.hasProperty('android')) {
             project.android {
                 if (namespace == null) {
@@ -35,6 +34,14 @@ subprojects {
                     targetSdkVersion 34
                 }
             }
+        }
+    }
+
+    if (project.state.executed) {
+        configureAndroid()
+    } else {
+        project.afterEvaluate {
+            configureAndroid()
         }
     }
 }
