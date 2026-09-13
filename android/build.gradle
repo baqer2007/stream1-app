@@ -3,12 +3,6 @@ allprojects {
         google()
         mavenCentral()
     }
-    configurations.all {
-        resolutionStrategy {
-            force 'org.bouncycastle:bcprov-jdk18on:1.77'
-            force 'org.bouncycastle:bcpkix-jdk18on:1.77'
-        }
-    }
 }
 
 rootProject.buildDir = "../build"
@@ -17,6 +11,18 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+// هذا الجزء يحل مشكلة compileSdkVersion و flutter extension لمكتبة wakelock_plus
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            android {
+                compileSdkVersion 34
+                buildToolsVersion "34.0.0"
+            }
+        }
+    }
 }
 
 tasks.register("clean", Delete) {
