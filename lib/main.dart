@@ -269,6 +269,20 @@ class BackgroundDownloadService {
     send?.send([id, status, progress]);
   }
 
+  // مسار التطبيق الخارجي: يحذف تلقائياً فور إلغاء تثبيت التطبيق
+  static Future<String> getAppStoragePath() async {
+    Directory? dir;
+    if (Platform.isAndroid) {
+      dir = await getExternalStorageDirectory();
+    }
+    dir ??= await getApplicationDocumentsDirectory();
+    final saveDir = Directory('${dir.path}/Downloads');
+    if (!saveDir.existsSync()) {
+      saveDir.createSync(recursive: true);
+    }
+    return saveDir.path;
+  }
+
   static Future<String?> startDownload({
     required String url,
     required String fileName,
@@ -276,16 +290,12 @@ class BackgroundDownloadService {
     required String title,
     required String poster,
   }) async {
-    final baseDir = await getApplicationDocumentsDirectory();
-    final downloadDir = Directory('${baseDir.path}/downloads');
-    if (!downloadDir.existsSync()) {
-      downloadDir.createSync(recursive: true);
-    }
+    final path = await getAppStoragePath();
 
     final taskId = await FlutterDownloader.enqueue(
       url: url,
       headers: StreamService.stealthHeaders,
-      savedDir: downloadDir.path,
+      savedDir: path,
       fileName: fileName,
       showNotification: true,
       openFileFromNotification: false,
@@ -297,7 +307,7 @@ class BackgroundDownloadService {
         'nb': targetId,
         'taskId': taskId,
         'title': title,
-        'path': '${downloadDir.path}/$fileName',
+        'path': '$path/$fileName',
         'poster': poster,
         'progress': 0,
         'status': 1,
@@ -939,18 +949,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     if (mounted) setState(() {});
   }
 
-  bool _isMarvelContent(dynamic it) {
-    final title = '${it['ar_title'] ?? ''} ${it['en_title'] ?? ''}'.toLowerCase();
-    final marvelKeywords = [
-      'marvel', 'مارفل', 'avengers', 'المنتقمون', 'iron man', 'الرجل الحديدي',
-      'spider-man', 'spiderman', 'سبايدرمان', 'thor', 'ثور', 'captain america',
-      'كابتن أمريكا', 'hulk', 'هالك', 'deadpool', 'ديدبول', 'wolverine', 'ولفرين',
-      'loki', 'لوكي', 'doctor strange', 'دكتور سترينج', 'black panther', 'النمر الأسود',
-      'guardians of the galaxy', 'حراس المجرة', 'ant-man', 'الرجل النملة', 'thanos', 'ثانوس'
-    ];
-    return marvelKeywords.any((keyword) => title.contains(keyword));
-  }
-
   Future<void> _loadFeed() async {
     setState(() => _isLoading = true);
     _resumeList = await LocalStorageService.getList('resume_playback_list');
@@ -959,33 +957,47 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     final level = AppSettings.instance.appFilterMode;
 
     try {
+      // جلب أعمال مارفل بالاسم مباشرة + الأفلام المميزة والمسلسلات
       final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 40, level: level),
+        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 30, level: level),
         StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
+        StreamService.searchContent('Marvel', level: level),
+        StreamService.searchContent('Avengers', level: level),
       ]);
 
       final allMovies = res[0];
       final allSeries = res[1];
+      final marvel1 = res[2];
+      final marvel2 = res[3];
 
       final hero = allMovies.take(5).toList();
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
-      final marvel = allMovies.where((it) {
+      // دمج نتائج مارفل الحقيقية بدون تكرار
+      final Set<String> mIds = {};
+      final List<dynamic> marvelCombined = [];
+      for (var it in [...marvel1, ...marvel2]) {
         final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) && _isMarvelContent(it);
-      }).take(12).toList();
-      final marvelIds = marvel.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
+        if (!mIds.contains(id)) {
+          mIds.add(id);
+          marvelCombined.add(it);
+        }
+      }
 
+      // تصفية الأفلام المميزة (استبعاد مارفل وتفضيل التقييمات الأعلى)
       final featured = allMovies.where((it) {
         final id = (it['nb'] ?? it['id']).toString();
-        final score = double.tryParse((it['stars'] ?? '0').toString()) ?? 0.0;
-        return !heroIds.contains(id) && !marvelIds.contains(id) && score >= 6.8;
-      }).take(12).toList();
-      final featuredIds = featured.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
+        return !heroIds.contains(id) && !mIds.contains(id);
+      }).toList();
+      featured.sort((a, b) {
+        final sA = double.tryParse((a['stars'] ?? '0').toString()) ?? 0.0;
+        final sB = double.tryParse((b['stars'] ?? '0').toString()) ?? 0.0;
+        return sB.compareTo(sA);
+      });
 
       final recent = allSeries.where((it) {
         final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) && !marvelIds.contains(id) && !featuredIds.contains(id);
+        return !heroIds.contains(id) && !mIds.contains(id);
       }).take(12).toList();
 
       final combined = [...allMovies, ...allSeries];
@@ -997,8 +1009,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       if (mounted) {
         setState(() {
           _heroItems = hero;
-          _marvelItems = marvel.isNotEmpty ? marvel : allMovies.skip(5).take(10).toList();
-          _featuredItems = featured.isNotEmpty ? featured : allMovies.skip(15).take(10).toList();
+          _marvelItems = marvelCombined.take(12).toList();
+          _featuredItems = featured.take(12).toList();
           _recentItems = recent;
           _infiniteList = List.from(combined);
           _page = 1;
@@ -2274,7 +2286,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   poster: poster,
                                 );
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل! يمكنك متابعة التقدم في تبويب التنزيلات' : 'Download started!')),
+                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل! يمكنك متابعة التقدم في تبويب التنزيلات' : 'Download started! Check Downloads tab')),
                                 );
                               },
                             ),
@@ -2715,6 +2727,7 @@ class PlayerScreen extends StatefulWidget {
   final int currentEpIndex;
   final String poster;
   final Function(String)? onEpisodeChanged;
+  final bool isLocalFile;
 
   const PlayerScreen({
     super.key,
@@ -2729,6 +2742,7 @@ class PlayerScreen extends StatefulWidget {
     this.currentEpIndex = 1,
     this.poster = '',
     this.onEpisodeChanged,
+    this.isLocalFile = false,
   });
 
   @override
@@ -2799,7 +2813,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    if (widget.videoUrl.isEmpty) {
+    if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
+      _initPlayer(widget.videoUrl, isLocal: true);
+    } else if (widget.videoUrl.isEmpty) {
       _loadAndPlayMedia(_activeMediaId);
     } else {
       _currentStreamUrl = widget.videoUrl;
@@ -2950,21 +2966,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  void _initPlayer(String url, {Duration? startAt}) async {
+  void _initPlayer(String url, {Duration? startAt, bool isLocal = false}) async {
     final oldController = _controller;
     _controller = null;
     await oldController?.dispose();
 
     if (mounted) setState(() => _isReady = false);
 
-    final ctrl = VideoPlayerController.networkUrl(
-      Uri.parse(url),
-      httpHeaders: StreamService.stealthHeaders,
-      videoPlayerOptions: VideoPlayerOptions(
-        mixWithOthers: true,
-        allowBackgroundPlayback: false,
-      ),
-    );
+    final ctrl = isLocal
+        ? VideoPlayerController.file(File(url))
+        : VideoPlayerController.networkUrl(
+            Uri.parse(url),
+            httpHeaders: StreamService.stealthHeaders,
+            videoPlayerOptions: VideoPlayerOptions(
+              mixWithOthers: true,
+              allowBackgroundPlayback: false,
+            ),
+          );
 
     _controller = ctrl;
     await ctrl.initialize();
@@ -3319,15 +3337,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'فتح في مشغل خارجي (VLC / MX)' : 'Open in External Player', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _castToTv();
-                      },
-                    ),
-                    Divider(color: settings.border, height: 1),
+                    if (!widget.isLocalFile) ...[
+                      ListTile(
+                        leading: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'فتح في مشغل خارجي (VLC / MX)' : 'Open in External Player', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _castToTv();
+                        },
+                      ),
+                      Divider(color: settings.border, height: 1),
+                    ],
                     ListTile(
                       leading: Icon(Icons.speed_rounded, color: settings.textSecondary),
                       title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -3337,16 +3357,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         _showSpeedPicker(isAr);
                       },
                     ),
-                    Divider(color: settings.border, height: 1),
-                    ListTile(
-                      leading: Icon(Icons.hd_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'دقة وجودة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Text(_isAutoQuality ? (isAr ? 'تلقائي (Auto)' : 'Auto') : _activeQuality, style: TextStyle(color: _isAutoQuality ? AppColors.primary : settings.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showQualityPicker(isAr);
-                      },
-                    ),
+                    if (!widget.isLocalFile && _currentQualities.isNotEmpty) ...[
+                      Divider(color: settings.border, height: 1),
+                      ListTile(
+                        leading: Icon(Icons.hd_rounded, color: settings.textSecondary),
+                        title: Text(isAr ? 'دقة وجودة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        trailing: Text(_isAutoQuality ? (isAr ? 'تلقائي (Auto)' : 'Auto') : _activeQuality, style: TextStyle(color: _isAutoQuality ? AppColors.primary : settings.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showQualityPicker(isAr);
+                        },
+                      ),
+                    ],
                     Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.timer_outlined, color: settings.textSecondary),
@@ -3802,11 +3824,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
                                   onPressed: () => _takeSceneClip(isAr),
                                 ),
-                                IconButton(
-                                  tooltip: isAr ? 'مشغل خارجي' : 'External Player',
-                                  icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
-                                  onPressed: _castToTv,
-                                ),
+                                if (!widget.isLocalFile)
+                                  IconButton(
+                                    tooltip: isAr ? 'مشغل خارجي' : 'External Player',
+                                    icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                                    onPressed: _castToTv,
+                                  ),
                                 IconButton(icon: const Icon(Icons.tune_rounded, color: Colors.white), onPressed: _openSettingsBottomSheet),
                               ],
                             ),
@@ -4324,6 +4347,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     final isAr = s.appLanguage == 'ar';
     final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
 
+    // تحديث القائمة تلقائياً عند الدخول على الشاشة
+    _loadData();
+
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -4407,7 +4433,20 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
                                       onPressed: () {
                                         if (File(filePath).existsSync()) {
-                                          ExternalPlayerService.playInExternalPlayer(videoUrl: filePath, title: it['title'] ?? '');
+                                          // تشغيل الفيديو المحمل محلياً داخل مشغل التطبيق مباشرة
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => PlayerScreen(
+                                                mediaId: it['nb'] ?? '',
+                                                title: it['title'] ?? '',
+                                                videoUrl: filePath,
+                                                qualities: const [],
+                                                isLocalFile: true,
+                                                poster: it['poster'] ?? '',
+                                              ),
+                                            ),
+                                          );
                                         } else {
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
