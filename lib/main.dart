@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'cloud_firestore/cloud_firestore.dart' if (dart.library.io) 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_intent_plus/android_intent.dart';
@@ -19,7 +19,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
@@ -1978,7 +1977,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(border: Border.all(color: s.border, width: 0.8), borderRadius: BorderRadius.circular(4)),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: min(MainAxisSize.min, MainAxisSize.max),
                       children: [
                         Text('IMDb', style: TextStyle(color: s.textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
                         const SizedBox(width: 4),
@@ -2791,8 +2790,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _currentQualities = widget.qualities;
     _loadWatchedState();
 
-    WakelockPlus.enable();
-
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -3271,7 +3268,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    WakelockPlus.disable();
     _autoNextTimer?.cancel();
     _hideTimer?.cancel();
     _doubleTapTimer?.cancel();
@@ -4237,7 +4233,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           user.email ?? '',
         );
 
-        // جلب قائمة المشاهدة المحفوظة في Firestore للمزامنة
         try {
           final doc = await FirebaseFirestore.instance
               .collection('users')
@@ -4668,7 +4663,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   }
 }
 
-// الكلاس المساعد الذي يعالج مشكلة الـ Focus بدون تكرار الكود
 class FocusBuilder extends StatelessWidget {
   final Widget Function(BuildContext context, bool hasFocus) builder;
   const FocusBuilder({super.key, required this.builder});
