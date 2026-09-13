@@ -33,7 +33,7 @@ jobs:
       - name: Configure Flutter and Generate Missing Android Files
         run: |
           flutter config --no-analytics
-          flutter create . --platforms=android --org com.example
+          flutter create . --platforms=android --org com.example --project-name onebr_tv
 
       - name: Get dependencies
         run: flutter pub get
