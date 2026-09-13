@@ -23,7 +23,14 @@ subprojects {
 }
 
 subprojects { project ->
-    def configureAndroid = {
+    // توفير كائن flutter الوهمي مع خصائص SDK للمكتبات الخارجية
+    project.ext {
+        set("flutter.compileSdkVersion", 34)
+        set("flutter.minSdkVersion", 21)
+        set("flutter.targetSdkVersion", 34)
+    }
+
+    afterEvaluate {
         if (project.hasProperty('android')) {
             project.android {
                 if (namespace == null) {
@@ -31,17 +38,10 @@ subprojects { project ->
                 }
                 compileSdkVersion 34
                 defaultConfig {
+                    minSdkVersion 21
                     targetSdkVersion 34
                 }
             }
-        }
-    }
-
-    if (project.state.executed) {
-        configureAndroid()
-    } else {
-        project.afterEvaluate {
-            configureAndroid()
         }
     }
 }
