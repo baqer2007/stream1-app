@@ -1,6 +1,10 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag_object.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -57,6 +61,54 @@ class AppRadius {
   static const double button = 22.0;
 }
 
+class ExternalPlayerService {
+  static Future<void> playInExternalPlayer({
+    required String videoUrl,
+    required String title,
+    Map<String, String>? headers,
+  }) async {
+    final AndroidIntent intent = AndroidIntent(
+      action: 'action_view',
+      data: Uri.encodeFull(videoUrl),
+      type: 'video/*',
+      flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+      arguments: <String, dynamic>{
+        'title': title,
+        if (headers != null) 'headers': headers,
+      },
+    );
+    await intent.launch();
+  }
+}
+
+class CloudSyncService {
+  static final _firestore = FirebaseFirestore.instance;
+  static final _auth = FirebaseAuth.instance;
+  static final _messaging = FirebaseMessaging.instance;
+
+  static Future<void> syncWatchlistToCloud(String profile, List<Map<String, dynamic>> watchlist) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await _firestore.collection('users').doc(uid).collection('profiles').doc(profile).set({
+        'watchlist': watchlist,
+        'last_updated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  static Future<void> toggleSeriesTopic(String seriesId, bool subscribe) async {
+    try {
+      final topic = 'series_$seriesId';
+      if (subscribe) {
+        await _messaging.subscribeToTopic(topic);
+      } else {
+        await _messaging.unsubscribeFromTopic(topic);
+      }
+    } catch (_) {}
+  }
+}
+
 class Subtitle {
   final int index;
   final Duration start;
@@ -94,6 +146,9 @@ class LocalStorageService {
     final prefs = await SharedPreferences.getInstance();
     final currentProfile = prefs.getString('current_active_profile') ?? 'default';
     await prefs.setString('${currentProfile}_$key', jsonEncode(list));
+    if (key == 'user_watchlist') {
+      CloudSyncService.syncWatchlistToCloud(currentProfile, list);
+    }
   }
 
   static Future<void> appendItem(String key, Map<String, dynamic> item, {int maxLength = 50, String idField = 'nb'}) async {
@@ -186,12 +241,14 @@ class LocalStorageService {
   static Future<void> toggleSubscribed(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('subscribed_notifications') ?? [];
-    if (list.contains(id)) {
+    final subscribed = list.contains(id);
+    if (subscribed) {
       list.remove(id);
     } else {
       list.add(id);
     }
     await prefs.setStringList('subscribed_notifications', list);
+    CloudSyncService.toggleSeriesTopic(id, !subscribed);
   }
 }
 
@@ -474,6 +531,12 @@ void main() async {
   }
 
   try {
+    await BackgroundDownloadService.initialize();
+  } catch (e) {
+    debugPrint("Download service error: $e");
+  }
+
+  try {
     await AppSettings.instance.init();
   } catch (e) {
     debugPrint("Settings error: $e");
@@ -670,31 +733,33 @@ class CategoriesScreen extends StatelessWidget {
             final cat = _allCategories[i];
             final title = isAr ? cat['ar'] : cat['en'];
 
-            return Container(
-              decoration: BoxDecoration(
-                color: s.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: s.border, width: 0.5),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                leading: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: s.surfaceLight,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(cat['icon'], color: AppColors.primary, size: 20),
+            return Focus(
+              builder: (context, hasFocus) => Container(
+                decoration: BoxDecoration(
+                  color: hasFocus ? s.surfaceLight : s.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
                 ),
-                title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: s.textPrimary)),
-                trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary, size: 20),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => FullCategoryView(title: title, categoryEn: cat['key'])),
-                  );
-                },
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  leading: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: s.surfaceLight,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(cat['icon'], color: AppColors.primary, size: 20),
+                  ),
+                  title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: s.textPrimary)),
+                  trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary, size: 20),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => FullCategoryView(title: title, categoryEn: cat['key'])),
+                    );
+                  },
+                ),
               ),
             );
           },
@@ -796,33 +861,35 @@ class _FullCategoryViewState extends State<FullCategoryView> {
             final poster = StreamService.extractPoster(it);
             final title = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
 
-            return InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              onTap: () {
-                HapticFeedback.lightImpact();
-                Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it)));
-              },
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: s.surface,
-                        borderRadius: BorderRadius.circular(AppRadius.card),
-                        border: Border.all(color: s.border, width: 0.5),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.card),
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
-                            : Container(color: s.surface),
+            return Focus(
+              builder: (context, hasFocus) => InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it)));
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                          border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                          child: poster.isNotEmpty
+                              ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                              : Container(color: s.surface),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                ],
+                    const SizedBox(height: 6),
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                  ],
+                ),
               ),
             );
           },
@@ -1130,35 +1197,37 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             final t = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
                             final score = (it['stars'] ?? '7.0').toString();
 
-                            return InkWell(
-                              onTap: () => _openDetails(it),
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: s.surface,
-                                        borderRadius: BorderRadius.circular(AppRadius.card),
-                                        border: Border.all(color: s.border, width: 0.5),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(AppRadius.card),
-                                        child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                            return Focus(
+                              builder: (context, hasFocus) => InkWell(
+                                onTap: () => _openDetails(it),
+                                borderRadius: BorderRadius.circular(AppRadius.card),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: s.surface,
+                                          borderRadius: BorderRadius.circular(AppRadius.card),
+                                          border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(AppRadius.card),
+                                          child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
-                                      const SizedBox(width: 3),
-                                      Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-                                    ],
-                                  ),
-                                ],
+                                    const SizedBox(height: 6),
+                                    Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
+                                        const SizedBox(width: 3),
+                                        Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -1186,52 +1255,56 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       child: Row(
         children: [
           Expanded(
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _openSectionView(isAr ? 'الأفلام السينمائية' : 'Movies', false);
-              },
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: s.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: s.border, width: 0.5),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
-                    const SizedBox(width: 8),
-                    Text(isAr ? 'الأفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                  ],
+            child: Focus(
+              builder: (context, hasFocus) => InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _openSectionView(isAr ? 'الأفلام السينمائية' : 'Movies', false);
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: hasFocus ? s.surfaceLight : s.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(isAr ? 'الأفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _openSectionView(isAr ? 'المسلسلات والأنمي' : 'TV Series', true);
-              },
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: s.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: s.border, width: 0.5),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.tv_rounded, color: Colors.amber, size: 18),
-                    const SizedBox(width: 8),
-                    Text(isAr ? 'المسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                  ],
+            child: Focus(
+              builder: (context, hasFocus) => InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _openSectionView(isAr ? 'المسلسلات والأنمي' : 'TV Series', true);
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: hasFocus ? s.surfaceLight : s.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.tv_rounded, color: Colors.amber, size: 18),
+                      const SizedBox(width: 8),
+                      Text(isAr ? 'المسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1472,35 +1545,37 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               return Container(
                 width: 105,
                 margin: const EdgeInsets.only(left: 10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(AppRadius.card),
-                  onTap: () => _openDetails(it),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: s.surface,
-                            borderRadius: BorderRadius.circular(AppRadius.card),
-                            border: Border.all(color: s.border, width: 0.5),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(AppRadius.card),
-                            child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                child: Focus(
+                  builder: (context, hasFocus) => InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.card),
+                    onTap: () => _openDetails(it),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: s.surface,
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                      Row(
-                        children: [
-                          const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
-                          const SizedBox(width: 3),
-                          Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
+                            const SizedBox(width: 3),
+                            Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -2479,79 +2554,90 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 underline: const SizedBox(),
                                 items: sortedSeasonKeys.map((season) => DropdownMenuItem(value: season, child: Text(isAr ? 'الموسم $season' : 'Season $season', style: TextStyle(color: s.textPrimary, fontSize: 12)))).toList(),
                                 onChanged: (v) {
-                                  if (v != null) setState(() => _selectedSeason = v);
+                                  if (v != null) {
+                                    setState(() {
+                                      _selectedSeason = v;
+                                    });
+                                  }
                                 },
                               ),
                             ),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      ...currentEpisodes.asMap().entries.map((e) {
-                        final ep = e.value;
-                        final idx = e.key + 1;
-                        final targetId = (ep['nb'] ?? ep['id']).toString();
-                        final isWatched = _watchedEpisodes.contains(targetId);
+                      KeyedSubtree(
+                        key: ValueKey<int>(_selectedSeason),
+                        child: Column(
+                          children: currentEpisodes.asMap().entries.map((e) {
+                            final ep = e.value;
+                            final idx = e.key + 1;
+                            final targetId = (ep['nb'] ?? ep['id']).toString();
+                            final isWatched = _watchedEpisodes.contains(targetId);
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: s.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: s.border, width: 0.5),
-                          ),
-                          child: InkWell(
-                            onTap: () => _playEpisode(ep, idx, isAr),
-                            borderRadius: BorderRadius.circular(14),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.download_rounded, color: s.textSecondary, size: 20),
-                                    onPressed: () => _showDownloadQualityPicker(targetId, '$title - ${isAr ? "حلقة" : "Ep"} $idx', poster, isAr),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                            return Focus(
+                              builder: (context, hasFocus) => Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                decoration: BoxDecoration(
+                                  color: hasFocus ? s.surfaceLight : s.surface,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                                ),
+                                child: InkWell(
+                                  onTap: () => _playEpisode(ep, idx, isAr),
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Row(
                                       children: [
-                                        Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
-                                        const SizedBox(height: 4),
-                                        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                        if (isWatched) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
+                                        IconButton(
+                                          icon: Icon(Icons.download_rounded, color: s.textSecondary, size: 20),
+                                          onPressed: () => _showDownloadQualityPicker(targetId, '$title - ${isAr ? "حلقة" : "Ep"} $idx', poster, isAr),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              const Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
-                                              const SizedBox(width: 4),
-                                              Text(isAr ? 'تمت المشاهدة' : 'Watched', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                              Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                                              const SizedBox(height: 4),
+                                              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                              if (isWatched) ...[
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    const Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
+                                                    const SizedBox(width: 4),
+                                                    Text(isAr ? 'تمت المشاهدة' : 'Watched', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                  ],
+                                                ),
+                                              ],
                                             ],
                                           ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(AppRadius.chip),
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        Container(width: 110, height: 65, color: Colors.black26, child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : null),
-                                        Container(
-                                          width: 28, height: 28,
-                                          decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
-                                          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(AppRadius.chip),
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              Container(width: 110, height: 65, color: Colors.black26, child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : null),
+                                              Container(
+                                                width: 28, height: 28,
+                                                decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
+                                                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ],
 
                     if (_similarMedia.isNotEmpty) ...[
@@ -2572,21 +2658,29 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             return Container(
                               width: 105,
                               margin: const EdgeInsets.only(left: 10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(AppRadius.card),
-                                onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(AppRadius.card),
-                                        child: simPoster.isNotEmpty ? Image.network(simPoster, fit: BoxFit.cover, width: double.infinity) : Container(color: s.surface),
+                              child: Focus(
+                                builder: (context, hasFocus) => InkWell(
+                                  borderRadius: BorderRadius.circular(AppRadius.card),
+                                  onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(AppRadius.card),
+                                            border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(AppRadius.card),
+                                            child: simPoster.isNotEmpty ? Image.network(simPoster, fit: BoxFit.cover, width: double.infinity) : Container(color: s.surface),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(simTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                                  ],
+                                      const SizedBox(height: 6),
+                                      Text(simTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -3104,20 +3198,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         final ep = widget.episodes[i];
                         final idx = i + 1;
                         final isCurrent = idx == _activeEpIndex;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppSettings.instance.surface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppSettings.instance.border, width: 0.5),
-                          ),
-                          child: ListTile(
-                            title: Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
-                            trailing: isCurrent ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary) : null,
-                            onTap: () {
-                              Navigator.pop(context);
-                              _switchEpisode(ep, idx);
-                            },
+                        return Focus(
+                          builder: (context, hasFocus) => Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppSettings.instance.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: hasFocus ? AppColors.primary : AppSettings.instance.border, width: hasFocus ? 1.5 : 0.5),
+                            ),
+                            child: ListTile(
+                              title: Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+                              trailing: isCurrent ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary) : null,
+                              onTap: () {
+                                Navigator.pop(context);
+                                _switchEpisode(ep, idx);
+                              },
+                            ),
                           ),
                         );
                       },
@@ -3133,23 +3229,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _castToTv() async {
-    final videoUrl = _controller?.dataSource ?? widget.videoUrl;
+    final videoUrl = _currentStreamUrl.isNotEmpty ? _currentStreamUrl : (_controller?.dataSource ?? widget.videoUrl);
     if (videoUrl.isEmpty) return;
 
-    final uri = Uri.parse(videoUrl);
-    final intentUri = Uri.parse("intent:$videoUrl#Intent;type=video/*;package=org.videolan.vlc;end");
-
-    if (await canLaunchUrl(intentUri)) {
-      await launchUrl(intentUri);
-    } else if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'قم بتثبيت مشغل يدعم البث مثل VLC أو Web Video Caster' : 'Install VLC or Web Video Caster to cast')),
-        );
-      }
-    }
+    ExternalPlayerService.playInExternalPlayer(
+      videoUrl: videoUrl,
+      title: widget.title,
+      headers: StreamService.stealthHeaders,
+    );
   }
 
   void _startTimer() {
@@ -3239,6 +3326,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    ListTile(
+                      leading: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'فتح في مشغل خارجي (VLC / MX)' : 'Open in External Player', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _castToTv();
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.speed_rounded, color: settings.textSecondary),
                       title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -3600,7 +3696,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               : const BorderRadius.horizontal(right: Radius.circular(100)),
                         ),
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisAlignment: ParseInt(lines: 10),
                           children: [
                             Icon(_isDoubleTapForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded, size: 40, color: Colors.white),
                             const SizedBox(height: 6),
@@ -3732,7 +3828,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
                                   onPressed: () => _takeSceneClip(isAr),
                                 ),
-                                IconButton(icon: const Icon(Icons.tv_rounded, color: Colors.white), onPressed: _castToTv),
+                                IconButton(
+                                  tooltip: isAr ? 'مشغل خارجي' : 'External Player',
+                                  icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                                  onPressed: _castToTv,
+                                ),
                                 IconButton(icon: const Icon(Icons.tune_rounded, color: Colors.white), onPressed: _openSettingsBottomSheet),
                               ],
                             ),
@@ -3852,6 +3952,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 }
+
+MainAxisAlignment ParseInt({required int lines}) => MainAxisAlignment.center;
 
 class SubtitleSettingsScreen extends StatefulWidget {
   const SubtitleSettingsScreen({super.key});
@@ -4059,9 +4161,18 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     final prefs = await SharedPreferences.getInstance();
     final curP = prefs.getString('current_active_profile') ?? 'default';
 
+    // فحص وتحديث قائمة الملفات الموجودة فعلياً في التخزين
+    final verifiedDownloads = <Map<String, dynamic>>[];
+    for (var d in downloads) {
+      final p = d['path']?.toString() ?? '';
+      if (p.isNotEmpty && File(p).existsSync()) {
+        verifiedDownloads.add(d);
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _completed = downloads;
+        _completed = verifiedDownloads;
         _watchlist = wl;
         _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
         _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
@@ -4131,10 +4242,26 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           user.displayName ?? (isAr ? 'مستخدم' : 'User'),
           user.email ?? '',
         );
+
+        // جلب قائمة المشاهدة المحفوظة في Firestore للمزامنة
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('profiles')
+              .doc(AppSettings.instance.activeProfile)
+              .get();
+          if (doc.exists && doc.data()?['watchlist'] != null) {
+            final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
+            await LocalStorageService.setList('user_watchlist', cloudList);
+            _loadData();
+          }
+        } catch (_) {}
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isAr ? 'تم تسجيل الدخول بنجاح: ${user.displayName}' : 'Logged in as ${user.displayName}'),
+              content: Text(isAr ? 'تم تسجيل الدخول بنجاح ومزامنة البيانات: ${user.displayName}' : 'Logged in & synced: ${user.displayName}'),
               backgroundColor: Colors.green,
             ),
           );
@@ -4246,23 +4373,52 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemCount: _completed.length,
                     itemBuilder: (ctx, i) {
                       final it = _completed[i];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                        child: ListTile(
-                          leading: const Icon(Icons.download_done_rounded, color: AppColors.primary),
-                          title: Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                          subtitle: Text(it['path'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 10)),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
-                            onPressed: () async {
-                              final taskId = it['taskId']?.toString();
-                              if (taskId != null) {
-                                await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+                      final filePath = it['path'] ?? '';
+                      return Focus(
+                        builder: (context, hasFocus) => Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: hasFocus ? s.surfaceLight : s.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
+                          ),
+                          child: ListTile(
+                            leading: const Icon(Icons.download_done_rounded, color: AppColors.primary),
+                            title: Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
+                            subtitle: Text(filePath, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 10)),
+                            onTap: () {
+                              if (File(filePath).existsSync()) {
+                                ExternalPlayerService.playInExternalPlayer(
+                                  videoUrl: filePath,
+                                  title: it['title'] ?? '',
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
+                                );
                               }
-                              await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
-                              _loadData();
                             },
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
+                              onPressed: () async {
+                                final taskId = it['taskId']?.toString();
+                                if (taskId != null) {
+                                  try {
+                                    await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+                                  } catch (_) {}
+                                }
+                                if (filePath.isNotEmpty) {
+                                  final file = File(filePath);
+                                  if (file.existsSync()) {
+                                    try {
+                                      file.deleteSync();
+                                    } catch (_) {}
+                                  }
+                                }
+                                await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
+                                _loadData();
+                              },
+                            ),
                           ),
                         ),
                       );
@@ -4279,12 +4435,20 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final item = _watchlist[i];
                       final poster = StreamService.extractPoster(item);
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.card),
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
-                        child: ClipRRect(
+                      return Focus(
+                        builder: (context, hasFocus) => InkWell(
                           borderRadius: BorderRadius.circular(AppRadius.card),
-                          child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: s.surface),
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: s.surface),
+                            ),
+                          ),
                         ),
                       );
                     },
