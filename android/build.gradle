@@ -23,12 +23,15 @@ subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 
+// تطبيق afterEvaluate على المكتبات الخارجية فقط دون مشروع :app
 subprojects { subproject ->
-    afterEvaluate {
-        if (subproject.hasProperty('android')) {
-            subproject.android {
-                if (namespace == null) {
-                    namespace subproject.group
+    if (subproject.name != "app") {
+        subproject.afterEvaluate {
+            if (subproject.hasProperty('android')) {
+                subproject.android {
+                    if (namespace == null) {
+                        namespace subproject.group
+                    }
                 }
             }
         }
