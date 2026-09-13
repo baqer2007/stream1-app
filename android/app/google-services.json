@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "598398160963-biv6pubv38c90qrkqhdoafrjj8i53uod.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.onebr_tv",
+            "certificate_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+          }
+        },
+        {
           "client_id": "598398160963-uamugdm1hvum523sgfva5mf8pq14ujrh.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
