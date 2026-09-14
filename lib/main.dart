@@ -299,18 +299,7 @@ class BackgroundDownloadService {
   }) async {
     final path = await getAppStoragePath();
     final filePath = '$path/$fileName';
-
-    String? localSubPath;
-    if (subUrl != null && subUrl.isNotEmpty) {
-      try {
-        final subRes = await http.get(Uri.parse(subUrl), headers: StreamService.stealthHeaders);
-        if (subRes.statusCode == 200) {
-          final subFile = File('$path/${targetId}_sub.srt');
-          await subFile.writeAsBytes(subRes.bodyBytes);
-          localSubPath = subFile.path;
-        }
-      } catch (_) {}
-    }
+    final localSubPath = '$path/${targetId}_sub.srt';
 
     final taskId = await FlutterDownloader.enqueue(
       url: url,
@@ -328,13 +317,22 @@ class BackgroundDownloadService {
         'taskId': taskId,
         'title': title,
         'path': filePath,
-        'subPath': localSubPath ?? '',
+        'subPath': localSubPath,
         'poster': poster,
         'progress': 0,
         'status': 1,
         'isCompleted': false,
         'date': DateTime.now().millisecondsSinceEpoch,
       });
+
+      if (subUrl != null && subUrl.isNotEmpty) {
+        http.get(Uri.parse(subUrl), headers: StreamService.stealthHeaders).then((subRes) async {
+          if (subRes.statusCode == 200) {
+            final subFile = File(localSubPath);
+            await subFile.writeAsBytes(subRes.bodyBytes);
+          }
+        }).catchError((_) {});
+      }
     }
 
     return taskId;
