@@ -1805,7 +1805,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                 color: s.glassFill,
                 padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
                 child: Column(
-                  mainAxisSize: dynamic;
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
