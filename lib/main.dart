@@ -42,6 +42,29 @@ class SecureHttpOverrides extends HttpOverrides {
   }
 }
 
+class SearchEngineUtils {
+  static String normalize(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[إأآا]'), 'ا')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ى', 'ي')
+        .replaceAll(RegExp(r'[\-_:,\.\(\)\[\]]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool isMatch(String query, String target) {
+    final q = normalize(query);
+    final t = normalize(target);
+    if (q.isEmpty || t.isEmpty) return false;
+    if (t.contains(q) || q.contains(t)) return true;
+    final parts = q.split(' ').where((w) => w.length > 1).toList();
+    if (parts.isEmpty) return false;
+    return parts.any((p) => t.contains(p));
+  }
+}
+
 class ImdbCensorEngine {
   static Future<List<Map<String, int>>> extractSensitiveMarkers(String imdbId) async {
     if (imdbId.isEmpty) return [];
@@ -1803,24 +1826,8 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
   List<dynamic> _seriesResults = [];
   List<Map<String, dynamic>> _recentSearches = [];
   bool _isSearching = false;
-
+  Timer? _debounce;
   String _filterType = 'all';
-  String _selectedCategoryKey = 'all';
-  double _minScore = 0.0;
-  int _fromYear = 1900;
-  int _toYear = 2026;
-
-  final List<Map<String, String>> _categories = [
-    {'key': 'all', 'ar': 'الكل', 'en': 'All'},
-    {'key': 'action', 'ar': 'أكشن', 'en': 'Action'},
-    {'key': 'horror', 'ar': 'رعب', 'en': 'Horror'},
-    {'key': 'comedy', 'ar': 'كوميديا', 'en': 'Comedy'},
-    {'key': 'drama', 'ar': 'دراما', 'en': 'Drama'},
-    {'key': 'animation', 'ar': 'أنمي ورسوم متحركة', 'en': 'Animation'},
-    {'key': 'sci-fi', 'ar': 'خيال علمي', 'en': 'Sci-Fi'},
-    {'key': 'adventure', 'ar': 'مغامرات', 'en': 'Adventure'},
-    {'key': 'thriller', 'ar': 'إثارة', 'en': 'Thriller'},
-  ];
 
   @override
   void initState() {
@@ -1828,184 +1835,76 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     _loadRecents();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   void _loadRecents() async {
     final list = await LocalStorageService.getList('recent_search_history');
     if (mounted) setState(() => _recentSearches = list);
   }
 
-  void _search() async {
-    final q = _searchCtrl.text.trim();
+  void _onQueryChanged(String val) {
+    if (_debounce?.isActive ?? false) _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _executeSearch(val);
+    });
+  }
+
+  void _executeSearch(String query) async {
+    final q = query.trim();
     if (q.isEmpty) {
-      setState(() {
-        _movieResults.clear();
-        _seriesResults.clear();
-      });
+      if (mounted) {
+        setState(() {
+          _movieResults.clear();
+          _seriesResults.clear();
+          _isSearching = false;
+        });
+      }
       return;
     }
 
     setState(() => _isSearching = true);
     final level = AppSettings.instance.appFilterMode;
-    final results = await StreamService.searchContent(q, level: level);
 
-    final List<dynamic> movies = [];
-    final List<dynamic> series = [];
+    try {
+      List<dynamic> results = await StreamService.searchContent(q, level: level);
 
-    for (var it in results) {
-      final isSeries = (it['is_series_fixed'] == true) || (it['season'] != null && it['season'].toString() != '0');
-      final score = double.tryParse((it['stars'] ?? '0').toString()) ?? 0.0;
-      final year = int.tryParse((it['year'] ?? '0').toString()) ?? 2024;
-
-      if (score < _minScore) continue;
-      if (year < _fromYear || year > _toYear) continue;
-
-      if (isSeries) {
-        series.add(it);
-      } else {
-        movies.add(it);
+      if (results.isEmpty) {
+        final feedFallback = await StreamService.fetchFeed(isSeries: false, page: 0, perPage: 60, level: level);
+        results = feedFallback.where((item) {
+          final tAr = (item['ar_title'] ?? '').toString();
+          final tEn = (item['en_title'] ?? '').toString();
+          return SearchEngineUtils.isMatch(q, tAr) || SearchEngineUtils.isMatch(q, tEn);
+        }).toList();
       }
+
+      final List<dynamic> movies = [];
+      final List<dynamic> series = [];
+
+      for (var it in results) {
+        final isSeries = (it['is_series_fixed'] == true) ||
+            (it['season'] != null && it['season'].toString() != '0' && it['season'].toString() != '');
+        if (isSeries) {
+          series.add(it);
+        } else {
+          movies.add(it);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _movieResults = movies;
+          _seriesResults = series;
+          _isSearching = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSearching = false);
     }
-
-    if (mounted) {
-      setState(() {
-        _movieResults = movies;
-        _seriesResults = series;
-        _isSearching = false;
-      });
-    }
-  }
-
-  void _openFilterDialog() {
-    HapticFeedback.selectionClick();
-    final s = AppSettings.instance;
-    final isAr = s.appLanguage == 'ar';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setMState) => Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: s.glassFill,
-                padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            setMState(() {
-                              _selectedCategoryKey = 'all';
-                              _minScore = 0.0;
-                              _fromYear = 1900;
-                              _toYear = 2026;
-                            });
-                          },
-                          child: Text(isAr ? 'مسح الكل' : 'Reset All', style: TextStyle(color: s.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        ),
-                        Text(isAr ? 'تصفية النتائج' : 'Filter Results', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                        IconButton(
-                          icon: Icon(Icons.close_rounded, color: s.textPrimary, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Align(alignment: isAr ? Alignment.centerRight : Alignment.centerLeft, child: Text(isAr ? 'السنة' : 'Year', style: TextStyle(color: s.textSecondary, fontSize: 12))),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10)),
-                            alignment: Alignment.center,
-                            child: Text('$_toYear', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(isAr ? 'إلى' : 'to', style: TextStyle(color: s.textSecondary))),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10)),
-                            alignment: Alignment.center,
-                            child: Text('$_fromYear', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Align(alignment: isAr ? Alignment.centerRight : Alignment.centerLeft, child: Text(isAr ? 'القسم' : 'Category', style: TextStyle(color: s.textSecondary, fontSize: 12))),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10)),
-                      child: DropdownButton<String>(
-                        value: _selectedCategoryKey,
-                        dropdownColor: s.surface,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        icon: Icon(Icons.keyboard_arrow_down_rounded, color: s.textSecondary, size: 20),
-                        items: _categories.map<DropdownMenuItem<String>>((c) {
-                          final label = isAr ? c['ar']! : c['en']!;
-                          return DropdownMenuItem(value: c['key'], child: Text(label, style: TextStyle(color: s.textPrimary)));
-                        }).toList(),
-                        onChanged: (v) {
-                          if (v != null) setMState(() => _selectedCategoryKey = v);
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Align(
-                      alignment: isAr ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Text(isAr ? 'تقييم IMDb: ${_minScore.toStringAsFixed(1)}' : 'IMDb Score: ${_minScore.toStringAsFixed(1)}', style: TextStyle(color: s.textSecondary, fontSize: 12)),
-                    ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: AppColors.primary,
-                        inactiveTrackColor: s.border,
-                        thumbColor: AppColors.primary,
-                        trackHeight: 3,
-                      ),
-                      child: Slider(
-                        value: _minScore,
-                        min: 0.0,
-                        max: 9.5,
-                        onChanged: (v) => setMState(() => _minScore = v),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                        onPressed: () {
-                          HapticFeedback.mediumImpact();
-                          Navigator.pop(context);
-                          _search();
-                        },
-                        child: Text(isAr ? 'إظهار النتائج' : 'Show Results', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -2022,57 +1921,49 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    InkWell(
-                      onTap: _openFilterDialog,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.all(11),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: s.border, width: 0.5)),
-                        child: Icon(Icons.tune_rounded, color: s.textPrimary, size: 20),
-                      ),
+                child: Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: s.border, width: 0.5),
+                  ),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: _onQueryChanged,
+                    style: TextStyle(color: s.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: isAr ? 'بحث فوري (مثل: Titanic، تيتانيك، مارفل)...' : 'Instant Search (e.g. Titanic)...',
+                      hintStyle: TextStyle(color: s.textSecondary, fontSize: 13),
+                      border: InputBorder.none,
+                      prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary, size: 22),
+                      suffixIcon: _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(Icons.clear_rounded, color: s.textSecondary, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _executeSearch('');
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Container(
-                        height: 44,
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                        child: TextField(
-                          controller: _searchCtrl,
-                          style: TextStyle(color: s.textPrimary, fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: isAr ? 'ابحث عن أفلام، مسلسلات، ممثلين...' : 'Search movies, series, actors...',
-                            hintStyle: TextStyle(color: s.textSecondary, fontSize: 13),
-                            border: InputBorder.none,
-                            prefixIcon: Icon(Icons.search_rounded, color: s.textSecondary, size: 20),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onSubmitted: (_) {
-                            HapticFeedback.lightImpact();
-                            _search();
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-
               if (_searchCtrl.text.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Row(
                     children: [
-                      _buildQuickFilterTab(isAr ? 'الكل' : 'All', _filterType == 'all', () => setState(() => _filterType = 'all')),
+                      _buildFilterChip(isAr ? 'الكل' : 'All', _filterType == 'all', () => setState(() => _filterType = 'all')),
                       const SizedBox(width: 8),
-                      _buildQuickFilterTab(isAr ? 'أفلام' : 'Movies', _filterType == 'movie', () => setState(() => _filterType = 'movie')),
+                      _buildFilterChip(isAr ? 'أفلام' : 'Movies', _filterType == 'movie', () => setState(() => _filterType = 'movie')),
                       const SizedBox(width: 8),
-                      _buildQuickFilterTab(isAr ? 'مسلسلات' : 'Series', _filterType == 'series', () => setState(() => _filterType = 'series')),
+                      _buildFilterChip(isAr ? 'مسلسلات' : 'Series', _filterType == 'series', () => setState(() => _filterType = 'series')),
                     ],
                   ),
                 ),
-
               Expanded(
                 child: _isSearching
                     ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
@@ -2087,7 +1978,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     );
   }
 
-  Widget _buildQuickFilterTab(String label, bool isSelected, VoidCallback onTap) {
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
     final s = AppSettings.instance;
     return InkWell(
       onTap: () {
@@ -2096,15 +1987,15 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
       },
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF00E5C9) : s.surface,
+          color: isSelected ? AppColors.primary : s.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: isSelected ? Colors.transparent : s.border, width: 0.5),
         ),
         child: Text(
           label,
-          style: TextStyle(color: isSelected ? Colors.black : s.textPrimary, fontSize: 12, fontWeight: FontWeight.bold),
+          style: TextStyle(color: isSelected ? Colors.white : s.textPrimary, fontSize: 12, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -2122,29 +2013,17 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         if (showSeries && _seriesResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'مسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(isAr ? 'المسلسلات المتطابقة' : 'Series Matches', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
-          ..._seriesResults.take(4).map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: isAr ? 'نتائج المسلسلات' : 'Series Results', isSeriesOnly: true))),
-              child: Text(isAr ? 'عرض الكل' : 'View All', style: TextStyle(color: s.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ),
+          ..._seriesResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
           Divider(color: s.border, height: 24),
         ],
         if (showMovies && _movieResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'أفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(isAr ? 'الأفلام المتطابقة' : 'Movie Matches', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
-          ..._movieResults.take(4).map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullCategoryView(title: isAr ? 'نتائج الأفلام' : 'Movie Results', isSeriesOnly: false))),
-              child: Text(isAr ? 'عرض الكل' : 'View All', style: TextStyle(color: s.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ),
+          ..._movieResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
         ],
       ],
     );
@@ -2175,7 +2054,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                 children: [
                   Text(title, style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(isAr ? '$year, دراما' : '$year, Drama', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                  Text('$year • HD', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2215,7 +2094,12 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
   Widget _buildRecentSearches(bool isAr) {
     final s = AppSettings.instance;
     if (_recentSearches.isEmpty) {
-      return Center(child: Text(isAr ? 'ابحث عن أفلامك المفضلة وسجل البحث سيظهر هنا' : 'Search for titles and your history will appear here', style: TextStyle(color: s.textSecondary, fontSize: 12)));
+      return Center(
+        child: Text(
+          isAr ? 'ابدأ بكتابة اسم الفيلم أو المسلسل للبحث الفوري' : 'Type title to start instant search',
+          style: TextStyle(color: s.textSecondary, fontSize: 12),
+        ),
+      );
     }
 
     return ListView(
@@ -2260,6 +2144,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   bool _isSubscribed = false;
   Map<String, dynamic> _extendedInfo = {};
   List<dynamic> _similarMedia = [];
+  List<String> _realActors = [];
 
   @override
   void initState() {
@@ -2288,7 +2173,21 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   void _loadFullData() async {
     final id = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
     final info = await StreamService.getVideoExtendedInfo(id);
-    if (mounted) setState(() => _extendedInfo = info);
+
+    List<String> actorsList = [];
+    final rawActors = info?['actors'] ?? info?['cast'] ?? widget.media['actors'] ?? widget.media['cast'];
+    if (rawActors is List) {
+      actorsList = rawActors.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    } else if (rawActors is String && rawActors.isNotEmpty) {
+      actorsList = rawActors.split(RegExp(r'[,،\|]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+
+    if (mounted) {
+      setState(() {
+        _extendedInfo = info ?? {};
+        _realActors = actorsList;
+      });
+    }
   }
 
   void _loadSimilar() async {
@@ -2475,7 +2374,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               onTap: () async {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
-                                
+
                                 final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
                                 final safeFileName = '${cleanId}_$res.mp4';
 
@@ -2510,26 +2409,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     );
   }
 
-  void _showActorProfile(String actorName, bool isAr) {
+  void _openActorWorks(String actorName) {
     HapticFeedback.selectionClick();
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'الممثل: $actorName' : 'Actor: $actorName'),
-        message: Text(isAr ? 'استعراض أعمال الممثل والبحث عن عروضه السابقة' : 'Explore all movies and series with this actor'),
-        actions: [
-          CupertinoActionSheetAction(
-            child: Text(isAr ? 'البحث عن أعماله في المنصة' : 'Search actor titles'),
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvancedSearchScreen()));
-            },
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.pop(context),
-          child: Text(isAr ? 'إغلاق' : 'Close'),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullCategoryView(
+          title: actorName,
+          searchQuery: actorName,
         ),
       ),
     );
@@ -2550,7 +2437,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final rawCats = widget.media['categories'];
     final List<dynamic> catList = rawCats is List ? rawCats : [];
     final sortedSeasonKeys = _seasonsMap.keys.toList()..sort((a, b) => a.compareTo(b));
-    final List<String> dummyActors = isAr ? ['روبرت داوني', 'سكارليت جوهانسون', 'كريس هيمسوورث', 'توم هولاند'] : ['Robert Downey Jr.', 'Scarlett Johansson', 'Chris Hemsworth', 'Tom Holland'];
 
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
@@ -2707,29 +2593,31 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       ),
                     const SizedBox(height: 14),
 
-                    Text(isAr ? 'طاقم التمثيل' : 'Cast', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 40,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: dummyActors.length,
-                        itemBuilder: (ctx, i) {
-                          final actor = dummyActors[i];
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: ActionChip(
-                              backgroundColor: s.surface,
-                              side: BorderSide(color: s.border, width: 0.5),
-                              label: Text(actor, style: TextStyle(color: s.textPrimary, fontSize: 12)),
-                              onPressed: () => _showActorProfile(actor, isAr),
-                            ),
-                          );
-                        },
+                    if (_realActors.isNotEmpty) ...[
+                      Text(isAr ? 'طاقم التمثيل (اضغط لمشاهدة أعماله)' : 'Cast (Tap to view works)', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 40,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: _realActors.length,
+                          itemBuilder: (ctx, i) {
+                            final actor = _realActors[i];
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: ActionChip(
+                                backgroundColor: s.surface,
+                                side: BorderSide(color: s.border, width: 0.5),
+                                label: Text(actor, style: TextStyle(color: s.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+                                onPressed: () => _openActorWorks(actor),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 14),
+                    ],
 
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -3025,7 +2913,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _lastSkippedSecond = -1;
 
   double? _dragPositionMs;
-  bool _isDraggingSlider = false;
+  bool _isSeeking = false;
 
   bool get _showSmartSkip =>
       _controller != null &&
@@ -3567,7 +3455,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _startTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && _controller != null && _controller!.value.isPlaying && !_isLocked && !_isDraggingSlider) {
+      if (mounted && _controller != null && _controller!.value.isPlaying && !_isLocked && !_isSeeking) {
         setState(() => _showControls = false);
       }
     });
@@ -4204,61 +4092,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           valueListenable: _controller!,
                           builder: (context, value, child) {
                             final totalMs = value.duration.inMilliseconds.toDouble();
-                            final currentMs = _isDraggingSlider
+                            final currentMs = _isSeeking
                                 ? (_dragPositionMs ?? value.position.inMilliseconds.toDouble())
                                 : value.position.inMilliseconds.toDouble();
 
                             return Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                LayoutBuilder(
-                                  builder: (ctx, sliderConstraints) {
-                                    final width = sliderConstraints.maxWidth;
-                                    return GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onLongPressStart: (details) {
-                                        HapticFeedback.mediumImpact();
-                                        final ratio = (details.localPosition.dx / width).clamp(0.0, 1.0);
-                                        setState(() {
-                                          _isDraggingSlider = true;
-                                          _dragPositionMs = ratio * totalMs;
-                                        });
-                                      },
-                                      onLongPressMoveUpdate: (details) {
-                                        final ratio = (details.localPosition.dx / width).clamp(0.0, 1.0);
-                                        setState(() {
-                                          _dragPositionMs = ratio * totalMs;
-                                        });
-                                      },
-                                      onLongPressEnd: (details) {
-                                        if (_dragPositionMs != null) {
-                                          _controller!.seekTo(Duration(milliseconds: _dragPositionMs!.toInt()));
-                                        }
-                                        setState(() {
-                                          _isDraggingSlider = false;
-                                          _dragPositionMs = null;
-                                        });
-                                        _startTimer();
-                                      },
-                                      child: SliderTheme(
-                                        data: SliderTheme.of(context).copyWith(
-                                          trackHeight: _isDraggingSlider ? 6 : 3,
-                                          thumbShape: RoundSliderThumbShape(
-                                            enabledThumbRadius: _isDraggingSlider ? 9 : 5,
-                                          ),
-                                          thumbColor: AppColors.primary,
-                                          activeTrackColor: AppColors.primary,
-                                          inactiveTrackColor: Colors.white24,
-                                        ),
-                                        child: Slider(
-                                          value: currentMs.clamp(0.0, totalMs > 0 ? totalMs : 1.0),
-                                          min: 0.0,
-                                          max: totalMs > 0 ? totalMs : 1.0,
-                                          onChanged: null,
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: _isSeeking ? 5 : 3,
+                                    thumbShape: RoundSliderThumbShape(
+                                      enabledThumbRadius: _isSeeking ? 8 : 5,
+                                    ),
+                                    thumbColor: AppColors.primary,
+                                    activeTrackColor: AppColors.primary,
+                                    inactiveTrackColor: Colors.white24,
+                                  ),
+                                  child: Slider(
+                                    value: currentMs.clamp(0.0, totalMs > 0 ? totalMs : 1.0),
+                                    min: 0.0,
+                                    max: totalMs > 0 ? totalMs : 1.0,
+                                    onChangeStart: (v) {
+                                      setState(() {
+                                        _isSeeking = true;
+                                        _dragPositionMs = v;
+                                      });
+                                    },
+                                    onChanged: (v) {
+                                      setState(() {
+                                        _dragPositionMs = v;
+                                      });
+                                    },
+                                    onChangeEnd: (v) {
+                                      _controller!.seekTo(Duration(milliseconds: v.toInt()));
+                                      setState(() {
+                                        _isSeeking = false;
+                                        _dragPositionMs = null;
+                                      });
+                                      _startTimer();
+                                    },
+                                  ),
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -4268,9 +4142,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       Text(
                                         _formatTime(Duration(milliseconds: currentMs.toInt())),
                                         style: TextStyle(
-                                          color: _isDraggingSlider ? AppColors.primary : Colors.white,
+                                          color: _isSeeking ? AppColors.primary : Colors.white,
                                           fontSize: 11,
-                                          fontWeight: _isDraggingSlider ? FontWeight.bold : FontWeight.normal,
+                                          fontWeight: _isSeeking ? FontWeight.bold : FontWeight.normal,
                                         ),
                                       ),
                                       Row(
@@ -4504,7 +4378,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
-    
+
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
         _loadData();
@@ -4895,7 +4769,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       final bool fileExists = file.existsSync() && file.lengthSync() > 1024 * 1024;
                       final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
                       final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
-                      
+
                       final bool isCompleted = fileExists && (it['isCompleted'] == true || status == 3 || progress >= 100);
                       final bool isFailed = (status == 4 || status == 5) || (status == 3 && !fileExists);
 
