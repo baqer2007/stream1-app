@@ -8,6 +8,7 @@ import 'package:android_intent_plus/flag.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 import 'stream_service.dart';
 
 class MyHttpOverrides extends HttpOverrides {
@@ -251,12 +253,30 @@ class LocalStorageService {
   }
 }
 
-class VideoDownloadManager {
-  static final Map<String, double> downloadProgressNotifier = {};
-  static final StreamController<Map<String, double>> progressStream =
-      StreamController<Map<String, double>>.broadcast();
+class BackgroundDownloadService {
+  static final ReceivePort _port = ReceivePort();
+  static final StreamController<List<dynamic>> progressStream = StreamController<List<dynamic>>.broadcast();
 
-  static Future<String> getAppStorageDir() async {
+  static Future<void> initialize() async {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
+      IsolateNameServer.removePortNameMapping('downloader_send_port');
+      IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
+      FlutterDownloader.registerCallback(downloadCallback);
+
+      _port.listen((dynamic data) {
+        progressStream.add(data);
+      });
+    } catch (_) {}
+  }
+
+  @pragma('vm:entry-point')
+  static void downloadCallback(String id, int status, int progress) {
+    final SendPort? send = IsolateNameServer.lookupPortByName('downloader_send_port');
+    send?.send([id, status, progress]);
+  }
+
+  static Future<String> getAppStoragePath() async {
     Directory? dir;
     if (Platform.isAndroid) {
       dir = await getExternalStorageDirectory();
@@ -269,87 +289,41 @@ class VideoDownloadManager {
     return saveDir.path;
   }
 
-  static Future<void> startDownload({
+  static Future<String?> startDownload({
     required String url,
     required String fileName,
     required String targetId,
     required String title,
     required String poster,
   }) async {
-    final saveDir = await getAppStorageDir();
-    final filePath = '$saveDir/$fileName';
+    final path = await getAppStoragePath();
+    final filePath = '$path/$fileName';
 
-    await LocalStorageService.appendItem('downloaded_works_list', {
-      'nb': targetId,
-      'title': title,
-      'path': filePath,
-      'poster': poster,
-      'progress': 0,
-      'isCompleted': false,
-      'date': DateTime.now().millisecondsSinceEpoch,
-    });
+    final taskId = await FlutterDownloader.enqueue(
+      url: url,
+      headers: StreamService.stealthHeaders,
+      savedDir: path,
+      fileName: fileName,
+      showNotification: true,
+      openFileFromNotification: false,
+      saveInPublicStorage: false,
+    );
 
-    final client = http.Client();
-    final request = http.Request('GET', Uri.parse(url));
-    request.headers.addAll(StreamService.stealthHeaders);
-
-    try {
-      final response = await client.send(request);
-      final total = response.contentLength ?? 0;
-      int received = 0;
-
-      final file = File(filePath);
-      final sink = file.openWrite();
-
-      DateTime lastUpdateTime = DateTime.now();
-
-      response.stream.listen(
-        (chunk) {
-          received += chunk.length;
-          sink.add(chunk);
-          if (total > 0) {
-            final now = DateTime.now();
-            if (now.difference(lastUpdateTime).inMilliseconds > 200) {
-              lastUpdateTime = now;
-              final p = received / total;
-              downloadProgressNotifier[targetId] = p;
-              progressStream.add(Map.from(downloadProgressNotifier));
-            }
-          }
-        },
-        onDone: () async {
-          await sink.flush();
-          await sink.close();
-          client.close();
-          downloadProgressNotifier.remove(targetId);
-          progressStream.add(Map.from(downloadProgressNotifier));
-
-          final list = await LocalStorageService.getList('downloaded_works_list');
-          for (var it in list) {
-            if (it['nb'] == targetId) {
-              it['isCompleted'] = true;
-              it['progress'] = 100;
-              break;
-            }
-          }
-          await LocalStorageService.setList('downloaded_works_list', list);
-        },
-        onError: (e) async {
-          await sink.close();
-          client.close();
-          if (file.existsSync()) file.deleteSync();
-          downloadProgressNotifier.remove(targetId);
-          progressStream.add(Map.from(downloadProgressNotifier));
-          await LocalStorageService.removeItem('downloaded_works_list', targetId);
-        },
-        cancelOnError: true,
-      );
-    } catch (_) {
-      client.close();
-      downloadProgressNotifier.remove(targetId);
-      progressStream.add(Map.from(downloadProgressNotifier));
-      await LocalStorageService.removeItem('downloaded_works_list', targetId);
+    if (taskId != null) {
+      await LocalStorageService.appendItem('downloaded_works_list', {
+        'nb': targetId,
+        'taskId': taskId,
+        'title': title,
+        'path': filePath,
+        'poster': poster,
+        'progress': 0,
+        'status': 1,
+        'isCompleted': false,
+        'date': DateTime.now().millisecondsSinceEpoch,
+      });
     }
+
+    return taskId;
   }
 }
 
@@ -565,6 +539,12 @@ void main() async {
     await Firebase.initializeApp();
   } catch (e) {
     debugPrint("Firebase error: $e");
+  }
+
+  try {
+    await BackgroundDownloadService.initialize();
+  } catch (e) {
+    debugPrint("Download service error: $e");
   }
 
   try {
@@ -804,8 +784,17 @@ class FullCategoryView extends StatefulWidget {
   final String title;
   final bool isSeriesOnly;
   final String? categoryEn;
+  final String? searchQuery;
+  final bool isTopRated;
 
-  const FullCategoryView({super.key, required this.title, this.isSeriesOnly = false, this.categoryEn});
+  const FullCategoryView({
+    super.key,
+    required this.title,
+    this.isSeriesOnly = false,
+    this.categoryEn,
+    this.searchQuery,
+    this.isTopRated = false,
+  });
 
   @override
   State<FullCategoryView> createState() => _FullCategoryViewState();
@@ -824,7 +813,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
     _fetch();
     _scrollCtrl.addListener(() {
       if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 400) {
-        if (!_isLoading) _fetch();
+        if (!_isLoading && widget.searchQuery == null) _fetch();
       }
     });
   }
@@ -834,10 +823,19 @@ class _FullCategoryViewState extends State<FullCategoryView> {
     List<dynamic> fresh = [];
     final level = AppSettings.instance.appFilterMode;
 
-    if (widget.categoryEn != null) {
+    if (widget.searchQuery != null) {
+      fresh = await StreamService.searchContent(widget.searchQuery!, level: level);
+    } else if (widget.categoryEn != null) {
       fresh = await StreamService.fetchByCategoryName(widget.categoryEn!, page: _page, level: level);
     } else {
       fresh = await StreamService.fetchFeed(isSeries: widget.isSeriesOnly, page: _page, perPage: 28, level: level);
+      if (widget.isTopRated) {
+        fresh.sort((a, b) {
+          final sA = double.tryParse((a['stars'] ?? '0').toString()) ?? 0.0;
+          final sB = double.tryParse((b['stars'] ?? '0').toString()) ?? 0.0;
+          return sB.compareTo(sA);
+        });
+      }
     }
 
     final List<dynamic> deduplicated = [];
@@ -1000,15 +998,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
       final allMovies = res[0];
       final allSeries = res[1];
-      final m1 = res[2];
-      final m2 = res[3];
+      final marvel1 = res[2];
+      final marvel2 = res[3];
 
       final hero = allMovies.take(5).toList();
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
       final Set<String> mIds = {};
       final List<dynamic> marvelCombined = [];
-      for (var it in [...m1, ...m2]) {
+      for (var it in [...marvel1, ...marvel2]) {
         final id = (it['nb'] ?? it['id']).toString();
         if (!mIds.contains(id)) {
           mIds.add(id);
@@ -1211,9 +1209,43 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       if (_heroItems.isNotEmpty) _buildCarouselBanner(isAr),
                       _buildCinemaFilterButtons(isAr),
                       if (_resumeList.isNotEmpty) _buildResumeSection(isAr),
-                      _buildMediaShelf(isAr ? 'عالم مارفل 4K' : 'Marvel 4K Universe', _marvelItems, () => _openSectionView(isAr ? 'عالم مارفل 4K' : 'Marvel 4K', false), isAr),
-                      _buildMediaShelf(isAr ? 'الأفلام المميزة' : 'Featured Movies', _featuredItems, () => _openSectionView(isAr ? 'الأفلام المميزة' : 'Featured', false), isAr),
-                      _buildMediaShelf(isAr ? 'أُضيف مؤخراً' : 'Recently Added', _recentItems, () => _openSectionView(isAr ? 'أُضيف مؤخراً' : 'Recent', true), isAr),
+
+                      _buildMediaShelf(
+                        isAr ? 'عالم مارفل 4K' : 'Marvel 4K Universe',
+                        _marvelItems,
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FullCategoryView(
+                              title: isAr ? 'عالم مارفل 4K' : 'Marvel 4K Universe',
+                              searchQuery: 'Marvel',
+                            ),
+                          ),
+                        ),
+                        isAr,
+                      ),
+
+                      _buildMediaShelf(
+                        isAr ? 'الأفلام المميزة' : 'Featured Movies',
+                        _featuredItems,
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FullCategoryView(
+                              title: isAr ? 'الأفلام المميزة' : 'Featured Movies',
+                              isTopRated: true,
+                            ),
+                          ),
+                        ),
+                        isAr,
+                      ),
+
+                      _buildMediaShelf(
+                        isAr ? 'أُضيف مؤخراً' : 'Recently Added',
+                        _recentItems,
+                        () => _openSectionView(isAr ? 'أُضيف مؤخراً' : 'Recently Added', true),
+                        isAr,
+                      ),
 
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 24, 16, 10),
@@ -1773,7 +1805,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                 color: s.glassFill,
                 padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: dynamic;
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
@@ -2351,7 +2383,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
                                 final safeFileName = '${targetId}_$res.mp4';
-                                VideoDownloadManager.startDownload(
+                                await BackgroundDownloadService.startDownload(
                                   url: url,
                                   fileName: safeFileName,
                                   targetId: targetId,
@@ -2359,7 +2391,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   poster: poster,
                                 );
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل! يمكنك متابعة التقدم في تبويب التنزيلات' : 'Download started! Check Downloads tab')),
+                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل في خلفية النظام! راقب شريط الإشعارات' : 'Download started in background!')),
                                 );
                               },
                             ),
@@ -4253,17 +4285,33 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     _tabCtrl = TabController(length: 4, vsync: this);
     _loadData();
 
-    _dlSub = VideoDownloadManager.progressStream.stream.listen((map) {
+    _dlSub = BackgroundDownloadService.progressStream.stream.listen((data) async {
+      final String taskId = data[0];
+      final int status = data[1];
+      final int progress = data[2];
+
       if (mounted) {
-        setState(() {
-          for (var item in _completed) {
-            final id = (item['nb'] ?? item['id'])?.toString();
-            if (id != null && map.containsKey(id)) {
-              item['progress'] = (map[id]! * 100).toInt();
-              item['isCompleted'] = false;
+        bool itemFound = false;
+        for (var item in _completed) {
+          if (item['taskId'] == taskId) {
+            item['status'] = status;
+            item['progress'] = progress;
+            if (status == 3) {
+              item['isCompleted'] = true;
             }
+            itemFound = true;
+            break;
           }
-        });
+        }
+
+        if (!itemFound) {
+          final list = await LocalStorageService.getList('downloaded_works_list');
+          setState(() {
+            _completed = list;
+          });
+        } else {
+          setState(() {});
+        }
       }
     });
   }
@@ -4489,7 +4537,8 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       final it = _completed[i];
                       final filePath = it['path'] ?? '';
                       final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
-                      final bool isCompleted = it['isCompleted'] == true || (File(filePath).existsSync() && progress >= 100);
+                      final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
+                      final bool isCompleted = it['isCompleted'] == true || status == 3 || (File(filePath).existsSync() && progress >= 100);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -4555,6 +4604,12 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                   IconButton(
                                     icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
                                     onPressed: () async {
+                                      final taskId = it['taskId']?.toString();
+                                      if (taskId != null) {
+                                        try {
+                                          await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+                                        } catch (_) {}
+                                      }
                                       final file = File(filePath);
                                       if (file.existsSync()) {
                                         try {
