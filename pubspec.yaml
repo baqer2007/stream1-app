@@ -1,5 +1,7 @@
 name: onebr_tv
 description: "ONEBR TV - Streaming & Media Application"
+name: onebr_tv
+description: "ONEBR TV - Streaming & Media Application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -26,6 +28,8 @@ dependencies:
   cloud_firestore: ^5.0.0
   firebase_messaging: ^15.0.0
   package_info_plus: ^8.1.0
+  cached_network_image: ^3.3.1
+  wakelock_plus: ^1.2.8
 
 dev_dependencies:
   flutter_test:
