@@ -295,9 +295,22 @@ class BackgroundDownloadService {
     required String targetId,
     required String title,
     required String poster,
+    String? subUrl,
   }) async {
     final path = await getAppStoragePath();
     final filePath = '$path/$fileName';
+
+    String? localSubPath;
+    if (subUrl != null && subUrl.isNotEmpty) {
+      try {
+        final subRes = await http.get(Uri.parse(subUrl), headers: StreamService.stealthHeaders);
+        if (subRes.statusCode == 200) {
+          final subFile = File('$path/${targetId}_sub.srt');
+          await subFile.writeAsBytes(subRes.bodyBytes);
+          localSubPath = subFile.path;
+        }
+      } catch (_) {}
+    }
 
     final taskId = await FlutterDownloader.enqueue(
       url: url,
@@ -315,6 +328,7 @@ class BackgroundDownloadService {
         'taskId': taskId,
         'title': title,
         'path': filePath,
+        'subPath': localSubPath ?? '',
         'poster': poster,
         'progress': 0,
         'status': 1,
@@ -2383,13 +2397,19 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
                                 final safeFileName = '${targetId}_$res.mp4';
+
+                                final subInfo = await StreamService.getVideoExtendedInfo(targetId);
+                                final subUrl = subInfo?['arTranslationFilePath']?.toString() ?? '';
+
                                 await BackgroundDownloadService.startDownload(
                                   url: url,
                                   fileName: safeFileName,
                                   targetId: targetId,
                                   title: '$title ($res)',
                                   poster: poster,
+                                  subUrl: subUrl,
                                 );
+
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text(isAr ? 'بدأ التنزيل في خلفية النظام! راقب شريط الإشعارات' : 'Download started in background!')),
                                 );
@@ -2939,6 +2959,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
+      if (widget.subtitleUrl.isNotEmpty) {
+        _loadSubs(widget.subtitleUrl, isSecondary: false);
+      }
     } else if (widget.videoUrl.isEmpty) {
       _loadAndPlayMedia(_activeMediaId);
     } else {
@@ -2997,6 +3020,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSubs(String url, {required bool isSecondary}) async {
+    if (!url.startsWith('http')) {
+      final file = File(url);
+      if (file.existsSync()) {
+        try {
+          final content = await file.readAsString();
+          final parsed = _parseSrt(content);
+          if (mounted) {
+            setState(() {
+              if (isSecondary) {
+                _secondarySubtitles = parsed;
+              } else {
+                _subtitles = parsed;
+              }
+            });
+          }
+        } catch (_) {}
+      }
+      return;
+    }
+
     final cached = SubtitleCache.get(url);
     if (cached != null) {
       if (mounted) {
@@ -4580,6 +4623,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                     IconButton(
                                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
                                       onPressed: () {
+                                        final subPath = it['subPath']?.toString() ?? '';
                                         if (File(filePath).existsSync()) {
                                           Navigator.push(
                                             context,
@@ -4588,6 +4632,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                                 mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
                                                 title: it['title'] ?? '',
                                                 videoUrl: filePath,
+                                                subtitleUrl: subPath,
                                                 qualities: const [],
                                                 isLocalFile: true,
                                                 poster: it['poster'] ?? '',
@@ -4614,6 +4659,12 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                       if (file.existsSync()) {
                                         try {
                                           file.deleteSync();
+                                        } catch (_) {}
+                                      }
+                                      final subFile = File(it['subPath']?.toString() ?? '');
+                                      if (subFile.existsSync()) {
+                                        try {
+                                          subFile.deleteSync();
                                         } catch (_) {}
                                       }
                                       await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
