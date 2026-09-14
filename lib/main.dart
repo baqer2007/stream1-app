@@ -626,6 +626,24 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
     const LibraryScreen(),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _requestNotificationPermission();
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (Platform.isAndroid) {
+      try {
+        await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+      } catch (_) {}
+    }
+  }
+
   Future<bool> _onWillPop() async {
     final shouldExit = await showCupertinoDialog<bool>(
       context: context,
@@ -2558,9 +2576,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 },
                                 child: Column(
                                   children: [
-                                    Icon(_isWatchlist ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded, color: Colors.white, size: 24),
+                                    Icon(_isWatchlist ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined, color: _isWatchlist ? AppColors.primary : Colors.white, size: 26),
                                     const SizedBox(height: 4),
-                                    Text(isAr ? 'المشاهدة لاحقاً' : 'Watchlist', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                                    Text(
+                                      _isWatchlist ? (isAr ? 'في المفضلة' : 'Saved') : (isAr ? 'المفضلة' : 'Watchlist'),
+                                      style: TextStyle(color: _isWatchlist ? AppColors.primary : Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -4445,36 +4466,13 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           user.displayName ?? (isAr ? 'مستخدم' : 'User'),
           user.email ?? '',
         );
-
-        try {
-          final doc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('profiles')
-              .doc(AppSettings.instance.activeProfile)
-              .get();
-          if (doc.exists && doc.data()?['watchlist'] != null) {
-            final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
-            await LocalStorageService.setList('user_watchlist', cloudList);
-            _loadData();
-          }
-        } catch (_) {}
-
-        if (mounted) {
-          setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(isAr ? 'تم تسجيل الدخول بنجاح: ${user.displayName}' : 'Logged in: ${user.displayName}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        await _fetchWatchlistFromCloud(user.uid);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isAr ? 'فشل تسجيل الدخول: $e' : 'Sign in failed: $e'),
+            content: Text(isAr ? 'فشل تسجيل الدخول بـ Google: $e' : 'Google sign in failed: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -4482,53 +4480,203 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     }
   }
 
+  Future<void> _handleEmailAuth({
+    required bool isRegister,
+    required String email,
+    required String password,
+    required String name,
+    required bool isAr,
+  }) async {
+    try {
+      UserCredential userCredential;
+      if (isRegister) {
+        userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+        if (name.isNotEmpty) {
+          await userCredential.user?.updateDisplayName(name.trim());
+        }
+      } else {
+        userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+      }
+
+      final user = userCredential.user;
+      if (user != null) {
+        AppSettings.instance.login(
+          user.displayName ?? (name.isNotEmpty ? name : (isAr ? 'مستخدم' : 'User')),
+          user.email ?? email,
+        );
+        await _fetchWatchlistFromCloud(user.uid);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAr ? 'خطأ في المصادقة: $e' : 'Authentication error: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _fetchWatchlistFromCloud(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('profiles')
+          .doc(AppSettings.instance.activeProfile)
+          .get();
+      if (doc.exists && doc.data()?['watchlist'] != null) {
+        final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
+        await LocalStorageService.setList('user_watchlist', cloudList);
+        _loadData();
+      }
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
   void _showAuthDialog(bool isAr) {
     final s = AppSettings.instance;
-    showCupertinoDialog(
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    bool isRegisterMode = false;
+
+    showModalBottomSheet(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: Text(isAr ? 'تسجيل الحساب والمزامنة' : 'Account & Sync'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                isAr
-                    ? 'سجّل الدخول بحساب Google لحفظ ومزامنة قائمة المشاهدة والإحصائيات عبر السحابة.'
-                    : 'Sign in with Google to sync your watchlist and statistics across devices.',
-                style: TextStyle(fontSize: 12, color: s.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              CupertinoButton(
-                color: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                borderRadius: BorderRadius.circular(12),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _handleGoogleSignIn(isAr);
-                },
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
-                    const SizedBox(width: 6),
-                    Text(
-                      isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
-                    ),
-                  ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setMState) => Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: s.glassFill,
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isRegisterMode ? (isAr ? 'إنشاء حساب جديد' : 'Create New Account') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
+                            style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close_rounded, color: s.textPrimary),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      if (isRegisterMode) ...[
+                        CupertinoTextField(
+                          controller: nameCtrl,
+                          placeholder: isAr ? 'الاسم' : 'Name',
+                          style: TextStyle(color: s.textPrimary),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      CupertinoTextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        placeholder: isAr ? 'البريد الإلكتروني' : 'Email Address',
+                        style: TextStyle(color: s.textPrimary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                      ),
+                      const SizedBox(height: 10),
+
+                      CupertinoTextField(
+                        controller: passCtrl,
+                        obscureText: true,
+                        placeholder: isAr ? 'كلمة المرور' : 'Password',
+                        style: TextStyle(color: s.textPrimary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                      ),
+                      const SizedBox(height: 16),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoButton(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () async {
+                            if (emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) return;
+                            Navigator.pop(ctx);
+                            await _handleEmailAuth(
+                              isRegister: isRegisterMode,
+                              email: emailCtrl.text.trim(),
+                              password: passCtrl.text.trim(),
+                              name: nameCtrl.text.trim(),
+                              isAr: isAr,
+                            );
+                          },
+                          child: Text(
+                            isRegisterMode ? (isAr ? 'إنشاء حساب' : 'Register') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      TextButton(
+                        onPressed: () => setMState(() => isRegisterMode = !isRegisterMode),
+                        child: Text(
+                          isRegisterMode
+                              ? (isAr ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'Already have an account? Sign In')
+                              : (isAr ? 'ليس لديك حساب؟ إنشاء حساب جديد' : "Don't have an account? Register"),
+                          style: TextStyle(color: s.textSecondary, fontSize: 12),
+                        ),
+                      ),
+
+                      Divider(color: s.border, height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoButton(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _handleGoogleSignIn(isAr);
+                          },
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
+                              const SizedBox(width: 6),
+                              Text(
+                                isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: s.textPrimary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: Text(isAr ? 'إلغاء' : 'Cancel'),
-          ),
-        ],
       ),
     );
   }
