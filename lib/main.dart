@@ -2327,7 +2327,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   return Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: dynamic,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(isAr ? 'اختر جودة التنزيل' : 'Select Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -2897,7 +2897,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _currentQualities = widget.qualities;
     _loadWatchedState();
 
-    // منع انطفاء الشاشة أثناء تشغيل الفيديو
     WakelockPlus.enable();
 
     SystemChrome.setPreferredOrientations([
@@ -3012,51 +3011,67 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   List<Subtitle> _parseSrt(String text) {
     final List<Subtitle> list = [];
-    final blocks = text.trim().split(RegExp(r'(\r\n|\r|\n){2,}'));
+    final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final blocks = normalized.trim().split(RegExp(r'\n\s*\n+'));
     int idx = 0;
 
     for (var block in blocks) {
-      final lines = block.trim().split(RegExp(r'\r\n|\r|\n'));
+      final lines = block.trim().split('\n');
       if (lines.length < 2) continue;
 
-      String timeLine = '';
-      int textStartIndex = -1;
-
+      int arrowLineIdx = -1;
       for (int i = 0; i < lines.length; i++) {
         if (lines[i].contains('-->')) {
-          timeLine = lines[i];
-          textStartIndex = i + 1;
+          arrowLineIdx = i;
           break;
         }
       }
+      if (arrowLineIdx == -1) continue;
 
-      if (timeLine.isEmpty || textStartIndex == -1 || textStartIndex >= lines.length) continue;
-      final times = timeLine.split('-->');
-      if (times.length != 2) continue;
+      final timeParts = lines[arrowLineIdx].split('-->');
+      if (timeParts.length != 2) continue;
 
-      try {
-        final start = _durationFromStr(times[0].trim());
-        final end = _durationFromStr(times[1].trim());
-        final contentLines = lines.sublist(textStartIndex);
-        final rawText = contentLines.join('\n').replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      final start = _durationFromStr(timeParts[0]);
+      final end = _durationFromStr(timeParts[1]);
 
-        if (rawText.isNotEmpty) {
-          list.add(Subtitle(index: idx++, start: start, end: end, text: rawText));
-        }
-      } catch (_) {}
+      final textLines = lines.sublist(arrowLineIdx + 1);
+      final rawText = textLines
+          .join('\n')
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .replaceAll(RegExp(r'\{[^}]*\}'), '')
+          .trim();
+
+      if (rawText.isNotEmpty && end > start) {
+        list.add(Subtitle(index: idx++, start: start, end: end, text: rawText));
+      }
     }
+
+    list.sort((a, b) => a.start.compareTo(b.start));
     return list;
   }
 
   Duration _durationFromStr(String str) {
-    final parts = str.replaceAll(',', '.').split(':');
-    final sParts = parts[2].split('.');
-    return Duration(
-      hours: int.parse(parts[0]),
-      minutes: int.parse(parts[1]),
-      seconds: int.parse(sParts[0]),
-      milliseconds: int.parse(sParts[1].padRight(3, '0').substring(0, 3)),
-    );
+    try {
+      final clean = str.trim().replaceAll(',', '.');
+      final parts = clean.split(':');
+      final hours = int.parse(parts[0]);
+      final minutes = int.parse(parts[1]);
+      final secParts = parts[2].split('.');
+      final seconds = int.parse(secParts[0]);
+      int ms = 0;
+      if (secParts.length > 1) {
+        String msStr = secParts[1];
+        if (msStr.length > 3) {
+          msStr = msStr.substring(0, 3);
+        } else {
+          msStr = msStr.padRight(3, '0');
+        }
+        ms = int.parse(msStr);
+      }
+      return Duration(hours: hours, minutes: minutes, seconds: seconds, milliseconds: ms);
+    } catch (_) {
+      return Duration.zero;
+    }
   }
 
   void _initPlayer(String url, {Duration? startAt, bool isLocal = false}) async {
@@ -3107,7 +3122,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final pos = ctrl.value.position;
     final dur = ctrl.value.duration;
 
-    // حفظ التقدم كل 5 ثوانٍ
     if (pos.inSeconds % 5 == 0) {
       LocalStorageService.savePlaybackPosition(
         _activeMediaId,
@@ -3118,37 +3132,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
-    // تصحيح الترجمة: مسح النص فور انقضاء توقيت الجملة وتحديثه فور ظهور جملة جديدة
     if (_subtitles.isNotEmpty) {
-      Subtitle? activeSub;
+      String matchedText = '';
       for (var s in _subtitles) {
         if (pos >= s.start && pos <= s.end) {
-          activeSub = s;
+          matchedText = s.text;
           break;
         }
+        if (s.start > pos) break;
       }
-      final newText = activeSub?.text ?? '';
-      if (newText != _currentSubText && mounted) {
-        setState(() => _currentSubText = newText);
+      if (matchedText != _currentSubText && mounted) {
+        setState(() => _currentSubText = matchedText);
       }
     }
 
-    // الترجمة الثانوية
     if (AppSettings.instance.enableDualSubtitles && _secondarySubtitles.isNotEmpty) {
-      Subtitle? activeSub2;
+      String matchedText2 = '';
       for (var s in _secondarySubtitles) {
         if (pos >= s.start && pos <= s.end) {
-          activeSub2 = s;
+          matchedText2 = s.text;
           break;
         }
+        if (s.start > pos) break;
       }
-      final newText2 = activeSub2?.text ?? '';
-      if (newText2 != _currentSecondarySubText && mounted) {
-        setState(() => _currentSecondarySubText = newText2);
+      if (matchedText2 != _currentSecondarySubText && mounted) {
+        setState(() => _currentSecondarySubText = matchedText2);
       }
     }
 
-    // الانتقال التلقائي للحلقة التالية
     if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
       final remaining = dur.inSeconds - pos.inSeconds;
       if (remaining <= 20 && remaining > 0 && !_showAutoNext) {
@@ -3373,9 +3384,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // إلغاء قفل استمرار إضاءة الشاشة
     WakelockPlus.disable();
-
     _autoNextTimer?.cancel();
     _hideTimer?.cancel();
     _doubleTapTimer?.cancel();
@@ -3981,7 +3990,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                    // شريط التمرير مستمع لموقع الفيديو مباشرة دون إبطاء الواجهة
                     if (_controller != null && _controller!.value.isInitialized)
                       Positioned(
                         bottom: 12, left: 16, right: 16,
