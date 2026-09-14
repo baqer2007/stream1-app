@@ -2327,7 +2327,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   return Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
-                      mainAxisSize: dynamic,
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(isAr ? 'اختر جودة التنزيل' : 'Select Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
