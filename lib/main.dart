@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -25,11 +26,18 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'stream_service.dart';
 
-class MyHttpOverrides extends HttpOverrides {
+class SecureHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+    final client = super.createHttpClient(context);
+    client.connectionTimeout = const Duration(seconds: 15);
+    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      if (kReleaseMode) {
+        return false;
+      }
+      return true;
+    };
+    return client;
   }
 }
 
@@ -546,7 +554,7 @@ class AppSettings extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  HttpOverrides.global = MyHttpOverrides();
+  HttpOverrides.global = SecureHttpOverrides();
 
   try {
     await Firebase.initializeApp();
@@ -3912,7 +3920,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisSize: dynamic,
                           children: [
                             Icon(_indicatorIcon, color: Colors.white, size: 28),
                             const SizedBox(width: 10),
