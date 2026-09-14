@@ -3358,7 +3358,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: dynamic,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     if (!widget.isLocalFile) ...[
                       ListTile(
