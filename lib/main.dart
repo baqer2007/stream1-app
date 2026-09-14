@@ -3920,7 +3920,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
                         child: Row(
-                          mainAxisSize: dynamic,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(_indicatorIcon, color: Colors.white, size: 28),
                             const SizedBox(width: 10),
