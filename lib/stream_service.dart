@@ -101,11 +101,15 @@ class StreamService {
     return [];
   }
 
+  /// محرك البحث العالمي: يدعم البحث المباشر، والـ Base64، والبحث بالكلمات المفتاحية
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
-    if (query.trim().isEmpty) return [];
+    final cleanQ = query.trim();
+    if (cleanQ.isEmpty) return [];
+
+    // 1. المحاولة الأولى: عبر الرابط المباشر بترميز URL الصريح
     try {
-      final b64 = base64.encode(utf8.encode(query.trim()));
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/40/video_title_search/$b64/itemsPerPage/40/pageNumber/0/level/$level';
+      final enc = Uri.encodeComponent(cleanQ);
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$enc/itemsPerPage/50/pageNumber/0/level/$level';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
@@ -115,16 +119,35 @@ class StreamService {
       }
     } catch (_) {}
 
+    // 2. المحاولة الثانية: بترميز Base64 كما يتطلب سيرفر cee في بعض الحالات
     try {
-      final qLower = query.toLowerCase().trim();
-      final feed = await fetchFeed(isSeries: false, page: 0, perPage: 50, level: level);
-      final feedSeries = await fetchFeed(isSeries: true, page: 0, perPage: 50, level: level);
-      return [...feed, ...feedSeries].where((it) {
-        final ar = (it['ar_title'] ?? '').toString().toLowerCase();
-        final en = (it['en_title'] ?? '').toString().toLowerCase();
-        return ar.contains(qLower) || en.contains(qLower);
-      }).toList();
+      final b64 = base64.encode(utf8.encode(cleanQ));
+      final urlB64 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$b64/itemsPerPage/50/pageNumber/0/level/$level';
+      final resB64 = await http.get(Uri.parse(urlB64), headers: stealthHeaders).timeout(const Duration(seconds: 10));
+
+      if (resB64.statusCode == 200) {
+        dynamic data = jsonDecode(utf8.decode(resB64.bodyBytes, allowMalformed: true));
+        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? []);
+        if (list.isNotEmpty) return list;
+      }
     } catch (_) {}
+
+    // 3. المحاولة الثالثة: إذا كان الاسم مركباً، البحث بأبرز كلمة رئيسية (مثل Titanic أو Wolf)
+    final words = cleanQ.split(' ').where((w) => w.length > 2 && w.toLowerCase() != 'the' && w.toLowerCase() != 'of').toList();
+    if (words.isNotEmpty && words.first != cleanQ) {
+      try {
+        final firstWord = words.first;
+        final b64Word = base64.encode(utf8.encode(firstWord));
+        final urlWord = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$b64Word/itemsPerPage/50/pageNumber/0/level/$level';
+        final resWord = await http.get(Uri.parse(urlWord), headers: stealthHeaders).timeout(const Duration(seconds: 10));
+
+        if (resWord.statusCode == 200) {
+          dynamic data = jsonDecode(utf8.decode(resWord.bodyBytes, allowMalformed: true));
+          List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? []);
+          if (list.isNotEmpty) return list;
+        }
+      } catch (_) {}
+    }
 
     return [];
   }
