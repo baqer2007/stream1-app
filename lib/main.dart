@@ -19,6 +19,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'stream_service.dart';
 
 class MyHttpOverrides extends HttpOverrides {
@@ -910,7 +912,13 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(AppRadius.card),
                           child: poster.isNotEmpty
-                              ? Image.network(poster, width: double.infinity, fit: BoxFit.cover)
+                              ? CachedNetworkImage(
+                                  imageUrl: poster,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => Container(color: s.surfaceLight),
+                                  errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                                )
                               : Container(color: s.surface),
                         ),
                       ),
@@ -1252,7 +1260,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(AppRadius.card),
-                                          child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                                          child: poster.isNotEmpty
+                                              ? CachedNetworkImage(
+                                                  imageUrl: poster,
+                                                  width: double.infinity,
+                                                  fit: BoxFit.cover,
+                                                  placeholder: (_, __) => Container(color: s.surfaceLight),
+                                                  errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                                                )
+                                              : Container(color: s.surface),
                                         ),
                                       ),
                                     ),
@@ -1373,10 +1389,22 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadius.card),
                 border: Border.all(color: AppSettings.instance.border, width: 0.5),
-                image: poster.isNotEmpty ? DecorationImage(image: NetworkImage(poster), fit: BoxFit.cover) : null,
+                color: AppSettings.instance.surface,
               ),
               child: Stack(
                 children: [
+                  if (poster.isNotEmpty)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        child: CachedNetworkImage(
+                          imageUrl: poster,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: Colors.black26),
+                          errorWidget: (_, __, ___) => Container(color: Colors.black26),
+                        ),
+                      ),
+                    ),
                   Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(AppRadius.card),
@@ -1501,10 +1529,17 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(AppRadius.card),
                         border: Border.all(color: s.border, width: 0.5),
-                        image: it['poster'].toString().isNotEmpty ? DecorationImage(image: NetworkImage(it['poster']), fit: BoxFit.cover) : null,
+                        color: s.surface,
                       ),
                       child: Stack(
                         children: [
+                          if (it['poster'].toString().isNotEmpty)
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(AppRadius.card),
+                                child: CachedNetworkImage(imageUrl: it['poster'], fit: BoxFit.cover),
+                              ),
+                            ),
                           Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.card), color: Colors.black45)),
                           const Center(child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 34)),
                           Positioned(
@@ -1600,7 +1635,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isNotEmpty ? Image.network(poster, width: double.infinity, fit: BoxFit.cover) : Container(color: s.surface),
+                              child: poster.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: poster,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, __) => Container(color: s.surfaceLight),
+                                      errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                                    )
+                                  : Container(color: s.surface),
                             ),
                           ),
                         ),
@@ -2032,7 +2075,14 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: poster.isNotEmpty
-                  ? Image.network(poster, width: 54, height: 78, fit: BoxFit.cover)
+                  ? CachedNetworkImage(
+                      imageUrl: poster,
+                      width: 54,
+                      height: 78,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(width: 54, height: 78, color: s.surfaceLight),
+                      errorWidget: (_, __, ___) => Container(width: 54, height: 78, color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, size: 16, color: Colors.white24)),
+                    )
                   : Container(width: 54, height: 78, color: s.surface),
             ),
           ],
@@ -2408,7 +2458,15 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (poster.isNotEmpty) Image.network(poster, fit: BoxFit.cover) else Container(color: s.surface),
+                    if (poster.isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: poster,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: s.surface),
+                        errorWidget: (_, __, ___) => Container(color: s.surface),
+                      )
+                    else
+                      Container(color: s.surface),
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -2659,7 +2717,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                           child: Stack(
                                             alignment: Alignment.center,
                                             children: [
-                                              Container(width: 110, height: 65, color: Colors.black26, child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : null),
+                                              Container(
+                                                width: 110,
+                                                height: 65,
+                                                color: Colors.black26,
+                                                child: poster.isNotEmpty
+                                                    ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
+                                                    : null,
+                                              ),
                                               Container(
                                                 width: 28, height: 28,
                                                 decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
@@ -2712,7 +2777,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                           ),
                                           child: ClipRRect(
                                             borderRadius: BorderRadius.circular(AppRadius.card),
-                                            child: simPoster.isNotEmpty ? Image.network(simPoster, fit: BoxFit.cover, width: double.infinity) : Container(color: s.surface),
+                                            child: simPoster.isNotEmpty
+                                                ? CachedNetworkImage(imageUrl: simPoster, fit: BoxFit.cover, width: double.infinity)
+                                                : Container(color: s.surface),
                                           ),
                                         ),
                                       ),
@@ -2829,6 +2896,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _activeHeader = widget.subtitleTextHeader;
     _currentQualities = widget.qualities;
     _loadWatchedState();
+
+    // منع انطفاء الشاشة أثناء تشغيل الفيديو
+    WakelockPlus.enable();
 
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -3037,6 +3107,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final pos = ctrl.value.position;
     final dur = ctrl.value.duration;
 
+    // حفظ التقدم كل 5 ثوانٍ
     if (pos.inSeconds % 5 == 0) {
       LocalStorageService.savePlaybackPosition(
         _activeMediaId,
@@ -3047,6 +3118,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
+    // تصحيح الترجمة: مسح النص فور انقضاء توقيت الجملة وتحديثه فور ظهور جملة جديدة
     if (_subtitles.isNotEmpty) {
       Subtitle? activeSub;
       for (var s in _subtitles) {
@@ -3061,6 +3133,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
+    // الترجمة الثانوية
     if (AppSettings.instance.enableDualSubtitles && _secondarySubtitles.isNotEmpty) {
       Subtitle? activeSub2;
       for (var s in _secondarySubtitles) {
@@ -3075,14 +3148,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
+    // الانتقال التلقائي للحلقة التالية
     if (widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length) {
       final remaining = dur.inSeconds - pos.inSeconds;
       if (remaining <= 20 && remaining > 0 && !_showAutoNext) {
         _triggerAutoNext();
       }
     }
-
-    if (mounted) setState(() {});
   }
 
   void _triggerAutoNext() {
@@ -3301,6 +3373,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    // إلغاء قفل استمرار إضاءة الشاشة
+    WakelockPlus.disable();
+
     _autoNextTimer?.cancel();
     _hideTimer?.cancel();
     _doubleTapTimer?.cancel();
@@ -3906,60 +3981,66 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
+                    // شريط التمرير مستمع لموقع الفيديو مباشرة دون إبطاء الواجهة
                     if (_controller != null && _controller!.value.isInitialized)
                       Positioned(
                         bottom: 12, left: 16, right: 16,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 3,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                thumbColor: AppColors.primary,
-                                activeTrackColor: AppColors.primary,
-                                inactiveTrackColor: Colors.white24,
-                              ),
-                              child: Slider(
-                                value: _controller!.value.position.inMilliseconds.toDouble().clamp(0.0, _controller!.value.duration.inMilliseconds.toDouble()),
-                                min: 0.0,
-                                max: _controller!.value.duration.inMilliseconds.toDouble(),
-                                onChanged: (v) => _controller!.seekTo(Duration(milliseconds: v.toInt())),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(_formatTime(_controller!.value.position), style: const TextStyle(color: Colors.white, fontSize: 11)),
-                                  Row(
+                        child: ValueListenableBuilder<VideoPlayerValue>(
+                          valueListenable: _controller!,
+                          builder: (context, value, child) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 3,
+                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                    thumbColor: AppColors.primary,
+                                    activeTrackColor: AppColors.primary,
+                                    inactiveTrackColor: Colors.white24,
+                                  ),
+                                  child: Slider(
+                                    value: value.position.inMilliseconds.toDouble().clamp(0.0, value.duration.inMilliseconds.toDouble()),
+                                    min: 0.0,
+                                    max: value.duration.inMilliseconds.toDouble(),
+                                    onChanged: (v) => _controller!.seekTo(Duration(milliseconds: v.toInt())),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(_formatTime(_controller!.value.duration), style: const TextStyle(color: Colors.white, fontSize: 11)),
-                                      const SizedBox(width: 14),
-                                      InkWell(
-                                        onTap: _toggleScreenOrientation,
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.15),
+                                      Text(_formatTime(value.position), style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                      Row(
+                                        children: [
+                                          Text(_formatTime(value.duration), style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                          const SizedBox(width: 14),
+                                          InkWell(
+                                            onTap: _toggleScreenOrientation,
                                             borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: Colors.white24, width: 0.8),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(5),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withOpacity(0.15),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: Colors.white24, width: 0.8),
+                                              ),
+                                              child: Icon(
+                                                _isLandscape ? Icons.crop_portrait_rounded : Icons.crop_landscape_rounded,
+                                                color: Colors.white,
+                                                size: 16,
+                                              ),
+                                            ),
                                           ),
-                                          child: Icon(
-                                            _isLandscape ? Icons.crop_portrait_rounded : Icons.crop_landscape_rounded,
-                                            color: Colors.white,
-                                            size: 16,
-                                          ),
-                                        ),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          ],
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                   ],
@@ -4419,7 +4500,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: it['poster'].toString().isNotEmpty
-                                        ? Image.network(it['poster'], width: 50, height: 70, fit: BoxFit.cover)
+                                        ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
                                         : Container(width: 50, height: 70, color: s.surfaceLight),
                                   ),
                                   const SizedBox(width: 12),
@@ -4518,7 +4599,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isNotEmpty ? Image.network(poster, fit: BoxFit.cover) : Container(color: s.surface),
+                              child: poster.isNotEmpty
+                                  ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
+                                  : Container(color: s.surface),
                             ),
                           ),
                         ),
