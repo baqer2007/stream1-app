@@ -1,7 +1,5 @@
 name: onebr_tv
 description: "ONEBR TV - Streaming & Media Application"
-name: onebr_tv
-description: "ONEBR TV - Streaming & Media Application"
 publish_to: 'none'
 version: 1.0.0+1
 
