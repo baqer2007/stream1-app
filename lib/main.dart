@@ -8,7 +8,6 @@ import 'package:android_intent_plus/flag.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -19,7 +18,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'stream_service.dart';
 
@@ -251,26 +249,12 @@ class LocalStorageService {
   }
 }
 
-class BackgroundDownloadService {
-  static final ReceivePort _port = ReceivePort();
+class VideoDownloadManager {
+  static final Map<String, double> downloadProgressNotifier = {};
+  static final StreamController<Map<String, double>> progressStream =
+      StreamController<Map<String, double>>.broadcast();
 
-  static Future<void> initialize() async {
-    try {
-      await FlutterDownloader.initialize(debug: false, ignoreSsl: true);
-      IsolateNameServer.removePortNameMapping('downloader_send_port');
-      IsolateNameServer.registerPortWithName(_port.sendPort, 'downloader_send_port');
-      FlutterDownloader.registerCallback(downloadCallback);
-    } catch (_) {}
-  }
-
-  @pragma('vm:entry-point')
-  static void downloadCallback(String id, int status, int progress) {
-    final SendPort? send = IsolateNameServer.lookupPortByName('downloader_send_port');
-    send?.send([id, status, progress]);
-  }
-
-  // مسار التطبيق الخارجي: يحذف تلقائياً فور إلغاء تثبيت التطبيق
-  static Future<String> getAppStoragePath() async {
+  static Future<String> getAppStorageDir() async {
     Directory? dir;
     if (Platform.isAndroid) {
       dir = await getExternalStorageDirectory();
@@ -283,39 +267,87 @@ class BackgroundDownloadService {
     return saveDir.path;
   }
 
-  static Future<String?> startDownload({
+  static Future<void> startDownload({
     required String url,
     required String fileName,
     required String targetId,
     required String title,
     required String poster,
   }) async {
-    final path = await getAppStoragePath();
+    final saveDir = await getAppStorageDir();
+    final filePath = '$saveDir/$fileName';
 
-    final taskId = await FlutterDownloader.enqueue(
-      url: url,
-      headers: StreamService.stealthHeaders,
-      savedDir: path,
-      fileName: fileName,
-      showNotification: true,
-      openFileFromNotification: false,
-      saveInPublicStorage: false,
-    );
+    await LocalStorageService.appendItem('downloaded_works_list', {
+      'nb': targetId,
+      'title': title,
+      'path': filePath,
+      'poster': poster,
+      'progress': 0,
+      'isCompleted': false,
+      'date': DateTime.now().millisecondsSinceEpoch,
+    });
 
-    if (taskId != null) {
-      await LocalStorageService.appendItem('downloaded_works_list', {
-        'nb': targetId,
-        'taskId': taskId,
-        'title': title,
-        'path': '$path/$fileName',
-        'poster': poster,
-        'progress': 0,
-        'status': 1,
-        'date': DateTime.now().millisecondsSinceEpoch,
-      });
+    final client = http.Client();
+    final request = http.Request('GET', Uri.parse(url));
+    request.headers.addAll(StreamService.stealthHeaders);
+
+    try {
+      final response = await client.send(request);
+      final total = response.contentLength ?? 0;
+      int received = 0;
+
+      final file = File(filePath);
+      final sink = file.openWrite();
+
+      DateTime lastUpdateTime = DateTime.now();
+
+      response.stream.listen(
+        (chunk) {
+          received += chunk.length;
+          sink.add(chunk);
+          if (total > 0) {
+            final now = DateTime.now();
+            if (now.difference(lastUpdateTime).inMilliseconds > 200) {
+              lastUpdateTime = now;
+              final p = received / total;
+              downloadProgressNotifier[targetId] = p;
+              progressStream.add(Map.from(downloadProgressNotifier));
+            }
+          }
+        },
+        onDone: () async {
+          await sink.flush();
+          await sink.close();
+          client.close();
+          downloadProgressNotifier.remove(targetId);
+          progressStream.add(Map.from(downloadProgressNotifier));
+
+          final list = await LocalStorageService.getList('downloaded_works_list');
+          for (var it in list) {
+            if (it['nb'] == targetId) {
+              it['isCompleted'] = true;
+              it['progress'] = 100;
+              break;
+            }
+          }
+          await LocalStorageService.setList('downloaded_works_list', list);
+        },
+        onError: (e) async {
+          await sink.close();
+          client.close();
+          if (file.existsSync()) file.deleteSync();
+          downloadProgressNotifier.remove(targetId);
+          progressStream.add(Map.from(downloadProgressNotifier));
+          await LocalStorageService.removeItem('downloaded_works_list', targetId);
+        },
+        cancelOnError: true,
+      );
+    } catch (_) {
+      client.close();
+      downloadProgressNotifier.remove(targetId);
+      progressStream.add(Map.from(downloadProgressNotifier));
+      await LocalStorageService.removeItem('downloaded_works_list', targetId);
     }
-
-    return taskId;
   }
 }
 
@@ -531,12 +563,6 @@ void main() async {
     await Firebase.initializeApp();
   } catch (e) {
     debugPrint("Firebase error: $e");
-  }
-
-  try {
-    await BackgroundDownloadService.initialize();
-  } catch (e) {
-    debugPrint("Download service error: $e");
   }
 
   try {
@@ -957,9 +983,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     final level = AppSettings.instance.appFilterMode;
 
     try {
-      // جلب أعمال مارفل بالاسم مباشرة + الأفلام المميزة والمسلسلات
       final res = await Future.wait([
-        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 30, level: level),
+        StreamService.fetchFeed(isSeries: false, page: 0, perPage: 35, level: level),
         StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
         StreamService.searchContent('Marvel', level: level),
         StreamService.searchContent('Avengers', level: level),
@@ -967,16 +992,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
       final allMovies = res[0];
       final allSeries = res[1];
-      final marvel1 = res[2];
-      final marvel2 = res[3];
+      final m1 = res[2];
+      final m2 = res[3];
 
       final hero = allMovies.take(5).toList();
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
-      // دمج نتائج مارفل الحقيقية بدون تكرار
       final Set<String> mIds = {};
       final List<dynamic> marvelCombined = [];
-      for (var it in [...marvel1, ...marvel2]) {
+      for (var it in [...m1, ...m2]) {
         final id = (it['nb'] ?? it['id']).toString();
         if (!mIds.contains(id)) {
           mIds.add(id);
@@ -984,7 +1008,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         }
       }
 
-      // تصفية الأفلام المميزة (استبعاد مارفل وتفضيل التقييمات الأعلى)
       final featured = allMovies.where((it) {
         final id = (it['nb'] ?? it['id']).toString();
         return !heroIds.contains(id) && !mIds.contains(id);
@@ -2278,7 +2301,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
                                 final safeFileName = '${targetId}_$res.mp4';
-                                await BackgroundDownloadService.startDownload(
+                                VideoDownloadManager.startDownload(
                                   url: url,
                                   fileName: safeFileName,
                                   targetId: targetId,
@@ -3335,7 +3358,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: dynamic,
                   children: [
                     if (!widget.isLocalFile) ...[
                       ListTile(
@@ -4130,7 +4153,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _completed = [];
   List<Map<String, dynamic>> _watchlist = [];
-  final ReceivePort _downloadPort = ReceivePort();
+  StreamSubscription? _dlSub;
 
   int _statMinutes = 0;
   int _statEpisodes = 0;
@@ -4140,24 +4163,15 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
     _loadData();
-    _setupDownloadPort();
-  }
 
-  void _setupDownloadPort() {
-    IsolateNameServer.removePortNameMapping('downloader_send_port');
-    IsolateNameServer.registerPortWithName(_downloadPort.sendPort, 'downloader_send_port');
-    _downloadPort.listen((dynamic data) {
-      final String id = data[0];
-      final int status = data[1];
-      final int progress = data[2];
-
+    _dlSub = VideoDownloadManager.progressStream.stream.listen((map) {
       if (mounted) {
         setState(() {
           for (var item in _completed) {
-            if (item['taskId'] == id) {
-              item['status'] = status;
-              item['progress'] = progress;
-              break;
+            final id = (item['nb'] ?? item['id'])?.toString();
+            if (id != null && map.containsKey(id)) {
+              item['progress'] = (map[id]! * 100).toInt();
+              item['isCompleted'] = false;
             }
           }
         });
@@ -4167,7 +4181,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
 
   @override
   void dispose() {
-    IsolateNameServer.removePortNameMapping('downloader_send_port');
+    _dlSub?.cancel();
     _tabCtrl.dispose();
     super.dispose();
   }
@@ -4347,9 +4361,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     final isAr = s.appLanguage == 'ar';
     final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
 
-    // تحديث القائمة تلقائياً عند الدخول على الشاشة
-    _loadData();
-
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -4388,9 +4399,8 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final it = _completed[i];
                       final filePath = it['path'] ?? '';
-                      final int progress = it['progress'] ?? 0;
-                      final int status = it['status'] ?? 3;
-                      final bool isCompleted = status == 3 || File(filePath).existsSync();
+                      final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
+                      final bool isCompleted = it['isCompleted'] == true || (File(filePath).existsSync() && progress >= 100);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -4433,12 +4443,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
                                       onPressed: () {
                                         if (File(filePath).existsSync()) {
-                                          // تشغيل الفيديو المحمل محلياً داخل مشغل التطبيق مباشرة
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
                                               builder: (_) => PlayerScreen(
-                                                mediaId: it['nb'] ?? '',
+                                                mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
                                                 title: it['title'] ?? '',
                                                 videoUrl: filePath,
                                                 qualities: const [],
@@ -4457,11 +4466,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                   IconButton(
                                     icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
                                     onPressed: () async {
-                                      if (it['taskId'] != null) {
-                                        try {
-                                          await FlutterDownloader.remove(taskId: it['taskId'], shouldDeleteContent: true);
-                                        } catch (_) {}
-                                      }
                                       final file = File(filePath);
                                       if (file.existsSync()) {
                                         try {
@@ -4479,7 +4483,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: LinearProgressIndicator(
-                                    value: progress / 100.0,
+                                    value: (progress / 100.0).clamp(0.0, 1.0),
                                     backgroundColor: Colors.white12,
                                     valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
                                     minHeight: 4,
