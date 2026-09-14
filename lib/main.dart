@@ -1871,16 +1871,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     final level = AppSettings.instance.appFilterMode;
 
     try {
-      List<dynamic> results = await StreamService.searchContent(q, level: level);
-
-      if (results.isEmpty) {
-        final feedFallback = await StreamService.fetchFeed(isSeries: false, page: 0, perPage: 60, level: level);
-        results = feedFallback.where((item) {
-          final tAr = (item['ar_title'] ?? '').toString();
-          final tEn = (item['en_title'] ?? '').toString();
-          return SearchEngineUtils.isMatch(q, tAr) || SearchEngineUtils.isMatch(q, tEn);
-        }).toList();
-      }
+      final results = await StreamService.searchContent(q, level: level);
 
       final List<dynamic> movies = [];
       final List<dynamic> series = [];
@@ -1967,8 +1958,15 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
               Expanded(
                 child: _isSearching
                     ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                    : (_movieResults.isNotEmpty || _seriesResults.isNotEmpty)
-                        ? _buildCategorizedResults(isAr)
+                    : _searchCtrl.text.isNotEmpty
+                        ? (_movieResults.isNotEmpty || _seriesResults.isNotEmpty)
+                            ? _buildCategorizedResults(isAr)
+                            : Center(
+                                child: Text(
+                                  isAr ? 'لم يتم العثور على نتائج تطابق: "${_searchCtrl.text}"' : 'No results found for "${_searchCtrl.text}"',
+                                  style: TextStyle(color: s.textSecondary, fontSize: 13),
+                                ),
+                              )
                         : _buildRecentSearches(isAr),
               ),
             ],
@@ -2175,7 +2173,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final info = await StreamService.getVideoExtendedInfo(id);
 
     List<String> actorsList = [];
-    final rawActors = info?['actors'] ?? info?['cast'] ?? widget.media['actors'] ?? widget.media['cast'];
+    final rawActors = info['actors'] ?? info['cast'] ?? widget.media['actors'] ?? widget.media['cast'];
     if (rawActors is List) {
       actorsList = rawActors.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
     } else if (rawActors is String && rawActors.isNotEmpty) {
@@ -2184,7 +2182,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
     if (mounted) {
       setState(() {
-        _extendedInfo = info ?? {};
+        _extendedInfo = info;
         _realActors = actorsList;
       });
     }
