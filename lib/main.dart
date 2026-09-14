@@ -299,7 +299,8 @@ class BackgroundDownloadService {
   }) async {
     final path = await getAppStoragePath();
     final filePath = '$path/$fileName';
-    final localSubPath = '$path/${targetId}_sub.srt';
+    final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
+    final localSubPath = '$path/${cleanId}_sub.srt';
 
     final taskId = await FlutterDownloader.enqueue(
       url: url,
@@ -2412,7 +2413,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               onTap: () async {
                                 HapticFeedback.lightImpact();
                                 Navigator.pop(context);
-                                final safeFileName = '${targetId}_$res.mp4';
+                                
+                                final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
+                                final safeFileName = '${cleanId}_$res.mp4';
 
                                 final subInfo = await StreamService.getVideoExtendedInfo(targetId);
                                 final subUrl = subInfo?['arTranslationFilePath']?.toString() ?? '';
@@ -4345,6 +4348,13 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
+    
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        _loadData();
+      }
+    });
+
     _loadData();
 
     _dlSub = BackgroundDownloadService.progressStream.stream.listen((data) async {
@@ -4725,9 +4735,13 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final it = _completed[i];
                       final filePath = it['path'] ?? '';
+                      final file = File(filePath);
+                      final bool fileExists = file.existsSync() && file.lengthSync() > 1024 * 1024;
                       final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
                       final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
-                      final bool isCompleted = it['isCompleted'] == true || status == 3 || (File(filePath).existsSync() && progress >= 100);
+                      
+                      final bool isCompleted = fileExists && (it['isCompleted'] == true || status == 3 || progress >= 100);
+                      final bool isFailed = (status == 4 || status == 5) || (status == 3 && !fileExists);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -4759,8 +4773,16 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                         Text(
                                           isCompleted
                                               ? (isAr ? 'جاهز للمشاهدة بدون إنترنت' : 'Ready to watch offline')
-                                              : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)'),
-                                          style: TextStyle(color: isCompleted ? Colors.greenAccent : s.textSecondary, fontSize: 11),
+                                              : (isFailed
+                                                  ? (isAr ? 'فشل التنزيل أو لم يكتمل' : 'Download failed')
+                                                  : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)')),
+                                          style: TextStyle(
+                                            color: isCompleted
+                                                ? Colors.greenAccent
+                                                : (isFailed ? Colors.redAccent : s.textSecondary),
+                                            fontSize: 11,
+                                            fontWeight: (isCompleted || isFailed) ? FontWeight.bold : FontWeight.normal,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -4770,7 +4792,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
                                       onPressed: () {
                                         final subPath = it['subPath']?.toString() ?? '';
-                                        if (File(filePath).existsSync()) {
+                                        if (file.existsSync()) {
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
@@ -4801,7 +4823,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                           await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
                                         } catch (_) {}
                                       }
-                                      final file = File(filePath);
                                       if (file.existsSync()) {
                                         try {
                                           file.deleteSync();
@@ -4819,7 +4840,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                                   ),
                                 ],
                               ),
-                              if (!isCompleted) ...[
+                              if (!isCompleted && !isFailed) ...[
                                 const SizedBox(height: 10),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
