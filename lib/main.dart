@@ -24,6 +24,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'stream_service.dart';
 
 class SecureHttpOverrides extends HttpOverrides {
@@ -38,6 +39,55 @@ class SecureHttpOverrides extends HttpOverrides {
       return true;
     };
     return client;
+  }
+}
+
+class ImdbCensorEngine {
+  static Future<List<Map<String, int>>> extractSensitiveMarkers(String imdbId) async {
+    if (imdbId.isEmpty) return [];
+    try {
+      final url = Uri.parse('https://www.imdb.com/title/$imdbId/parentalguide');
+      final res = await http.get(url, headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode != 200) return [];
+      final doc = html_parser.parse(res.body);
+      final nuditySection = doc.getElementById('advisories-nudity');
+      if (nuditySection == null) return [];
+
+      final text = nuditySection.text;
+      final List<Map<String, int>> segments = [];
+
+      final timeRegex = RegExp(r'(?:at\s+|around\s+)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})', caseSensitive: false);
+      for (final match in timeRegex.allMatches(text)) {
+        final hours = match.group(1) != null ? int.parse(match.group(1)!) : 0;
+        final minutes = int.parse(match.group(2)!);
+        final seconds = int.parse(match.group(3)!);
+        final total = (hours * 3600) + (minutes * 60) + seconds;
+        segments.add({'start': total, 'end': total + 25});
+      }
+
+      final minRegex = RegExp(r'(?:minute|min)\s+(\d{1,3})', caseSensitive: false);
+      for (final m in minRegex.allMatches(text)) {
+        final minutes = int.parse(m.group(1)!);
+        final total = minutes * 60;
+        segments.add({'start': total, 'end': total + 30});
+      }
+
+      final List<Map<String, int>> clean = [];
+      final Set<int> seen = {};
+      for (var s in segments) {
+        if (!seen.contains(s['start'])) {
+          seen.add(s['start']!);
+          clean.add(s);
+        }
+      }
+      return clean;
+    } catch (_) {
+      return [];
+    }
   }
 }
 
@@ -2321,6 +2371,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
+    final imdbId = _extendedInfo['imdb']?.toString() ?? widget.media['imdb']?.toString() ?? '';
 
     LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
@@ -2337,6 +2388,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           episodes: _seasonsMap[_selectedSeason] ?? [],
           currentEpIndex: idx,
           poster: poster,
+          imdbId: imdbId,
           onEpisodeChanged: (newId) {
             LocalStorageService.markEpisodeWatched(newId);
             _loadState();
@@ -2350,6 +2402,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
+    final imdbId = _extendedInfo['imdb']?.toString() ?? widget.media['imdb']?.toString() ?? '';
 
     Navigator.push(
       context,
@@ -2360,6 +2413,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           videoUrl: '',
           qualities: const [],
           poster: poster,
+          imdbId: imdbId,
         ),
       ),
     );
@@ -2898,6 +2952,7 @@ class PlayerScreen extends StatefulWidget {
   final List<dynamic> episodes;
   final int currentEpIndex;
   final String poster;
+  final String imdbId;
   final Function(String)? onEpisodeChanged;
   final bool isLocalFile;
 
@@ -2913,6 +2968,7 @@ class PlayerScreen extends StatefulWidget {
     this.episodes = const [],
     this.currentEpIndex = 1,
     this.poster = '',
+    this.imdbId = '',
     this.onEpisodeChanged,
     this.isLocalFile = false,
   });
@@ -2965,6 +3021,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _autoNextCountdown = 5;
   Timer? _autoNextTimer;
 
+  List<Map<String, int>> _sensitiveSegments = [];
+  int _lastSkippedSecond = -1;
+
+  double? _dragPositionMs;
+  bool _isDraggingSlider = false;
+
   bool get _showSmartSkip =>
       _controller != null &&
       _controller!.value.isInitialized &&
@@ -2987,6 +3049,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
+    if (widget.imdbId.isNotEmpty) {
+      _loadSensitiveSegments(widget.imdbId);
+    }
+
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
       if (widget.subtitleUrl.isNotEmpty) {
@@ -2998,6 +3064,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentStreamUrl = widget.videoUrl;
       _initPlayer(widget.videoUrl);
       _loadSubtitlesDelayed(widget.subtitleUrl, widget.secondarySubtitleUrl);
+    }
+  }
+
+  void _loadSensitiveSegments(String imdbId) async {
+    final segments = await ImdbCensorEngine.extractSensitiveMarkers(imdbId);
+    if (mounted && segments.isNotEmpty) {
+      setState(() => _sensitiveSegments = segments);
     }
   }
 
@@ -3037,6 +3110,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesDelayed(subAr, subEn);
+
+      final imdb = subInfo?['imdb']?.toString() ?? widget.imdbId;
+      if (imdb.isNotEmpty) {
+        _loadSensitiveSegments(imdb);
+      }
     }
   }
 
@@ -3235,6 +3313,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
         widget.title,
         widget.poster,
       );
+    }
+
+    if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty) {
+      final currentSec = pos.inSeconds;
+      for (var seg in _sensitiveSegments) {
+        final start = seg['start']!;
+        final end = seg['end']!;
+
+        if (currentSec >= start && currentSec < end && currentSec != _lastSkippedSecond) {
+          _lastSkippedSecond = currentSec;
+          _controller!.seekTo(Duration(seconds: end + 1));
+          HapticFeedback.mediumImpact();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تم تجاوز مشهد غير لائق تلقائياً 🛡️'),
+                duration: Duration(seconds: 2),
+                backgroundColor: AppColors.primaryDark,
+              ),
+            );
+          }
+          break;
+        }
+      }
     }
 
     if (_subtitles.isNotEmpty) {
@@ -3465,7 +3567,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _startTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && _controller != null && _controller!.value.isPlaying && !_isLocked) {
+      if (mounted && _controller != null && _controller!.value.isPlaying && !_isLocked && !_isDraggingSlider) {
         setState(() => _showControls = false);
       }
     });
@@ -4101,30 +4203,76 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: ValueListenableBuilder<VideoPlayerValue>(
                           valueListenable: _controller!,
                           builder: (context, value, child) {
+                            final totalMs = value.duration.inMilliseconds.toDouble();
+                            final currentMs = _isDraggingSlider
+                                ? (_dragPositionMs ?? value.position.inMilliseconds.toDouble())
+                                : value.position.inMilliseconds.toDouble();
+
                             return Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 3,
-                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                    thumbColor: AppColors.primary,
-                                    activeTrackColor: AppColors.primary,
-                                    inactiveTrackColor: Colors.white24,
-                                  ),
-                                  child: Slider(
-                                    value: value.position.inMilliseconds.toDouble().clamp(0.0, value.duration.inMilliseconds.toDouble()),
-                                    min: 0.0,
-                                    max: value.duration.inMilliseconds.toDouble(),
-                                    onChanged: (v) => _controller!.seekTo(Duration(milliseconds: v.toInt())),
-                                  ),
+                                LayoutBuilder(
+                                  builder: (ctx, sliderConstraints) {
+                                    final width = sliderConstraints.maxWidth;
+                                    return GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onLongPressStart: (details) {
+                                        HapticFeedback.mediumImpact();
+                                        final ratio = (details.localPosition.dx / width).clamp(0.0, 1.0);
+                                        setState(() {
+                                          _isDraggingSlider = true;
+                                          _dragPositionMs = ratio * totalMs;
+                                        });
+                                      },
+                                      onLongPressMoveUpdate: (details) {
+                                        final ratio = (details.localPosition.dx / width).clamp(0.0, 1.0);
+                                        setState(() {
+                                          _dragPositionMs = ratio * totalMs;
+                                        });
+                                      },
+                                      onLongPressEnd: (details) {
+                                        if (_dragPositionMs != null) {
+                                          _controller!.seekTo(Duration(milliseconds: _dragPositionMs!.toInt()));
+                                        }
+                                        setState(() {
+                                          _isDraggingSlider = false;
+                                          _dragPositionMs = null;
+                                        });
+                                        _startTimer();
+                                      },
+                                      child: SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          trackHeight: _isDraggingSlider ? 6 : 3,
+                                          thumbShape: RoundSliderThumbShape(
+                                            enabledThumbRadius: _isDraggingSlider ? 9 : 5,
+                                          ),
+                                          thumbColor: AppColors.primary,
+                                          activeTrackColor: AppColors.primary,
+                                          inactiveTrackColor: Colors.white24,
+                                        ),
+                                        child: Slider(
+                                          value: currentMs.clamp(0.0, totalMs > 0 ? totalMs : 1.0),
+                                          min: 0.0,
+                                          max: totalMs > 0 ? totalMs : 1.0,
+                                          onChanged: null,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 6),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(_formatTime(value.position), style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                      Text(
+                                        _formatTime(Duration(milliseconds: currentMs.toInt())),
+                                        style: TextStyle(
+                                          color: _isDraggingSlider ? AppColors.primary : Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: _isDraggingSlider ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
                                       Row(
                                         children: [
                                           Text(_formatTime(value.duration), style: const TextStyle(color: Colors.white, fontSize: 11)),
