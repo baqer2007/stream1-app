@@ -66,10 +66,19 @@ class SearchEngineUtils {
 }
 
 class ImdbCensorEngine {
+  static String extractIdFromRaw(dynamic raw) {
+    if (raw == null) return '';
+    final str = raw.toString();
+    final match = RegExp(r'tt\d+').firstMatch(str);
+    return match?.group(0) ?? '';
+  }
+
   static Future<List<Map<String, int>>> extractSensitiveMarkers(String imdbId) async {
-    if (imdbId.isEmpty) return [];
+    final cleanId = extractIdFromRaw(imdbId);
+    if (cleanId.isEmpty) return [];
+
     try {
-      final url = Uri.parse('https://www.imdb.com/title/$imdbId/parentalguide');
+      final url = Uri.parse('https://www.imdb.com/title/$cleanId/parentalguide');
       final res = await http.get(url, headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -89,14 +98,14 @@ class ImdbCensorEngine {
         final minutes = int.parse(match.group(2)!);
         final seconds = int.parse(match.group(3)!);
         final total = (hours * 3600) + (minutes * 60) + seconds;
-        segments.add({'start': total, 'end': total + 25});
+        segments.add({'start': total, 'end': total + 30});
       }
 
       final minRegex = RegExp(r'(?:minute|min)\s+(\d{1,3})', caseSensitive: false);
       for (final m in minRegex.allMatches(text)) {
         final minutes = int.parse(m.group(1)!);
         final total = minutes * 60;
-        segments.add({'start': total, 'end': total + 30});
+        segments.add({'start': total, 'end': total + 35});
       }
 
       final List<Map<String, int>> clean = [];
@@ -2270,7 +2279,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
-    final imdbId = _extendedInfo['imdb']?.toString() ?? widget.media['imdb']?.toString() ?? '';
+    final rawImdb = _extendedInfo['imdbUrlRef'] ?? _extendedInfo['imdb'] ?? widget.media['imdbUrlRef'] ?? widget.media['imdb'] ?? '';
+    final imdbId = ImdbCensorEngine.extractIdFromRaw(rawImdb);
 
     LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
@@ -2301,7 +2311,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
-    final imdbId = _extendedInfo['imdb']?.toString() ?? widget.media['imdb']?.toString() ?? '';
+    final rawImdb = _extendedInfo['imdbUrlRef'] ?? _extendedInfo['imdb'] ?? widget.media['imdbUrlRef'] ?? widget.media['imdb'] ?? '';
+    final imdbId = ImdbCensorEngine.extractIdFromRaw(rawImdb);
 
     Navigator.push(
       context,
@@ -2959,7 +2970,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSensitiveSegments(String imdbId) async {
-    final segments = await ImdbCensorEngine.extractSensitiveMarkers(imdbId);
+    final cleanId = ImdbCensorEngine.extractIdFromRaw(imdbId);
+    if (cleanId.isEmpty) return;
+
+    final segments = await ImdbCensorEngine.extractSensitiveMarkers(cleanId);
     if (mounted && segments.isNotEmpty) {
       setState(() => _sensitiveSegments = segments);
     }
@@ -3002,9 +3016,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesDelayed(subAr, subEn);
 
-      final imdb = subInfo?['imdb']?.toString() ?? widget.imdbId;
-      if (imdb.isNotEmpty) {
-        _loadSensitiveSegments(imdb);
+      final rawImdb = subInfo?['imdbUrlRef'] ?? subInfo?['imdb'] ?? widget.imdbId;
+      final cleanImdb = ImdbCensorEngine.extractIdFromRaw(rawImdb);
+      if (cleanImdb.isNotEmpty) {
+        _loadSensitiveSegments(cleanImdb);
       }
     }
   }
