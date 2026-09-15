@@ -433,7 +433,8 @@ class AppSettings extends ChangeNotifier {
   bool subHasShadow = true;
   double subBottomPadding = 26.0;
   String subBackgroundMode = 'semi';
-  bool enableDualSubtitles = false;
+  enableDualSubtitles(bool val) => enableDualSubtitlesFlag = val;
+  bool enableDualSubtitlesFlag = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
   String selectedFont = 'iPhone';
@@ -475,7 +476,7 @@ class AppSettings extends ChangeNotifier {
       subFontSize = p.getDouble('player_sub_size') ?? 18.0;
       subBottomPadding = p.getDouble('player_sub_bottom') ?? 26.0;
       subBackgroundMode = p.getString('player_sub_bg_mode') ?? 'semi';
-      enableDualSubtitles = p.getBool('player_dual_sub') ?? false;
+      enableDualSubtitlesFlag = p.getBool('player_dual_sub') ?? false;
       appFilterMode = p.getInt('app_filter_mode') ?? 0;
       appLanguage = p.getString('app_lang') ?? 'ar';
       selectedFont = p.getString('app_font') ?? 'iPhone';
@@ -549,7 +550,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   void updateDualSubtitles(bool val) async {
-    enableDualSubtitles = val;
+    enableDualSubtitlesFlag = val;
     notifyListeners();
     (await SharedPreferences.getInstance()).setBool('player_dual_sub', val);
   }
@@ -1877,12 +1878,17 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
       final List<dynamic> series = [];
 
       for (var it in results) {
-        final isSeries = (it['is_series_fixed'] == true) ||
-            (it['season'] != null && it['season'].toString() != '0' && it['season'].toString() != '');
-        if (isSeries) {
-          series.add(it);
-        } else {
-          movies.add(it);
+        final ar = (it['ar_title'] ?? '').toString();
+        final en = (it['en_title'] ?? '').toString();
+
+        if (SearchEngineUtils.isMatch(q, ar) || SearchEngineUtils.isMatch(q, en) || results.length <= 15) {
+          final isSeries = (it['is_series_fixed'] == true) ||
+              (it['season'] != null && it['season'].toString() != '0' && it['season'].toString() != '');
+          if (isSeries) {
+            series.add(it);
+          } else {
+            movies.add(it);
+          }
         }
       }
 
@@ -1924,7 +1930,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     onChanged: _onQueryChanged,
                     style: TextStyle(color: s.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: isAr ? 'بحث فوري (مثل: Titanic، تيتانيك، مارفل)...' : 'Instant Search (e.g. Titanic)...',
+                      hintText: isAr ? 'بحث عن فيلم أو مسلسل...' : 'Search movies or series...',
                       hintStyle: TextStyle(color: s.textSecondary, fontSize: 13),
                       border: InputBorder.none,
                       prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary, size: 22),
@@ -1963,7 +1969,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                             ? _buildCategorizedResults(isAr)
                             : Center(
                                 child: Text(
-                                  isAr ? 'لم يتم العثور على نتائج تطابق: "${_searchCtrl.text}"' : 'No results found for "${_searchCtrl.text}"',
+                                  isAr ? 'لم يتم العثور على نتائج تطابق هذا البحث' : 'No results found',
                                   style: TextStyle(color: s.textSecondary, fontSize: 13),
                                 ),
                               )
@@ -2011,7 +2017,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         if (showSeries && _seriesResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'المسلسلات المتطابقة' : 'Series Matches', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(isAr ? 'المسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
           ..._seriesResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
           Divider(color: s.border, height: 24),
@@ -2019,7 +2025,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         if (showMovies && _movieResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'الأفلام المتطابقة' : 'Movie Matches', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(isAr ? 'الأفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
           ..._movieResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
         ],
@@ -2094,7 +2100,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     if (_recentSearches.isEmpty) {
       return Center(
         child: Text(
-          isAr ? 'ابدأ بكتابة اسم الفيلم أو المسلسل للبحث الفوري' : 'Type title to start instant search',
+          isAr ? 'ابدأ بكتابة اسم العمل للبحث الفوري' : 'Type title to start search',
           style: TextStyle(color: s.textSecondary, fontSize: 12),
         ),
       );
@@ -2377,7 +2383,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 final safeFileName = '${cleanId}_$res.mp4';
 
                                 final subInfo = await StreamService.getVideoExtendedInfo(targetId);
-                                final subUrl = subInfo?['arTranslationFilePath']?.toString() ?? '';
+                                final subUrl = subInfo['arTranslationFilePath']?.toString() ?? '';
 
                                 await BackgroundDownloadService.startDownload(
                                   url: url,
@@ -2592,7 +2598,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     const SizedBox(height: 14),
 
                     if (_realActors.isNotEmpty) ...[
-                      Text(isAr ? 'طاقم التمثيل (اضغط لمشاهدة أعماله)' : 'Cast (Tap to view works)', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                      Text(isAr ? 'طاقم التمثيل' : 'Cast', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       SizedBox(
                         height: 40,
@@ -3239,7 +3245,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    if (AppSettings.instance.enableDualSubtitles && _secondarySubtitles.isNotEmpty) {
+    if (AppSettings.instance.enableDualSubtitlesFlag && _secondarySubtitles.isNotEmpty) {
       String matchedText2 = '';
       for (var s in _secondarySubtitles) {
         if (pos >= s.start && pos <= s.end) {
@@ -3584,7 +3590,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       leading: Icon(Icons.subtitles_rounded, color: settings.textSecondary),
                       title: Text(isAr ? 'الترجمة المزدوجة (عربي + إنجليزي)' : 'Dual Subtitles (AR + EN)', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: CupertinoSwitch(
-                        value: settings.enableDualSubtitles,
+                        value: settings.enableDualSubtitlesFlag,
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => settings.updateDualSubtitles(v)),
                       ),
@@ -3918,7 +3924,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (settings.enableDualSubtitles && _currentSecondarySubText.isNotEmpty)
+                  if (settings.enableDualSubtitlesFlag && _currentSecondarySubText.isNotEmpty)
                     Positioned(
                       top: 70, left: 20, right: 20,
                       child: Center(
