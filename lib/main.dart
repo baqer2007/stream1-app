@@ -1455,7 +1455,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                           borderRadius: BorderRadius.circular(AppRadius.card),
                                           border: Border.all(
                                             color: hasFocus ? AppColors.primary : s.border,
-                                            width: hasFocus ? 2.0 : 0.5,
+                                            width: 2.0,
                                           ),
                                         ),
                                         child: ClipRRect(
@@ -1524,7 +1524,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1555,7 +1555,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
