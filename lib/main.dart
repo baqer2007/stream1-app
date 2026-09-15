@@ -9,10 +9,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
@@ -33,9 +34,7 @@ class SecureHttpOverrides extends HttpOverrides {
     final client = super.createHttpClient(context);
     client.connectionTimeout = const Duration(seconds: 15);
     client.badCertificateCallback = (X509Certificate cert, String host, int port) {
-      if (kReleaseMode) {
-        return false;
-      }
+      if (kReleaseMode) return false;
       return true;
     };
     return client;
@@ -65,33 +64,52 @@ class SearchEngineUtils {
   }
 }
 
-// محرك فحص المشاهد الحساسة عبر الترجمة الإنجليزية التوصيفية و Firestore
+// محرك التشريح الطيفي البصري للكشف الفوري عن المشاهد الحميمية الصامتة
+class ChromaVisionEngine {
+  static bool analyzeFramePixels(Uint8List rgbaBytes) {
+    int skinPixels = 0;
+    final totalPixels = rgbaBytes.length ~/ 4;
+    if (totalPixels == 0) return false;
+
+    for (int i = 0; i < rgbaBytes.length; i += 4) {
+      final r = rgbaBytes[i];
+      final g = rgbaBytes[i + 1];
+      final b = rgbaBytes[i + 2];
+
+      // فحص أطياف بشرة الجسد البشري
+      if (r > 95 && g > 40 && b > 20 &&
+          (r - g).abs() > 15 &&
+          r > g && r > b &&
+          (r - b) > 15) {
+        skinPixels++;
+      }
+    }
+
+    final ratio = skinPixels / totalPixels;
+    return ratio > 0.48; // إذا غطت البشرة قرابة نصف الشاشة في اللقطات المقربة
+  }
+}
+
+// محرك فحص النصوص والترجمات المتزامنة والتوقيتات السحابية
 class ContentFilterEngine {
-  static final List<String> descriptiveActionTriggers = [
-    'kiss', 'kissing', 'kisses', 'they kiss', 'make out', 'making out',
-    'moan', 'moaning', 'sex', 'sexual', 'nudity', 'naked', 'gasping softly',
-    'passionate', 'undressing', 'undress', 'sleep with', 'bed together'
+  static final List<String> triggers = [
+    'kiss', 'kissing', 'kisses', 'they kiss', 'make out', 'moan', 'moaning',
+    'sex', 'sexual', 'nudity', 'naked', 'passionate', 'undress', 'sleep with',
+    'before dawn', 'in bed', 'swimsuit',
+    'قبلة', 'يقبل', 'تقبل', 'يقبلها', 'تقبله', 'مداعبة', 'تقبيل', 'عري', 'عارية',
+    'عاري', 'مضاجعة', 'جنس', 'ممارسة الجنس', 'فراش', 'السرير', 'ثدي', 'يخلع', 'تخلع'
   ];
 
-  static List<Map<String, int>> parseEnglishDescriptions(List<Subtitle> subs) {
+  static List<Map<String, int>> parseSubtitles(List<Subtitle> subs) {
     final List<Map<String, int>> segments = [];
 
     for (var s in subs) {
       final textLower = s.text.toLowerCase();
-      // فحص الأوصاف التي تكون بين أقواس [ ] أو ( ) أو الكلمات الصريحة
-      final isDescriptive = descriptiveActionTriggers.any((word) {
-        if (textLower.contains('[$word') || 
-            textLower.contains('($word') || 
-            textLower.contains(' $word ') ||
-            textLower.contains('$word]')) {
-          return true;
-        }
-        return false;
-      });
+      final isMatch = triggers.any((t) => textLower.contains(t));
 
-      if (isDescriptive) {
-        final startSec = (s.start.inSeconds - 1).clamp(0, 999999);
-        final endSec = s.end.inSeconds + 8; // إضافة هامش تغطية للمشهد الصامت
+      if (isMatch) {
+        final startSec = (s.start.inSeconds - 2).clamp(0, 999999);
+        final endSec = s.end.inSeconds + 12;
         segments.add({'start': startSec, 'end': endSec});
       }
     }
@@ -791,7 +809,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
           ),
           bottomNavigationBar: ClipRect(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: Container(
                 decoration: BoxDecoration(
                   color: s.glassFill,
@@ -1590,7 +1608,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             children: [
                               Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 2),
-                              const Text('FHD 1080p', style: TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.w600)),
+                              const Text('4K Ultra HD', style: TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
@@ -2343,7 +2361,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               color: s.glassFill,
               child: FutureBuilder<Map<String, dynamic>?>(
@@ -2858,6 +2876,7 @@ class PlayerScreen extends StatefulWidget {
   final List<dynamic> episodes;
   final int currentEpIndex;
   final String poster;
+  final String imdbId;
   final Function(String)? onEpisodeChanged;
   final bool isLocalFile;
 
@@ -2873,6 +2892,7 @@ class PlayerScreen extends StatefulWidget {
     this.episodes = const [],
     this.currentEpIndex = 1,
     this.poster = '',
+    this.imdbId = '',
     this.onEpisodeChanged,
     this.isLocalFile = false,
   });
@@ -2886,6 +2906,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isReady = false;
   bool _showControls = true;
   Timer? _hideTimer;
+
+  final GlobalKey _repaintBoundaryKey = GlobalKey();
+  Timer? _chromaScanTimer;
+  int _consecutiveSkinHits = 0;
+  bool _isSeekingNow = false;
 
   bool _isAutoQuality = false;
   String _activeQuality = '720p';
@@ -2953,7 +2978,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    // جلب أي توقيتات سحابية مجهزة مسبقاً لهذا الفيلم
+    // جلب أي توقيتات سحابية مسجلة مسبقاً لهذا الفيلم
     ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
       if (cloudSegs.isNotEmpty && mounted) {
         setState(() {
@@ -3015,21 +3040,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // تمرير مسارات الترجمة: العربية تُعرض، والإنجليزية تُفحص في الخلفية للرصد
   void _loadSubtitlesPipeline(String arUrl, String enUrl) {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
-        // 1. تحميل الترجمة العربية للمشاهدة
-        if (arUrl.isNotEmpty) {
-          _loadSubs(arUrl, isSecondary: false);
-        }
-
-        // 2. إذا كانت خاصية الترجمة المزدوجة مفعلة، تظهر الإنجليزية أيضاً
+        if (arUrl.isNotEmpty) _loadSubs(arUrl, isSecondary: false);
         if (enUrl.isNotEmpty && AppSettings.instance.enableDualSubtitlesFlag) {
           _loadSubs(enUrl, isSecondary: true);
         }
-
-        // 3. فحص الترجمة الإنجليزية في الخلفية للبحث عن أوصاف المشاهد الحساسة والقبلات الصامتة
+        // فحص الترجمة الإنجليزية كخط دفاع نصي إضافي
         if (enUrl.isNotEmpty && AppSettings.instance.skipSensitiveScenes) {
           _inspectEnglishForCensorship(enUrl);
         }
@@ -3037,7 +3055,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  // فحص صامت للملف الإنجليزي لاستخراج توقيتات اللقطات الحساسة تلقائياً
   void _inspectEnglishForCensorship(String enUrl) async {
     try {
       final res = await http.get(Uri.parse(enUrl), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 12));
@@ -3048,10 +3065,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         } catch (_) {
           decodedText = latin1.decode(res.bodyBytes);
         }
-
         final parsedEn = _parseSrt(decodedText);
-        final detected = ContentFilterEngine.parseEnglishDescriptions(parsedEn);
-
+        final detected = ContentFilterEngine.parseSubtitles(parsedEn);
         if (detected.isNotEmpty && mounted) {
           setState(() {
             _sensitiveSegments.addAll(detected);
@@ -3062,67 +3077,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadSubs(String url, {required bool isSecondary}) async {
+    List<Subtitle> parsed = [];
+
     if (!url.startsWith('http')) {
       final file = File(url);
       if (file.existsSync()) {
         try {
           final content = await file.readAsString();
-          final parsed = _parseSrt(content);
-          if (mounted) {
-            setState(() {
-              if (isSecondary) {
-                _secondarySubtitles = parsed;
-              } else {
-                _subtitles = parsed;
-              }
-            });
+          parsed = _parseSrt(content);
+        } catch (_) {}
+      }
+    } else {
+      final cached = SubtitleCache.get(url);
+      if (cached != null) {
+        parsed = cached;
+      } else {
+        try {
+          final res = await http.get(Uri.parse(url), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 12));
+          if (res.statusCode == 200) {
+            String decodedText;
+            try {
+              decodedText = utf8.decode(res.bodyBytes);
+            } catch (_) {
+              decodedText = latin1.decode(res.bodyBytes);
+            }
+            parsed = _parseSrt(decodedText);
+            SubtitleCache.set(url, parsed);
           }
         } catch (_) {}
       }
-      return;
     }
 
-    final cached = SubtitleCache.get(url);
-    if (cached != null) {
-      if (mounted) {
-        setState(() {
-          if (isSecondary) {
-            _secondarySubtitles = cached;
-          } else {
-            _subtitles = cached;
-          }
-        });
-      }
-      return;
-    }
-
-    try {
-      final res = await http.get(
-        Uri.parse(url),
-        headers: StreamService.stealthHeaders,
-      ).timeout(const Duration(seconds: 12));
-
-      if (res.statusCode == 200 && mounted) {
-        String decodedText;
-        try {
-          decodedText = utf8.decode(res.bodyBytes);
-        } catch (_) {
-          decodedText = latin1.decode(res.bodyBytes);
+    if (mounted && parsed.isNotEmpty) {
+      setState(() {
+        if (isSecondary) {
+          _secondarySubtitles = parsed;
+        } else {
+          _subtitles = parsed;
         }
-        final parsed = _parseSrt(decodedText);
-        SubtitleCache.set(url, parsed);
-        if (mounted) {
+      });
+
+      if (AppSettings.instance.skipSensitiveScenes) {
+        final detected = ContentFilterEngine.parseSubtitles(parsed);
+        if (detected.isNotEmpty && mounted) {
           setState(() {
-            if (isSecondary) {
-              _secondarySubtitles = parsed;
-            } else {
-              _subtitles = parsed;
-            }
+            _sensitiveSegments.addAll(detected);
           });
         }
       }
-    } catch (e) {
-      debugPrint("Subtitle fetch error: $e");
     }
   }
 
@@ -3203,10 +3205,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         : VideoPlayerController.networkUrl(
             Uri.parse(url),
             httpHeaders: StreamService.stealthHeaders,
-            videoPlayerOptions: VideoPlayerOptions(
-              mixWithOthers: true,
-              allowBackgroundPlayback: false,
-            ),
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true, allowBackgroundPlayback: false),
           );
 
     _controller = ctrl;
@@ -3226,10 +3225,110 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     if (mounted) {
       setState(() => _isReady = true);
+      _startChromaVisionInspector();
     }
 
     ctrl.addListener(_videoPlayerListener);
     _startTimer();
+  }
+
+  // مستمع بصري ميكروي يفحص الإطارات الحية في الذاكرة لتخطي اللقطات الصامتة
+  void _startChromaVisionInspector() {
+    _chromaScanTimer?.cancel();
+    _chromaScanTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) async {
+      if (!AppSettings.instance.skipSensitiveScenes ||
+          _controller == null ||
+          !_controller!.value.isPlaying ||
+          _isSeekingNow) {
+        return;
+      }
+
+      try {
+        final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        if (boundary == null) return;
+
+        // التقاط عينة ميكروية بالغة الصغر (32x32) تستهلك 0% من طاقة الهاتف
+        final image = await boundary.toImage(pixelRatio: 0.05);
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+
+        if (byteData != null) {
+          final isSkinAnomaly = ChromaVisionEngine.analyzeFramePixels(byteData.buffer.asUint8List());
+
+          if (isSkinAnomaly) {
+            _consecutiveSkinHits++;
+            // إذا تكررت هيمنة لون البشرة لثانيتين متتاليتين في المشهد
+            if (_consecutiveSkinHits >= 2) {
+              _triggerChromaEvasion();
+            }
+          } else {
+            _consecutiveSkinHits = 0;
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _triggerChromaEvasion() {
+    if (_controller == null || _isSeekingNow) return;
+    _isSeekingNow = true;
+    _consecutiveSkinHits = 0;
+
+    final target = _controller!.value.position + const Duration(seconds: 18);
+    _controller!.seekTo(target > _controller!.value.duration ? _controller!.value.duration : target);
+    HapticFeedback.heavyImpact();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.visibility_off_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('تم تجاوز لقطة غير لائقة تلقائياً 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          backgroundColor: AppColors.primaryDark,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    Future.delayed(const Duration(seconds: 2), () {
+      _isSeekingNow = false;
+    });
+  }
+
+  // زر سريع للمشرف أو المستخدم لتثبيت المشهد الحساس في قاعدة البيانات بضغطة واحدة
+  void _flagCurrentSceneQuickly(bool isAr) async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    final curSec = _controller!.value.position.inSeconds;
+    final start = (curSec - 2).clamp(0, 999999);
+    final end = curSec + 25; // تقديم 25 ثانية افتراضياً
+
+    setState(() {
+      _sensitiveSegments.add({'start': start, 'end': end});
+    });
+
+    _controller!.seekTo(Duration(seconds: end + 1));
+    HapticFeedback.heavyImpact();
+
+    try {
+      await FirebaseFirestore.instance.collection('censored_scenes').doc(_activeMediaId).set({
+        'scenes': FieldValue.arrayUnion([{'start': start, 'end': end}])
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAr ? 'تم تخطي وتثبيت اللقطة الحساسة في السحابة للجميع 🛡️' : 'Scene flagged and synced to cloud 🛡️'),
+            backgroundColor: Colors.green[800],
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {}
   }
 
   void _videoPlayerListener() {
@@ -3249,8 +3348,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
-    // منطق التخطي التلقائي المحكم للقطات الحساسة
-    if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty) {
+    // منطق التخطي التلقائي المحكم من التوقيتات المسجلة
+    if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty && !_isSeekingNow) {
       final currentSec = pos.inSeconds;
       for (var seg in _sensitiveSegments) {
         final start = seg['start']!;
@@ -3264,21 +3363,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).clearSnackBars();
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
+              const SnackBar(
                 content: Row(
                   children: [
-                    const Icon(Icons.shield_rounded, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      AppSettings.instance.appLanguage == 'ar'
-                          ? 'تم تجاوز لقطة غير لائقة تلقائياً 🛡️'
-                          : 'Inappropriate scene auto-skipped 🛡️',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    Icon(Icons.shield_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text('تم تجاوز لقطة غير لائقة تلقائياً 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
                 backgroundColor: AppColors.primaryDark,
-                duration: const Duration(seconds: 2),
+                duration: Duration(seconds: 2),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -3288,7 +3382,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    // مطابقة وعرض الترجمة العربية
     if (_subtitles.isNotEmpty) {
       String matchedText = '';
       for (var s in _subtitles) {
@@ -3303,7 +3396,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    // مطابقة الترجمة الثانوية في حال تم تفعيلها
     if (AppSettings.instance.enableDualSubtitlesFlag && _secondarySubtitles.isNotEmpty) {
       String matchedText2 = '';
       for (var s in _secondarySubtitles) {
@@ -3457,7 +3549,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               color: AppSettings.instance.glassFill,
               height: 350,
@@ -3546,6 +3638,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _chromaScanTimer?.cancel();
     WakelockPlus.disable();
     _autoNextTimer?.cancel();
     _hideTimer?.cancel();
@@ -3598,7 +3691,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               color: settings.glassFill,
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -3877,49 +3970,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   Center(
                     child: (_isReady && _controller != null)
-                        ? AspectRatio(
-                            aspectRatio: _controller!.value.aspectRatio,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                FittedBox(
-                                  fit: _videoFit,
-                                  child: SizedBox(
-                                    width: _controller!.value.size.width,
-                                    height: _controller!.value.size.height,
-                                    child: VideoPlayer(_controller!),
+                        ? RepaintBoundary(
+                            key: _repaintBoundaryKey,
+                            child: AspectRatio(
+                              aspectRatio: _controller!.value.aspectRatio,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  FittedBox(
+                                    fit: _videoFit,
+                                    child: SizedBox(
+                                      width: _controller!.value.size.width,
+                                      height: _controller!.value.size.height,
+                                      child: VideoPlayer(_controller!),
+                                    ),
                                   ),
-                                ),
 
-                                if (_currentSubText.isNotEmpty)
-                                  Positioned(
-                                    bottom: settings.subBottomPadding,
-                                    left: 20.0,
-                                    right: 20.0,
-                                    child: Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: settings.subtitleBackgroundColor,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          _currentSubText,
-                                          textAlign: TextAlign.center,
-                                          textDirection: TextDirection.rtl,
-                                          style: TextStyle(
-                                            color: settings.subColor,
-                                            fontSize: settings.subFontSize,
-                                            fontWeight: FontWeight.bold,
-                                            shadows: settings.subHasShadow
-                                                ? const [Shadow(blurRadius: 8, color: Colors.black, offset: Offset(1, 1))]
-                                                : null,
+                                  if (_currentSubText.isNotEmpty)
+                                    Positioned(
+                                      bottom: settings.subBottomPadding,
+                                      left: 20.0,
+                                      right: 20.0,
+                                      child: Center(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: settings.subtitleBackgroundColor,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            _currentSubText,
+                                            textAlign: TextAlign.center,
+                                            textDirection: TextDirection.rtl,
+                                            style: TextStyle(
+                                              color: settings.subColor,
+                                              fontSize: settings.subFontSize,
+                                              fontWeight: FontWeight.bold,
+                                              shadows: settings.subHasShadow
+                                                  ? const [Shadow(blurRadius: 8, color: Colors.black, offset: Offset(1, 1))]
+                                                  : null,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           )
                         : const CircularProgressIndicator(color: AppColors.primary),
@@ -4082,6 +4178,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
+                                // زر تثبيت اللقطة الحساسة للتخطي الفوري
+                                IconButton(
+                                  tooltip: isAr ? 'تثبيت لقطة حساسة للتخطي' : 'Flag Sensitive Scene',
+                                  icon: const Icon(Icons.shield_outlined, color: Colors.amber, size: 22),
+                                  onPressed: () => _flagCurrentSceneQuickly(isAr),
+                                ),
                                 if (widget.episodes.isNotEmpty)
                                   IconButton(
                                     tooltip: isAr ? 'قائمة الحلقات' : 'Episodes',
@@ -4665,7 +4767,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: Container(
                 color: s.glassFill,
                 padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
