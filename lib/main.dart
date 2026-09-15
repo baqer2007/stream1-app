@@ -433,7 +433,6 @@ class AppSettings extends ChangeNotifier {
   bool subHasShadow = true;
   double subBottomPadding = 26.0;
   String subBackgroundMode = 'semi';
-  enableDualSubtitles(bool val) => enableDualSubtitlesFlag = val;
   bool enableDualSubtitlesFlag = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
@@ -1105,31 +1104,19 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       final res = await Future.wait([
         StreamService.fetchFeed(isSeries: false, page: 0, perPage: 35, level: level),
         StreamService.fetchFeed(isSeries: true, page: 0, perPage: 25, level: level),
-        StreamService.searchContent('Marvel', level: level),
-        StreamService.searchContent('Avengers', level: level),
+        StreamService.fetchByCategoryName('action', page: 0, level: level),
       ]);
 
       final allMovies = res[0];
       final allSeries = res[1];
-      final marvel1 = res[2];
-      final marvel2 = res[3];
+      final actionList = res[2];
 
       final hero = allMovies.take(5).toList();
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
-      final Set<String> mIds = {};
-      final List<dynamic> marvelCombined = [];
-      for (var it in [...marvel1, ...marvel2]) {
-        final id = (it['nb'] ?? it['id']).toString();
-        if (!mIds.contains(id)) {
-          mIds.add(id);
-          marvelCombined.add(it);
-        }
-      }
-
       final featured = allMovies.where((it) {
         final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) && !mIds.contains(id);
+        return !heroIds.contains(id);
       }).toList();
       featured.sort((a, b) {
         final sA = double.tryParse((a['stars'] ?? '0').toString()) ?? 0.0;
@@ -1137,11 +1124,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         return sB.compareTo(sA);
       });
 
-      final recent = allSeries.where((it) {
-        final id = (it['nb'] ?? it['id']).toString();
-        return !heroIds.contains(id) && !mIds.contains(id);
-      }).take(12).toList();
-
+      final recent = allSeries.take(12).toList();
       final combined = [...allMovies, ...allSeries];
       for (var it in combined) {
         final id = (it['nb'] ?? it['id'])?.toString();
@@ -1151,7 +1134,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       if (mounted) {
         setState(() {
           _heroItems = hero;
-          _marvelItems = marvelCombined.take(12).toList();
+          _marvelItems = actionList.take(12).toList();
           _featuredItems = featured.take(12).toList();
           _recentItems = recent;
           _infiniteList = List.from(combined);
@@ -1324,14 +1307,14 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       if (_resumeList.isNotEmpty) _buildResumeSection(isAr),
 
                       _buildMediaShelf(
-                        isAr ? 'عالم مارفل 4K' : 'Marvel 4K Universe',
+                        isAr ? 'أفلام الحركة والأكشن' : 'Action Movies',
                         _marvelItems,
                         () => Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => FullCategoryView(
-                              title: isAr ? 'عالم مارفل 4K' : 'Marvel 4K Universe',
-                              searchQuery: 'Marvel',
+                              title: isAr ? 'أفلام الحركة والأكشن' : 'Action Movies',
+                              categoryEn: 'action',
                             ),
                           ),
                         ),
@@ -1878,17 +1861,12 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
       final List<dynamic> series = [];
 
       for (var it in results) {
-        final ar = (it['ar_title'] ?? '').toString();
-        final en = (it['en_title'] ?? '').toString();
-
-        if (SearchEngineUtils.isMatch(q, ar) || SearchEngineUtils.isMatch(q, en) || results.length <= 15) {
-          final isSeries = (it['is_series_fixed'] == true) ||
-              (it['season'] != null && it['season'].toString() != '0' && it['season'].toString() != '');
-          if (isSeries) {
-            series.add(it);
-          } else {
-            movies.add(it);
-          }
+        final isSeries = (it['is_series_fixed'] == true) ||
+            (it['season'] != null && it['season'].toString() != '0' && it['season'].toString() != '');
+        if (isSeries) {
+          series.add(it);
+        } else {
+          movies.add(it);
         }
       }
 
