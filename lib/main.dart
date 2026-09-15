@@ -861,7 +861,10 @@ class CategoriesScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: hasFocus ? s.surfaceLight : s.surface,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 1.5 : 0.5),
+                  border: Border.all(
+                    color: hasFocus ? AppColors.primary : s.border,
+                    width: hasFocus ? 1.5 : 0.5,
+                  ),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -1017,7 +1020,10 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                         decoration: BoxDecoration(
                           color: s.surface,
                           borderRadius: BorderRadius.circular(AppRadius.card),
-                          border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                          border: Border.all(
+                            color: hasFocus ? AppColors.primary : s.border,
+                            width: hasFocus ? 2.0 : 0.5,
+                          ),
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(AppRadius.card),
@@ -1384,7 +1390,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                         decoration: BoxDecoration(
                                           color: s.surface,
                                           borderRadius: BorderRadius.circular(AppRadius.card),
-                                          border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: hasFocus ? 2.0 : 0.5),
+                                          border: Border.all(
+                                            color: hasFocus ? AppColors.primary : s.border,
+                                            width: hasFocus ? 2.0 : 0.5,
+                                          ),
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(AppRadius.card),
@@ -1450,7 +1459,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   decoration: BoxDecoration(
                     color: hasFocus ? s.surfaceLight : s.surface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: 1.5 : 0.5),
+                    border: Border.all(
+                      color: hasFocus ? AppColors.primary : s.border,
+                      width: hasFocus ? 1.5 : 0.5,
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1478,7 +1490,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                   decoration: BoxDecoration(
                     color: hasFocus ? s.surfaceLight : s.surface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: 1.5 : 0.5),
+                    border: Border.all(
+                      color: hasFocus ? AppColors.primary : s.border,
+                      width: hasFocus ? 1.5 : 0.5,
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1759,7 +1774,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             decoration: BoxDecoration(
                               color: s.surface,
                               borderRadius: BorderRadius.circular(AppRadius.card),
-                              border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: 2.0 : 0.5),
+                              border: Border.all(
+                                color: hasFocus ? AppColors.primary : s.border,
+                                width: hasFocus ? 2.0 : 0.5,
+                              ),
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(AppRadius.card),
@@ -2333,7 +2351,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                   return Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
-                      mainAxisSize: dynamic,
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(isAr ? 'اختر جودة التنزيل' : 'Select Download Quality', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -2683,7 +2701,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 decoration: BoxDecoration(
                                   color: hasFocus ? s.surfaceLight : s.surface,
                                   borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: hasFocus ? AppColors.primary : s.border, width: 2.0 : 0.5),
+                                  border: Border.all(
+                                    color: hasFocus ? AppColors.primary : s.border,
+                                    width: hasFocus ? 2.0 : 0.5,
+                                  ),
                                 ),
                                 child: InkWell(
                                   onTap: () => _playEpisode(ep, idx, isAr),
@@ -3399,7 +3420,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             decoration: BoxDecoration(
                               color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppSettings.instance.surface,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: hasFocus ? AppColors.primary : AppSettings.instance.border, width: 1.5 : 0.5),
+                              border: Border.all(
+                                color: hasFocus ? AppColors.primary : AppSettings.instance.border,
+                                width: hasFocus ? 1.5 : 0.5,
+                              ),
                             ),
                             child: ListTile(
                               title: Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
