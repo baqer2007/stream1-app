@@ -76,12 +76,12 @@ class StreamService {
     return [];
   }
 
-  /// مسار البحث المطابق لمحرك cee.buzz تماماً
+  /// مسار البحث الرسمي المباشر لموقع cee.buzz
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     final cleanQ = query.trim();
     if (cleanQ.isEmpty) return [];
 
-    // 1. استدعاء مسار البحث المباشر المطابق للموقع (videoTitle)
+    // المحاولة الأولى: مسار البحث المباشر videoTitle
     try {
       final enc = Uri.encodeComponent(cleanQ);
       final url = 'https://cee.buzz/api/android/video/videoTitle/$enc/level/$level';
@@ -94,7 +94,7 @@ class StreamService {
       }
     } catch (_) {}
 
-    // 2. المحاولة الثانية عبر محرك بحث العناوين الشامل
+    // المحاولة الثانية: مسار video_title_search
     try {
       final enc = Uri.encodeComponent(cleanQ);
       final url2 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$enc/pageNumber/0/level/$level';
@@ -107,7 +107,7 @@ class StreamService {
       }
     } catch (_) {}
 
-    // 3. المحاولة الثالثة: عبر Base64 النظيف
+    // المحاولة الثالثة: عبر Base64
     try {
       final b64 = base64.encode(utf8.encode(cleanQ));
       final url3 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$b64/pageNumber/0/level/$level';
