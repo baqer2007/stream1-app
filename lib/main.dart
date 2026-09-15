@@ -65,7 +65,6 @@ class SearchEngineUtils {
   }
 }
 
-// محرك التشريح الطيفي البصري للكشف الفوري عن المشاهد الحميمية الصامتة
 class ChromaVisionEngine {
   static bool analyzeFramePixels(Uint8List rgbaBytes) {
     int skinPixels = 0;
@@ -77,7 +76,6 @@ class ChromaVisionEngine {
       final g = rgbaBytes[i + 1];
       final b = rgbaBytes[i + 2];
 
-      // فحص أطياف بشرة الجسد البشري
       if (r > 95 && g > 40 && b > 20 &&
           (r - g).abs() > 15 &&
           r > g && r > b &&
@@ -87,11 +85,10 @@ class ChromaVisionEngine {
     }
 
     final ratio = skinPixels / totalPixels;
-    return ratio > 0.48; // إذا غطت البشرة قرابة نصف الشاشة في اللقطات المقربة
+    return ratio > 0.48;
   }
 }
 
-// محرك فحص النصوص والترجمات المتزامنة والتوقيتات السحابية
 class ContentFilterEngine {
   static final List<String> triggers = [
     'kiss', 'kissing', 'kisses', 'they kiss', 'make out', 'moan', 'moaning',
@@ -100,6 +97,8 @@ class ContentFilterEngine {
     'قبلة', 'يقبل', 'تقبل', 'يقبلها', 'تقبله', 'مداعبة', 'تقبيل', 'عري', 'عارية',
     'عاري', 'مضاجعة', 'جنس', 'ممارسة الجنس', 'فراش', 'السرير', 'ثدي', 'يخلع', 'تخلع'
   ];
+
+  static const String serverBaseUrl = 'https://onebr-censor-api.onrender.com';
 
   static List<Map<String, int>> parseSubtitles(List<Subtitle> subs) {
     final List<Map<String, int>> segments = [];
@@ -149,6 +148,32 @@ class ContentFilterEngine {
       }
     } catch (_) {}
     return [];
+  }
+
+  static Future<void> triggerBackendScan({
+    required String mediaId,
+    required String titleEn,
+    String? imdbId,
+  }) async {
+    try {
+      String slug = titleEn
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+          .replaceAll(RegExp(r'^-+|-+$'), '');
+
+      if (slug.isEmpty) slug = 'movie-$mediaId';
+
+      final queryParams = {
+        'media_id': mediaId,
+        'movie_slug': slug,
+      };
+      if (imdbId != null && imdbId.isNotEmpty) {
+        queryParams['imdb_id'] = imdbId;
+      }
+
+      final uri = Uri.parse('$serverBaseUrl/scan').replace(queryParameters: queryParams);
+      http.post(uri).catchError((_) => http.Response('', 500));
+    } catch (_) {}
   }
 }
 
@@ -1499,7 +1524,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1530,7 +1555,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -2191,7 +2216,22 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _loadState();
     _loadFullData();
     _loadSimilar();
+    _triggerCloudCensorSync();
     if (_isSeries) _loadEpisodes();
+  }
+
+  void _triggerCloudCensorSync() {
+    final mediaId = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
+    final enTitle = widget.media['en_title']?.toString() ?? widget.media['ar_title']?.toString() ?? '';
+    final imdbId = widget.media['imdb_id']?.toString() ?? widget.media['imdb']?.toString();
+
+    if (mediaId.isNotEmpty && enTitle.isNotEmpty) {
+      ContentFilterEngine.triggerBackendScan(
+        mediaId: mediaId,
+        titleEn: enTitle,
+        imdbId: imdbId,
+      );
+    }
   }
 
   void _loadState() async {
@@ -2308,6 +2348,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
+    final titleEn = widget.media['en_title']?.toString() ?? '';
+    final imdbId = widget.media['imdb_id']?.toString() ?? widget.media['imdb']?.toString();
 
     LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
@@ -2324,6 +2366,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           episodes: _seasonsMap[_selectedSeason] ?? [],
           currentEpIndex: idx,
           poster: poster,
+          titleEn: titleEn,
+          imdbId: imdbId ?? '',
           onEpisodeChanged: (newId) {
             LocalStorageService.markEpisodeWatched(newId);
             _loadState();
@@ -2337,6 +2381,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
+    final titleEn = widget.media['en_title']?.toString() ?? '';
+    final imdbId = widget.media['imdb_id']?.toString() ?? widget.media['imdb']?.toString();
 
     Navigator.push(
       context,
@@ -2347,6 +2393,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           videoUrl: '',
           qualities: const [],
           poster: poster,
+          titleEn: titleEn,
+          imdbId: imdbId ?? '',
         ),
       ),
     );
@@ -2877,6 +2925,7 @@ class PlayerScreen extends StatefulWidget {
   final List<dynamic> episodes;
   final int currentEpIndex;
   final String poster;
+  final String titleEn;
   final String imdbId;
   final Function(String)? onEpisodeChanged;
   final bool isLocalFile;
@@ -2893,6 +2942,7 @@ class PlayerScreen extends StatefulWidget {
     this.episodes = const [],
     this.currentEpIndex = 1,
     this.poster = '',
+    this.titleEn = '',
     this.imdbId = '',
     this.onEpisodeChanged,
     this.isLocalFile = false,
@@ -2979,14 +3029,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    // جلب أي توقيتات سحابية مسجلة مسبقاً لهذا الفيلم
-    ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
-      if (cloudSegs.isNotEmpty && mounted) {
-        setState(() {
-          _sensitiveSegments.addAll(cloudSegs);
-        });
-      }
-    });
+    _loadCloudTimestamps();
 
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
@@ -3000,6 +3043,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _initPlayer(widget.videoUrl);
       _loadSubtitlesPipeline(widget.subtitleUrl, widget.secondarySubtitleUrl);
     }
+  }
+
+  void _loadCloudTimestamps() {
+    ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
+      if (cloudSegs.isNotEmpty && mounted) {
+        setState(() {
+          _sensitiveSegments.addAll(cloudSegs);
+        });
+      } else if (widget.titleEn.isNotEmpty) {
+        ContentFilterEngine.triggerBackendScan(
+          mediaId: _activeMediaId,
+          titleEn: widget.titleEn,
+          imdbId: widget.imdbId,
+        );
+
+        Future.delayed(const Duration(seconds: 4), () {
+          if (mounted && _sensitiveSegments.isEmpty) {
+            ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((delayedSegs) {
+              if (delayedSegs.isNotEmpty && mounted) {
+                setState(() {
+                  _sensitiveSegments.addAll(delayedSegs);
+                });
+              }
+            });
+          }
+        });
+      }
+    });
   }
 
   void _loadWatchedState() async {
@@ -3048,7 +3119,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (enUrl.isNotEmpty && AppSettings.instance.enableDualSubtitlesFlag) {
           _loadSubs(enUrl, isSecondary: true);
         }
-        // فحص الترجمة الإنجليزية كخط دفاع نصي إضافي
         if (enUrl.isNotEmpty && AppSettings.instance.skipSensitiveScenes) {
           _inspectEnglishForCensorship(enUrl);
         }
@@ -3233,7 +3303,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _startTimer();
   }
 
-  // مستمع بصري ميكروي يفحص الإطارات الحية في الذاكرة لتخطي اللقطات الصامتة
   void _startChromaVisionInspector() {
     _chromaScanTimer?.cancel();
     _chromaScanTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) async {
@@ -3248,7 +3317,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
         if (boundary == null) return;
 
-        // التقاط عينة ميكروية بالغة الصغر (32x32) تستهلك 0% من طاقة الهاتف
         final image = await boundary.toImage(pixelRatio: 0.05);
         final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
 
@@ -3257,7 +3325,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
           if (isSkinAnomaly) {
             _consecutiveSkinHits++;
-            // إذا تكررت هيمنة لون البشرة لثانيتين متتاليتين في المشهد
             if (_consecutiveSkinHits >= 2) {
               _triggerChromaEvasion();
             }
@@ -3300,13 +3367,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  // زر سريع للمشرف أو المستخدم لتثبيت المشهد الحساس في قاعدة البيانات بضغطة واحدة
   void _flagCurrentSceneQuickly(bool isAr) async {
     if (_controller == null || !_controller!.value.isInitialized) return;
 
     final curSec = _controller!.value.position.inSeconds;
     final start = (curSec - 2).clamp(0, 999999);
-    final end = curSec + 25; // تقديم 25 ثانية افتراضياً
+    final end = curSec + 25;
 
     setState(() {
       _sensitiveSegments.add({'start': start, 'end': end});
@@ -3349,7 +3415,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
-    // منطق التخطي التلقائي المحكم من التوقيتات المسجلة
     if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty && !_isSeekingNow) {
       final currentSec = pos.inSeconds;
       for (var seg in _sensitiveSegments) {
@@ -3467,6 +3532,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentSubText = '';
       _currentSecondarySubText = '';
     });
+
+    _loadCloudTimestamps();
 
     final source = await StreamService.getVideoSource(epId);
     final sub = await StreamService.getVideoExtendedInfo(epId);
@@ -4179,7 +4246,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                // زر تثبيت اللقطة الحساسة للتخطي الفوري
                                 IconButton(
                                   tooltip: isAr ? 'تثبيت لقطة حساسة للتخطي' : 'Flag Sensitive Scene',
                                   icon: const Icon(Icons.shield_outlined, color: Colors.amber, size: 22),
