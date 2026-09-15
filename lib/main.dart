@@ -65,79 +65,71 @@ class SearchEngineUtils {
   }
 }
 
-class ImdbCensorEngine {
-  static String extractIdFromRaw(dynamic raw) {
-    if (raw == null) return '';
-    final str = raw.toString();
-    final match = RegExp(r'tt\d+').firstMatch(str);
-    return match?.group(0) ?? '';
-  }
+// محرك فحص المشاهد الحساسة عبر الترجمة الإنجليزية التوصيفية و Firestore
+class ContentFilterEngine {
+  static final List<String> descriptiveActionTriggers = [
+    'kiss', 'kissing', 'kisses', 'they kiss', 'make out', 'making out',
+    'moan', 'moaning', 'sex', 'sexual', 'nudity', 'naked', 'gasping softly',
+    'passionate', 'undressing', 'undress', 'sleep with', 'bed together'
+  ];
 
-  static Future<List<Map<String, int>>> extractSensitiveMarkers(String imdbId) async {
-    final cleanId = extractIdFromRaw(imdbId);
-    if (cleanId.isEmpty) return [];
-
-    try {
-      final apiUrl = Uri.parse('https://api.allorigins.win/raw?url=${Uri.encodeComponent("https://m.imdb.com/title/$cleanId/parentalguide")}&disableCache=true');
-      final res = await http.get(apiUrl, headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-      }).timeout(const Duration(seconds: 8));
-
-      if (res.statusCode == 200) {
-        final segments = _parseHtmlForTimes(res.body);
-        if (segments.isNotEmpty) return segments;
-      }
-    } catch (_) {}
-
-    try {
-      final directUrl = Uri.parse('https://m.imdb.com/title/$cleanId/parentalguide');
-      final res = await http.get(directUrl, headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'Accept-Language': 'en-US,en;q=0.9',
-      }).timeout(const Duration(seconds: 6));
-
-      if (res.statusCode == 200) {
-        final segments = _parseHtmlForTimes(res.body);
-        if (segments.isNotEmpty) return segments;
-      }
-    } catch (_) {}
-
-    return [];
-  }
-
-  static List<Map<String, int>> _parseHtmlForTimes(String html) {
+  static List<Map<String, int>> parseEnglishDescriptions(List<Subtitle> subs) {
     final List<Map<String, int>> segments = [];
 
-    final timeMatches = RegExp(r'(?:at\s+|around\s+|from\s+)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})', caseSensitive: false).allMatches(html);
-    for (final match in timeMatches) {
-      final hours = match.group(1) != null ? int.parse(match.group(1)!) : 0;
-      final minutes = int.parse(match.group(2)!);
-      final seconds = int.parse(match.group(3)!);
-      final total = (hours * 3600) + (minutes * 60) + seconds;
+    for (var s in subs) {
+      final textLower = s.text.toLowerCase();
+      // فحص الأوصاف التي تكون بين أقواس [ ] أو ( ) أو الكلمات الصريحة
+      final isDescriptive = descriptiveActionTriggers.any((word) {
+        if (textLower.contains('[$word') || 
+            textLower.contains('($word') || 
+            textLower.contains(' $word ') ||
+            textLower.contains('$word]')) {
+          return true;
+        }
+        return false;
+      });
 
-      if (total > 20) {
-        segments.add({'start': total, 'end': total + 35});
+      if (isDescriptive) {
+        final startSec = (s.start.inSeconds - 1).clamp(0, 999999);
+        final endSec = s.end.inSeconds + 8; // إضافة هامش تغطية للمشهد الصامت
+        segments.add({'start': startSec, 'end': endSec});
       }
     }
 
-    final minMatches = RegExp(r'(?:minute|min)\s+(\d{1,3})', caseSensitive: false).allMatches(html);
-    for (final m in minMatches) {
-      final minutes = int.parse(m.group(1)!);
-      final total = minutes * 60;
-      if (total > 20) {
-        segments.add({'start': total, 'end': total + 35});
-      }
-    }
+    if (segments.isEmpty) return [];
+    segments.sort((a, b) => a['start']!.compareTo(b['start']!));
 
-    final List<Map<String, int>> clean = [];
-    final Set<int> seen = {};
-    for (var s in segments) {
-      if (!seen.contains(s['start'])) {
-        seen.add(s['start']!);
-        clean.add(s);
+    final List<Map<String, int>> merged = [];
+    var current = segments.first;
+
+    for (int i = 1; i < segments.length; i++) {
+      final next = segments[i];
+      if (next['start']! <= current['end']!) {
+        current = {
+          'start': current['start']!,
+          'end': next['end']! > current['end']! ? next['end']! : current['end']!,
+        };
+      } else {
+        merged.add(current);
+        current = next;
       }
     }
-    return clean;
+    merged.add(current);
+    return merged;
+  }
+
+  static Future<List<Map<String, int>>> fetchCloudTimestamps(String mediaId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('censored_scenes').doc(mediaId).get();
+      if (doc.exists && doc.data()?['scenes'] != null) {
+        final List raw = doc.data()!['scenes'];
+        return raw.map<Map<String, int>>((e) => {
+          'start': int.tryParse(e['start'].toString()) ?? 0,
+          'end': int.tryParse(e['end'].toString()) ?? 0,
+        }).toList();
+      }
+    } catch (_) {}
+    return [];
   }
 }
 
@@ -1598,7 +1590,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             children: [
                               Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 2),
-                              const Text('4K Ultra HD', style: TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.w600)),
+                              const Text('FHD 1080p', style: TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
@@ -2297,8 +2289,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (ep['nb'] ?? ep['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
-    final rawImdb = _extendedInfo['imdbUrlRef'] ?? _extendedInfo['imdb'] ?? widget.media['imdbUrlRef'] ?? widget.media['imdb'] ?? '';
-    final imdbId = ImdbCensorEngine.extractIdFromRaw(rawImdb);
 
     LocalStorageService.markEpisodeWatched(targetId);
     _loadState();
@@ -2315,7 +2305,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           episodes: _seasonsMap[_selectedSeason] ?? [],
           currentEpIndex: idx,
           poster: poster,
-          imdbId: imdbId,
           onEpisodeChanged: (newId) {
             LocalStorageService.markEpisodeWatched(newId);
             _loadState();
@@ -2329,8 +2318,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
-    final rawImdb = _extendedInfo['imdbUrlRef'] ?? _extendedInfo['imdb'] ?? widget.media['imdbUrlRef'] ?? widget.media['imdb'] ?? '';
-    final imdbId = ImdbCensorEngine.extractIdFromRaw(rawImdb);
 
     Navigator.push(
       context,
@@ -2341,7 +2328,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
           videoUrl: '',
           qualities: const [],
           poster: poster,
-          imdbId: imdbId,
         ),
       ),
     );
@@ -2872,7 +2858,6 @@ class PlayerScreen extends StatefulWidget {
   final List<dynamic> episodes;
   final int currentEpIndex;
   final String poster;
-  final String imdbId;
   final Function(String)? onEpisodeChanged;
   final bool isLocalFile;
 
@@ -2888,7 +2873,6 @@ class PlayerScreen extends StatefulWidget {
     this.episodes = const [],
     this.currentEpIndex = 1,
     this.poster = '',
-    this.imdbId = '',
     this.onEpisodeChanged,
     this.isLocalFile = false,
   });
@@ -2969,9 +2953,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    if (widget.imdbId.isNotEmpty) {
-      _loadSensitiveSegments(widget.imdbId);
-    }
+    // جلب أي توقيتات سحابية مجهزة مسبقاً لهذا الفيلم
+    ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
+      if (cloudSegs.isNotEmpty && mounted) {
+        setState(() {
+          _sensitiveSegments.addAll(cloudSegs);
+        });
+      }
+    });
 
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
@@ -2983,26 +2972,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else {
       _currentStreamUrl = widget.videoUrl;
       _initPlayer(widget.videoUrl);
-      _loadSubtitlesDelayed(widget.subtitleUrl, widget.secondarySubtitleUrl);
-    }
-  }
-
-  void _loadSensitiveSegments(String imdbId) async {
-    final cleanId = ImdbCensorEngine.extractIdFromRaw(imdbId);
-    if (cleanId.isEmpty) return;
-
-    final segments = await ImdbCensorEngine.extractSensitiveMarkers(cleanId);
-    if (mounted) {
-      setState(() => _sensitiveSegments = segments);
-      if (segments.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('تم تفعيل الحماية: تم رصد ${segments.length} لقطة حساسة لتخطيها 🛡️'),
-            backgroundColor: Colors.green[800],
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      _loadSubtitlesPipeline(widget.subtitleUrl, widget.secondarySubtitleUrl);
     }
   }
 
@@ -3041,23 +3011,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
-      _loadSubtitlesDelayed(subAr, subEn);
-
-      final rawImdb = subInfo?['imdbUrlRef'] ?? subInfo?['imdb'] ?? widget.imdbId;
-      final cleanImdb = ImdbCensorEngine.extractIdFromRaw(rawImdb);
-      if (cleanImdb.isNotEmpty) {
-        _loadSensitiveSegments(cleanImdb);
-      }
+      _loadSubtitlesPipeline(subAr, subEn);
     }
   }
 
-  void _loadSubtitlesDelayed(String arUrl, String enUrl) {
+  // تمرير مسارات الترجمة: العربية تُعرض، والإنجليزية تُفحص في الخلفية للرصد
+  void _loadSubtitlesPipeline(String arUrl, String enUrl) {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
-        if (arUrl.isNotEmpty) _loadSubs(arUrl, isSecondary: false);
-        if (enUrl.isNotEmpty) _loadSubs(enUrl, isSecondary: true);
+        // 1. تحميل الترجمة العربية للمشاهدة
+        if (arUrl.isNotEmpty) {
+          _loadSubs(arUrl, isSecondary: false);
+        }
+
+        // 2. إذا كانت خاصية الترجمة المزدوجة مفعلة، تظهر الإنجليزية أيضاً
+        if (enUrl.isNotEmpty && AppSettings.instance.enableDualSubtitlesFlag) {
+          _loadSubs(enUrl, isSecondary: true);
+        }
+
+        // 3. فحص الترجمة الإنجليزية في الخلفية للبحث عن أوصاف المشاهد الحساسة والقبلات الصامتة
+        if (enUrl.isNotEmpty && AppSettings.instance.skipSensitiveScenes) {
+          _inspectEnglishForCensorship(enUrl);
+        }
       }
     });
+  }
+
+  // فحص صامت للملف الإنجليزي لاستخراج توقيتات اللقطات الحساسة تلقائياً
+  void _inspectEnglishForCensorship(String enUrl) async {
+    try {
+      final res = await http.get(Uri.parse(enUrl), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200 && mounted) {
+        String decodedText;
+        try {
+          decodedText = utf8.decode(res.bodyBytes);
+        } catch (_) {
+          decodedText = latin1.decode(res.bodyBytes);
+        }
+
+        final parsedEn = _parseSrt(decodedText);
+        final detected = ContentFilterEngine.parseEnglishDescriptions(parsedEn);
+
+        if (detected.isNotEmpty && mounted) {
+          setState(() {
+            _sensitiveSegments.addAll(detected);
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   void _loadSubs(String url, {required bool isSecondary}) async {
@@ -3248,22 +3249,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
+    // منطق التخطي التلقائي المحكم للقطات الحساسة
     if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty) {
       final currentSec = pos.inSeconds;
       for (var seg in _sensitiveSegments) {
         final start = seg['start']!;
         final end = seg['end']!;
 
-        if (currentSec >= start && currentSec < end && currentSec != _lastSkippedSecond) {
-          _lastSkippedSecond = currentSec;
-          _controller!.seekTo(Duration(seconds: end + 1));
-          HapticFeedback.mediumImpact();
+        if (currentSec >= start && currentSec < end && _lastSkippedSecond != start) {
+          _lastSkippedSecond = start;
+          ctrl.seekTo(Duration(seconds: end + 1));
+          HapticFeedback.heavyImpact();
+
           if (mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('تم تجاوز مشهد غير لائق تلقائياً 🛡️'),
-                duration: Duration(seconds: 2),
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.shield_rounded, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      AppSettings.instance.appLanguage == 'ar'
+                          ? 'تم تجاوز لقطة غير لائقة تلقائياً 🛡️'
+                          : 'Inappropriate scene auto-skipped 🛡️',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
                 backgroundColor: AppColors.primaryDark,
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
               ),
             );
           }
@@ -3272,6 +3288,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
+    // مطابقة وعرض الترجمة العربية
     if (_subtitles.isNotEmpty) {
       String matchedText = '';
       for (var s in _subtitles) {
@@ -3286,6 +3303,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
+    // مطابقة الترجمة الثانوية في حال تم تفعيلها
     if (AppSettings.instance.enableDualSubtitlesFlag && _secondarySubtitles.isNotEmpty) {
       String matchedText2 = '';
       for (var s in _secondarySubtitles) {
@@ -3352,6 +3370,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _showAutoNext = false;
       _subtitles.clear();
       _secondarySubtitles.clear();
+      _sensitiveSegments.clear();
       _currentSubText = '';
       _currentSecondarySubText = '';
     });
@@ -3371,7 +3390,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _initPlayer(source['video_url']);
       final path = sub['arTranslationFilePath']?.toString() ?? '';
       final pathEn = sub['enTranslationFilePath']?.toString() ?? '';
-      _loadSubtitlesDelayed(path, pathEn);
+      _loadSubtitlesPipeline(path, pathEn);
     }
   }
 
