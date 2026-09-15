@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:ui';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -1498,7 +1499,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1529,7 +1530,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
