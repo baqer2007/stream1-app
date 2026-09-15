@@ -78,48 +78,66 @@ class ImdbCensorEngine {
     if (cleanId.isEmpty) return [];
 
     try {
-      final url = Uri.parse('https://www.imdb.com/title/$cleanId/parentalguide');
-      final res = await http.get(url, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
+      final apiUrl = Uri.parse('https://api.allorigins.win/raw?url=${Uri.encodeComponent("https://m.imdb.com/title/$cleanId/parentalguide")}&disableCache=true');
+      final res = await http.get(apiUrl, headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
       }).timeout(const Duration(seconds: 8));
 
-      if (res.statusCode != 200) return [];
-      final doc = html_parser.parse(res.body);
-      final nuditySection = doc.getElementById('advisories-nudity');
-      if (nuditySection == null) return [];
-
-      final text = nuditySection.text;
-      final List<Map<String, int>> segments = [];
-
-      final timeRegex = RegExp(r'(?:at\s+|around\s+)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})', caseSensitive: false);
-      for (final match in timeRegex.allMatches(text)) {
-        final hours = match.group(1) != null ? int.parse(match.group(1)!) : 0;
-        final minutes = int.parse(match.group(2)!);
-        final seconds = int.parse(match.group(3)!);
-        final total = (hours * 3600) + (minutes * 60) + seconds;
-        segments.add({'start': total, 'end': total + 30});
+      if (res.statusCode == 200) {
+        final segments = _parseHtmlForTimes(res.body);
+        if (segments.isNotEmpty) return segments;
       }
+    } catch (_) {}
 
-      final minRegex = RegExp(r'(?:minute|min)\s+(\d{1,3})', caseSensitive: false);
-      for (final m in minRegex.allMatches(text)) {
-        final minutes = int.parse(m.group(1)!);
-        final total = minutes * 60;
+    try {
+      final directUrl = Uri.parse('https://m.imdb.com/title/$cleanId/parentalguide');
+      final res = await http.get(directUrl, headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }).timeout(const Duration(seconds: 6));
+
+      if (res.statusCode == 200) {
+        final segments = _parseHtmlForTimes(res.body);
+        if (segments.isNotEmpty) return segments;
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  static List<Map<String, int>> _parseHtmlForTimes(String html) {
+    final List<Map<String, int>> segments = [];
+
+    final timeMatches = RegExp(r'(?:at\s+|around\s+|from\s+)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})', caseSensitive: false).allMatches(html);
+    for (final match in timeMatches) {
+      final hours = match.group(1) != null ? int.parse(match.group(1)!) : 0;
+      final minutes = int.parse(match.group(2)!);
+      final seconds = int.parse(match.group(3)!);
+      final total = (hours * 3600) + (minutes * 60) + seconds;
+
+      if (total > 20) {
         segments.add({'start': total, 'end': total + 35});
       }
-
-      final List<Map<String, int>> clean = [];
-      final Set<int> seen = {};
-      for (var s in segments) {
-        if (!seen.contains(s['start'])) {
-          seen.add(s['start']!);
-          clean.add(s);
-        }
-      }
-      return clean;
-    } catch (_) {
-      return [];
     }
+
+    final minMatches = RegExp(r'(?:minute|min)\s+(\d{1,3})', caseSensitive: false).allMatches(html);
+    for (final m in minMatches) {
+      final minutes = int.parse(m.group(1)!);
+      final total = minutes * 60;
+      if (total > 20) {
+        segments.add({'start': total, 'end': total + 35});
+      }
+    }
+
+    final List<Map<String, int>> clean = [];
+    final Set<int> seen = {};
+    for (var s in segments) {
+      if (!seen.contains(s['start'])) {
+        seen.add(s['start']!);
+        clean.add(s);
+      }
+    }
+    return clean;
   }
 }
 
@@ -1785,7 +1803,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                               borderRadius: BorderRadius.circular(AppRadius.card),
                               border: Border.all(
                                 color: hasFocus ? AppColors.primary : s.border,
-                                width: hasFocus ? 2.0 : 0.5,
+                                width: 2.0,
                               ),
                             ),
                             child: ClipRRect(
@@ -2714,7 +2732,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: hasFocus ? AppColors.primary : s.border,
-                                    width: hasFocus ? 2.0 : 0.5,
+                                    width: 2.0,
                                   ),
                                 ),
                                 child: InkWell(
@@ -2974,8 +2992,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (cleanId.isEmpty) return;
 
     final segments = await ImdbCensorEngine.extractSensitiveMarkers(cleanId);
-    if (mounted && segments.isNotEmpty) {
+    if (mounted) {
       setState(() => _sensitiveSegments = segments);
+      if (segments.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم تفعيل الحماية: تم رصد ${segments.length} لقطة حساسة لتخطيها 🛡️'),
+            backgroundColor: Colors.green[800],
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
