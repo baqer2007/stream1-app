@@ -19,7 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'google_fonts/google_fonts.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
@@ -2123,7 +2123,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(border: Border.all(color: s.border, width: 0.8), borderRadius: BorderRadius.circular(4)),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: min(2, 2),
                       children: [
                         Text('IMDb', style: TextStyle(color: s.textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
                         const SizedBox(width: 4),
@@ -2216,19 +2216,31 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     _loadState();
     _loadFullData();
     _loadSimilar();
-    _triggerCloudCensorSync();
     if (_isSeries) _loadEpisodes();
   }
 
   void _triggerCloudCensorSync() {
     final mediaId = (widget.media['nb'] ?? widget.media['id'])?.toString() ?? '';
-    final enTitle = widget.media['en_title']?.toString() ?? widget.media['ar_title']?.toString() ?? '';
-    final imdbId = widget.media['imdb_id']?.toString() ?? widget.media['imdb']?.toString();
+    
+    String titleForSlug = (_extendedInfo['en_title'] ?? widget.media['en_title'] ?? '').toString().trim();
+    if (titleForSlug.isEmpty) {
+      titleForSlug = (_extendedInfo['ar_title'] ?? widget.media['ar_title'] ?? '').toString().trim();
+    }
 
-    if (mediaId.isNotEmpty && enTitle.isNotEmpty) {
+    titleForSlug = titleForSlug
+        .replaceAll(RegExp(r'\(\d{4}\)|\b\d{4}\b'), '')
+        .replaceAll(RegExp(r'[\-_:\.\(\)\[\]]'), ' ')
+        .trim();
+
+    final imdbId = (_extendedInfo['imdb_id'] ?? 
+                    _extendedInfo['imdb'] ?? 
+                    widget.media['imdb_id'] ?? 
+                    widget.media['imdb'])?.toString();
+
+    if (mediaId.isNotEmpty && titleForSlug.isNotEmpty) {
       ContentFilterEngine.triggerBackendScan(
         mediaId: mediaId,
-        titleEn: enTitle,
+        titleEn: titleForSlug,
         imdbId: imdbId,
       );
     }
@@ -2265,6 +2277,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         _extendedInfo = info;
         _realActors = actorsList;
       });
+
+      _triggerCloudCensorSync();
     }
   }
 
