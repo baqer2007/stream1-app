@@ -26,6 +26,21 @@ class StreamService {
         for (var item in list) {
           item['is_series_fixed'] = isSeries;
         }
+
+        if (level == 2) {
+          return list.where((item) {
+            final title = ((item['ar_title'] ?? '') + (item['en_title'] ?? '')).toString().toLowerCase();
+            final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
+            return cats.contains('animation') || cats.contains('family') || cats.contains('رسوم') ||
+                   title.contains('moana') || title.contains('zenon') || title.contains('كرتون');
+          }).toList();
+        } else if (level == 1) {
+          return list.where((item) {
+            final cats = (item['categories'] is List) ? jsonEncode(item['categories']).toLowerCase() : '';
+            return !cats.contains('horror') && !cats.contains('رعب');
+          }).toList();
+        }
+
         return list;
       }
     } catch (_) {}
@@ -70,53 +85,78 @@ class StreamService {
             if (en.contains(target) || ar.contains(target)) return true;
           }
         }
+        if (target == 'horror' || target == 'رعب') {
+          final en = (item['en_title'] ?? '').toString().toLowerCase();
+          final ar = (item['ar_title'] ?? '').toString().toLowerCase();
+          final desc = ((item['ar_content'] ?? '') + (item['en_content'] ?? '')).toString().toLowerCase();
+          if (en.contains('horror') || ar.contains('رعب') || en.contains('ghost') || en.contains('dead') ||
+              en.contains('evil') || en.contains('blood') || desc.contains('رعب') || desc.contains('خارق') ||
+              desc.contains('أشباح') || desc.contains('موتى') || desc.contains('شياطين') || desc.contains('وحش')) {
+            return true;
+          }
+        }
         return false;
       }).toList();
     } catch (_) {}
     return [];
   }
 
-  /// مسار البحث الرسمي المباشر لموقع cee.buzz
+  /// مسار البحث المباشر المطابق لنظام cee.buzz
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     final cleanQ = query.trim();
     if (cleanQ.isEmpty) return [];
 
-    // المحاولة الأولى: مسار البحث المباشر videoTitle
+    final enc = Uri.encodeComponent(cleanQ);
+
+    // 1. المسار الحي الداخلي للبحث في cee
     try {
-      final enc = Uri.encodeComponent(cleanQ);
-      final url = 'https://cee.buzz/api/android/video/videoTitle/$enc/level/$level';
+      final url = 'https://cee.buzz/api/search/live?query=$enc';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? data['results'] ?? []);
+        List list = (data is List) ? data : (data['results'] ?? data['data'] ?? []);
         if (list.isNotEmpty) return list;
       }
     } catch (_) {}
 
-    // المحاولة الثانية: مسار video_title_search
+    // 2. مسار البحث المباشر videoTitle
     try {
-      final enc = Uri.encodeComponent(cleanQ);
-      final url2 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$enc/pageNumber/0/level/$level';
+      final url2 = 'https://cee.buzz/api/android/video/videoTitle/$enc/level/$level';
       final res2 = await http.get(Uri.parse(url2), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res2.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res2.bodyBytes, allowMalformed: true));
         List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? data['results'] ?? []);
-        if (list.isNotEmpty) return list;
+
+        final matched = list.where((it) {
+          final tAr = (it['ar_title'] ?? '').toString().toLowerCase();
+          final tEn = (it['en_title'] ?? '').toString().toLowerCase();
+          final qLower = cleanQ.toLowerCase();
+          return tAr.contains(qLower) || tEn.contains(qLower);
+        }).toList();
+
+        if (matched.isNotEmpty) return matched;
       }
     } catch (_) {}
 
-    // المحاولة الثالثة: عبر Base64
+    // 3. مسار البحث المتقدم video_title_search
     try {
-      final b64 = base64.encode(utf8.encode(cleanQ));
-      final url3 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$b64/pageNumber/0/level/$level';
+      final url3 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$enc/pageNumber/0/level/$level';
       final res3 = await http.get(Uri.parse(url3), headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (res3.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res3.bodyBytes, allowMalformed: true));
         List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? data['results'] ?? []);
-        if (list.isNotEmpty) return list;
+
+        final matched = list.where((it) {
+          final tAr = (it['ar_title'] ?? '').toString().toLowerCase();
+          final tEn = (it['en_title'] ?? '').toString().toLowerCase();
+          final qLower = cleanQ.toLowerCase();
+          return tAr.contains(qLower) || tEn.contains(qLower);
+        }).toList();
+
+        if (matched.isNotEmpty) return matched;
       }
     } catch (_) {}
 
