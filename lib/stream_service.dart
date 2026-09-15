@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 
 class StreamService {
   static const Map<String, String> stealthHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Connection': 'keep-alive',
     'Referer': 'https://cee.buzz/',
@@ -101,62 +101,24 @@ class StreamService {
     return [];
   }
 
-  /// مسار البحث المباشر المطابق لنظام cee.buzz
+  /// مسار البحث الرسمي المأخوذ من فحص الشبكة
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     final cleanQ = query.trim();
     if (cleanQ.isEmpty) return [];
 
-    final enc = Uri.encodeComponent(cleanQ);
-
-    // 1. المسار الحي الداخلي للبحث في cee
     try {
-      final url = 'https://cee.buzz/api/search/live?query=$enc';
-      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 8));
+      // 1. تشفير Base64 وحذف علامات التساوي ليتطابق مع طلب المتصفح
+      String b64 = base64.encode(utf8.encode(cleanQ)).replaceAll('=', '');
+
+      // 2. الرابط المباشر الرسمي من فحص الشبكة
+      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/$level';
+
+      final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
         dynamic data = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-        List list = (data is List) ? data : (data['results'] ?? data['data'] ?? []);
-        if (list.isNotEmpty) return list;
-      }
-    } catch (_) {}
-
-    // 2. مسار البحث المباشر videoTitle
-    try {
-      final url2 = 'https://cee.buzz/api/android/video/videoTitle/$enc/level/$level';
-      final res2 = await http.get(Uri.parse(url2), headers: stealthHeaders).timeout(const Duration(seconds: 8));
-
-      if (res2.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res2.bodyBytes, allowMalformed: true));
-        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? data['results'] ?? []);
-
-        final matched = list.where((it) {
-          final tAr = (it['ar_title'] ?? '').toString().toLowerCase();
-          final tEn = (it['en_title'] ?? '').toString().toLowerCase();
-          final qLower = cleanQ.toLowerCase();
-          return tAr.contains(qLower) || tEn.contains(qLower);
-        }).toList();
-
-        if (matched.isNotEmpty) return matched;
-      }
-    } catch (_) {}
-
-    // 3. مسار البحث المتقدم video_title_search
-    try {
-      final url3 = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/50/video_title_search/$enc/pageNumber/0/level/$level';
-      final res3 = await http.get(Uri.parse(url3), headers: stealthHeaders).timeout(const Duration(seconds: 8));
-
-      if (res3.statusCode == 200) {
-        dynamic data = jsonDecode(utf8.decode(res3.bodyBytes, allowMalformed: true));
-        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? data['results'] ?? []);
-
-        final matched = list.where((it) {
-          final tAr = (it['ar_title'] ?? '').toString().toLowerCase();
-          final tEn = (it['en_title'] ?? '').toString().toLowerCase();
-          final qLower = cleanQ.toLowerCase();
-          return tAr.contains(qLower) || tEn.contains(qLower);
-        }).toList();
-
-        if (matched.isNotEmpty) return matched;
+        List list = (data is List) ? data : (data['articles'] ?? data['info'] ?? []);
+        return list;
       }
     } catch (_) {}
 
