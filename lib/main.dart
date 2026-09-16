@@ -33,6 +33,7 @@ class SecureHttpOverrides extends HttpOverrides {
   HttpClient createHttpClient(SecurityContext? context) {
     final client = super.createHttpClient(context);
     client.connectionTimeout = const Duration(seconds: 15);
+    client.findProxy = (uri) => 'DIRECT';
     client.badCertificateCallback = (X509Certificate cert, String host, int port) {
       if (kReleaseMode) return false;
       return true;
@@ -1246,7 +1247,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                           borderRadius: BorderRadius.circular(AppRadius.card),
                           border: Border.all(
                             color: hasFocus ? AppColors.primary : s.border,
-                            width: hasFocus ? 2.0 : 0.5,
+                            width: 2.0,
                           ),
                         ),
                         child: ClipRRect(
@@ -1820,7 +1821,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1851,7 +1852,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -4898,7 +4899,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     setState(() => _isTestingPing = true);
     final results = <String, int>{};
 
-    // 1. اختبار استجابة سيرفر Cee
     final sw1 = Stopwatch()..start();
     try {
       await http.get(Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/1/level/0/videoKind/1/sortParam/desc/pageNumber/0'), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 5));
@@ -4908,7 +4908,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       results['Cee Stream Primary'] = 9999;
     }
 
-    // 2. اختبار محرك الفلترة على Render
     final sw2 = Stopwatch()..start();
     try {
       await http.get(Uri.parse(ContentFilterEngine.serverBaseUrl)).timeout(const Duration(seconds: 5));
@@ -4918,7 +4917,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       results['Censor Engine API'] = 9999;
     }
 
-    // 3. اختبار قاعدة بيانات Firestore
     final sw3 = Stopwatch()..start();
     try {
       await FirebaseFirestore.instance.collection('app_config').doc('global_settings').get();
@@ -5054,7 +5052,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         body: TabBarView(
           controller: _tabCtrl,
           children: [
-            // 1. التحكم العام والإعلانات
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5176,7 +5173,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // 2. فحص سرعة وحالة السيرفرات والشبكة
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5263,7 +5259,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // 3. فحص وإدارة المشاهد الحساسة
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5341,7 +5336,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // 4. الإحصائيات وبلاغات المستخدمين
             _isLoadingStats
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
                 : ListView(
