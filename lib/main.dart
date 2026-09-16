@@ -502,7 +502,7 @@ class AppSettings extends ChangeNotifier {
   int appFilterMode = 0;
   String appLanguage = 'ar';
   String selectedFont = 'iPhone';
-  autoSmartDownload = false;
+  bool autoSmartDownload = false;
   bool smartNotifications = true;
   bool tvModeEnabled = false;
 
@@ -2597,7 +2597,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     Positioned(
                       bottom: 12, left: 16, right: 16,
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisSize: dynamic>min,
                         children: [
                           Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 6),
@@ -3062,7 +3062,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadLayeredTimestamps() async {
-    // الطبقة 1: فحص سيرفرات cee الرسمية أولاً
     final ceeSegs = await StreamService.fetchCeeSkippingDurations(_activeMediaId);
     if (ceeSegs.isNotEmpty && mounted) {
       setState(() {
@@ -3071,7 +3070,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       return;
     }
 
-    // الطبقة 2: التوجه لقاعدة البيانات السحابية Firestore في حال عدم توفرها في cee
     final cloudSegs = await ContentFilterEngine.fetchCloudTimestamps(_activeMediaId);
     if (cloudSegs.isNotEmpty && mounted) {
       setState(() {
@@ -3119,7 +3117,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       String targetUrl = source['video_url'] ?? '';
       if (qualitiesList.isNotEmpty) {
-        // تحديد دقة 360p كخيار افتراضي أولي
         final preferred = qualitiesList.firstWhere(
           (q) => (q['resolution'] ?? '').toString().contains('360'),
           orElse: () => qualitiesList.first,
@@ -3350,7 +3347,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
           if (isSkinAnomaly) {
             _consecutiveSkinHits++;
-            // اشتراط 3 ثوانٍ متتالية لمنع التخطي الخاطئ في المشاهد العادية
             if (_consecutiveSkinHits >= 3) {
               _triggerChromaEvasion();
             }
