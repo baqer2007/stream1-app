@@ -4702,7 +4702,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 : value.position.inMilliseconds.toDouble();
 
                             return Column(
-                              mainAxisSize: dynamic;
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
