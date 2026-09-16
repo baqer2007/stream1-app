@@ -1247,7 +1247,7 @@ class _FullCategoryViewState extends State<FullCategoryView> {
                           borderRadius: BorderRadius.circular(AppRadius.card),
                           border: Border.all(
                             color: hasFocus ? AppColors.primary : s.border,
-                            width: 2.0,
+                            width: hasFocus ? 2.0 : 0.5,
                           ),
                         ),
                         child: ClipRRect(
@@ -1821,7 +1821,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1852,7 +1852,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -4702,7 +4702,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 : value.position.inMilliseconds.toDouble();
 
                             return Column(
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisSize: dynamic;
                               children: [
                                 SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
