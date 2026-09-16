@@ -1,44 +1,16 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-class StreamSecurity {
-  // مفتاح تشفير عشوائي خاص بك
-  static const int _xorKey = 0x6E;
-
-  // فك التشفير في الذاكرة الحية لحظة الطلب فقط
-  static String decrypt(List<int> bytes) {
-    return String.fromCharCodes(bytes.map((b) => b ^ _xorKey));
-  }
-}
-
 class StreamService {
-  // الرابط المشفر لـ: "https://cee.buzz/api/android"
-  static final List<int> _encBaseUrl = [
-    0x4e, 0x52, 0x52, 0x56, 0x55, 0x1c, 0x49, 0x49, 
-    0x45, 0x43, 0x43, 0x08, 0x44, 0x53, 0x5c, 0x5c, 
-    0x49, 0x47, 0x56, 0x4f, 0x49, 0x47, 0x48, 0x42, 
-    0x49, 0x47, 0x4b
-  ];
+  // الرابط الرسمي والمباشر للـ API
+  static const String _baseUrl = 'https://cee.buzz/api/android';
+  static const String _cdnImages = 'https://cnth2.cee.buzz/vascin-poster-images/';
 
-  static String get _baseUrl {
-    // ينتج: https://cee.buzz/api/android
-    return StreamSecurity.decrypt([
-      42, 58, 58, 46, 45, 122, 119, 119, 57, 59, 59, 112, 56, 47, 40, 40, 119, 63, 46, 51, 119, 63, 48, 58, 44, 49, 48
-    ]);
-  }
-
-  static String get _cdnImages {
-    // ينتج: https://cnth2.cee.buzz/vascin-poster-images/
-    return StreamSecurity.decrypt([
-      42, 58, 58, 46, 45, 122, 119, 119, 57, 48, 58, 54, 108, 112, 57, 59, 59, 112, 56, 47, 40, 40, 119, 44, 63, 45, 57, 55, 48, 115, 46, 49, 45, 58, 59, 44, 115, 55, 47, 63, 53, 59, 45, 119
-    ]);
-  }
-
-  static final Map<String, String> stealthHeaders = {
+  static const Map<String, String> stealthHeaders = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Connection': 'keep-alive',
-    'Referer': StreamSecurity.decrypt([42, 58, 58, 46, 45, 122, 119, 119, 57, 59, 59, 112, 56, 47, 40, 40, 119]), // https://cee.buzz/
+    'Referer': 'https://cee.buzz/',
   };
 
   static Future<List<dynamic>> fetchFeed({
