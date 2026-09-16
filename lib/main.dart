@@ -26,7 +26,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'stream_service.dart';
 
 class SecureHttpOverrides extends HttpOverrides {
@@ -69,23 +68,29 @@ class ChromaVisionEngine {
   static bool analyzeFramePixels(Uint8List rgbaBytes) {
     int skinPixels = 0;
     final totalPixels = rgbaBytes.length ~/ 4;
-    if (totalPixels == 0) return false;
+    if (totalPixels < 100) return false;
 
     for (int i = 0; i < rgbaBytes.length; i += 4) {
       final r = rgbaBytes[i];
       final g = rgbaBytes[i + 1];
       final b = rgbaBytes[i + 2];
 
-      if (r > 95 && g > 40 && b > 20 &&
+      final cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      final cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+
+      final bool isSkinYCbCr = (cb >= 77 && cb <= 127) && (cr >= 133 && cr <= 173);
+      final bool isSkinRGB = (r > 95 && g > 40 && b > 20) &&
           (r - g).abs() > 15 &&
-          r > g && r > b &&
-          (r - b) > 15) {
+          (r > g && r > b) &&
+          (r - b) > 15;
+
+      if (isSkinYCbCr || isSkinRGB) {
         skinPixels++;
       }
     }
 
-    final ratio = skinPixels / totalPixels;
-    return ratio > 0.48;
+    final double ratio = skinPixels / totalPixels;
+    return ratio > 0.45;
   }
 }
 
@@ -1524,7 +1529,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1555,7 +1560,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
+                      width: 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -3043,7 +3048,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    _loadCloudTimestamps();
+    _loadCombinedTimestamps();
 
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
@@ -3059,7 +3064,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _loadCloudTimestamps() {
+  void _loadCombinedTimestamps() {
+    // 1. استدعاء فوري لسيرفر cee الرسمي لجلب فترات التخطي المطابقة لنسخة الفيديو
+    StreamService.fetchCeeSkippingDurations(_activeMediaId).then((ceeSegs) {
+      if (ceeSegs.isNotEmpty && mounted) {
+        setState(() {
+          _sensitiveSegments.addAll(ceeSegs);
+        });
+      }
+    });
+
+    // 2. بالتوازي: جلب الفترات المسجلة في Firestore أو طلب مسح إضافي
     ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
       if (cloudSegs.isNotEmpty && mounted) {
         setState(() {
@@ -3331,7 +3346,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
         if (boundary == null) return;
 
-        final image = await boundary.toImage(pixelRatio: 0.05);
+        final image = await boundary.toImage(pixelRatio: 0.04);
         final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
 
         if (byteData != null) {
@@ -3350,12 +3365,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  void _triggerChromaEvasion() {
+  void _triggerChromaEvasion() async {
     if (_controller == null || _isSeekingNow) return;
     _isSeekingNow = true;
     _consecutiveSkinHits = 0;
 
-    final target = _controller!.value.position + const Duration(seconds: 18);
+    final curSec = _controller!.value.position.inSeconds;
+    final startSec = (curSec - 2).clamp(0, 999999);
+    final endSec = curSec + 20;
+
+    final target = Duration(seconds: endSec + 1);
     _controller!.seekTo(target > _controller!.value.duration ? _controller!.value.duration : target);
     HapticFeedback.heavyImpact();
 
@@ -3365,18 +3384,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
         const SnackBar(
           content: Row(
             children: [
-              Icon(Icons.visibility_off_rounded, color: Colors.white, size: 18),
+              Icon(Icons.remove_red_eye_outlined, color: Colors.white, size: 18),
               SizedBox(width: 8),
-              Text('تم تجاوز لقطة غير لائقة تلقائياً 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('تم رصد لقطة حساسة وتخطيها ذكياً عبر الرؤية البصرية 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
           backgroundColor: AppColors.primaryDark,
-          duration: Duration(seconds: 2),
+          duration: Duration(seconds: 3),
         ),
       );
     }
 
-    Future.delayed(const Duration(seconds: 2), () {
+    try {
+      await FirebaseFirestore.instance.collection('censored_scenes').doc(_activeMediaId).set({
+        'scenes': FieldValue.arrayUnion([{'start': startSec, 'end': endSec}])
+      }, SetOptions(merge: true));
+    } catch (_) {}
+
+    Future.delayed(const Duration(seconds: 3), () {
       _isSeekingNow = false;
     });
   }
@@ -3547,7 +3572,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentSecondarySubText = '';
     });
 
-    _loadCloudTimestamps();
+    _loadCombinedTimestamps();
 
     final source = await StreamService.getVideoSource(epId);
     final sub = await StreamService.getVideoExtendedInfo(epId);
