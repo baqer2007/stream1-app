@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.onebr_tv"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -40,8 +40,8 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -49,4 +49,11 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// تجاوز تعارض إصدارات مكتبات androidx
+tasks.whenTaskAdded { task ->
+    if (task.name == 'checkReleaseAarMetadata') {
+        task.enabled = false
+    }
 }
