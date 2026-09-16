@@ -2597,7 +2597,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     Positioned(
                       bottom: 12, left: 16, right: 16,
                       child: Column(
-                        mainAxisSize: dynamic>min,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 6),
