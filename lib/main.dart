@@ -49,15 +49,21 @@ class RemoteAdminConfig {
   String maintenanceMsg = 'التطبيق في وضع الصيانة المجدولة حالياً، يرجى المحاولة لاحقاً 🛠️';
   String globalAlert = '';
   bool globalCensorEnabled = true;
+  bool allowDownloads = true;
   String defaultGlobalQuality = '360p';
   int minAppVersion = 1;
   String updateDownloadUrl = '';
+  String customBaseUrl = '';
+  List<String> pinnedHeroIds = [];
+  List<String> blacklistedMediaIds = [];
+  String popupTitle = '';
+  String popupBody = '';
+  String popupActionUrl = '';
 
-  // قائمة الإيميلات المصرّح لها بالدخول للوحة التحكم
   static const List<String> authorizedAdminEmails = [
     'admin@onebr.tv',
     'baqer@onebr.tv',
-    'baqer2007@gmail.com', // يمكنك استبدال أو إضافة أي بريد هنا
+    'baqer2007@gmail.com',
   ];
 
   static bool isEmailAdmin(String? email) {
@@ -66,19 +72,34 @@ class RemoteAdminConfig {
   }
 
   void listenToSettings(VoidCallback onUpdate) {
-    FirebaseFirestore.instance.collection('app_config').doc('global_settings').snapshots().listen((doc) {
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        isMaintenance = data['is_maintenance'] ?? false;
-        maintenanceMsg = data['maintenance_msg'] ?? maintenanceMsg;
-        globalAlert = data['global_alert'] ?? '';
-        globalCensorEnabled = data['censor_enabled'] ?? true;
-        defaultGlobalQuality = data['default_quality'] ?? '360p';
-        minAppVersion = data['min_version'] ?? 1;
-        updateDownloadUrl = data['update_url'] ?? '';
-        onUpdate();
-      }
-    });
+    try {
+      FirebaseFirestore.instance.collection('app_config').doc('global_settings').snapshots().listen((doc) {
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          isMaintenance = data['is_maintenance'] ?? false;
+          maintenanceMsg = data['maintenance_msg'] ?? maintenanceMsg;
+          globalAlert = data['global_alert'] ?? '';
+          globalCensorEnabled = data['censor_enabled'] ?? true;
+          allowDownloads = data['allow_downloads'] ?? true;
+          defaultGlobalQuality = data['default_quality'] ?? '360p';
+          minAppVersion = data['min_version'] ?? 1;
+          updateDownloadUrl = data['update_url'] ?? '';
+          customBaseUrl = data['custom_base_url'] ?? '';
+          popupTitle = data['popup_title'] ?? '';
+          popupBody = data['popup_body'] ?? '';
+          popupActionUrl = data['popup_action_url'] ?? '';
+
+          if (data['pinned_hero_ids'] is List) {
+            pinnedHeroIds = List<String>.from(data['pinned_hero_ids']);
+          }
+          if (data['blacklisted_ids'] is List) {
+            blacklistedMediaIds = List<String>.from(data['blacklisted_ids']);
+          }
+
+          onUpdate();
+        }
+      }, onError: (_) {});
+    } catch (_) {}
   }
 }
 
@@ -295,6 +316,24 @@ class CloudSyncService {
       }
     } catch (_) {}
   }
+
+  static Future<void> reportIssue({
+    required String mediaId,
+    required String title,
+    required String reason,
+    int? positionSec,
+  }) async {
+    try {
+      await _firestore.collection('user_reports').add({
+        'media_id': mediaId,
+        'title': title,
+        'reason': reason,
+        'position_sec': positionSec,
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
+    } catch (_) {}
+  }
 }
 
 class Subtitle {
@@ -484,6 +523,8 @@ class BackgroundDownloadService {
     required String poster,
     String? subUrl,
   }) async {
+    if (!RemoteAdminConfig.instance.allowDownloads) return null;
+
     final path = await getAppStoragePath();
     final filePath = '$path/$fileName';
     final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
@@ -822,7 +863,7 @@ class MaintenanceLockScreen extends StatelessWidget {
               const Icon(Icons.build_circle_rounded, color: AppColors.primary, size: 70),
               const SizedBox(height: 20),
               Text(
-                'ONEBR TV الصيانة السحابية',
+                'ONEBR TV - وضع الصيانة السحابية',
                 style: TextStyle(color: s.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
@@ -860,6 +901,40 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   void initState() {
     super.initState();
     _requestNotificationPermission();
+    _checkAppPopup();
+  }
+
+  void _checkAppPopup() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final r = RemoteAdminConfig.instance;
+      if (r.popupTitle.isNotEmpty && r.popupBody.isNotEmpty) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: Text(r.popupTitle),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(r.popupBody),
+            ),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('إغلاق'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              if (r.popupActionUrl.isNotEmpty)
+                CupertinoDialogAction(
+                  isDefaultAction: true,
+                  child: const Text('فتح الرابط'),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    launchUrl(Uri.parse(r.popupActionUrl), mode: LaunchMode.externalApplication);
+                  },
+                ),
+            ],
+          ),
+        );
+      }
+    });
   }
 
   Future<void> _requestNotificationPermission() async {
@@ -1101,10 +1176,11 @@ class _FullCategoryViewState extends State<FullCategoryView> {
       }
     }
 
+    final blacklisted = RemoteAdminConfig.instance.blacklistedMediaIds.toSet();
     final List<dynamic> deduplicated = [];
     for (var it in fresh) {
       final id = (it['nb'] ?? it['id'])?.toString();
-      if (id != null && !_unique.contains(id)) {
+      if (id != null && !_unique.contains(id) && !blacklisted.contains(id)) {
         _unique.add(id);
         deduplicated.add(it);
       }
@@ -1261,22 +1337,20 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
     if (_adminClickCount >= 5) {
       _adminClickCount = 0;
-      _triggerAdminAccess();
+      _triggerAdminEmailAuth();
     }
   }
 
-  void _triggerAdminAccess() {
+  void _triggerAdminEmailAuth() {
     final s = AppSettings.instance;
     final isAr = s.appLanguage == 'ar';
 
-    // 1. إذا كان المستخدم مسجل دخوله مسبقاً ببريد الأدمن المصرح به
     if (RemoteAdminConfig.isEmailAdmin(s.userEmail)) {
       HapticFeedback.heavyImpact();
       Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboardScreen()));
       return;
     }
 
-    // 2. إذا لم يكن مسجلاً، تُعرض نافذة الدخول المباشر المخصصة للمسؤولين
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
 
@@ -1290,7 +1364,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isAr ? 'يرجى إدخال بريد الأدمن المعتمد وكلمة المرور' : 'Enter authorized admin email & password',
+                isAr ? 'أدخل البريد المعتمد للأدمن وكلمة المرور' : 'Enter authorized admin email & password',
                 style: const TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 10),
@@ -1323,7 +1397,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               if (!RemoteAdminConfig.isEmailAdmin(email)) {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(isAr ? 'هذا البريد غير مدرج ضمن قائمة المسؤولين المصرح لهم' : 'Unauthorized admin email')),
+                  SnackBar(content: Text(isAr ? 'هذا البريد غير مصرّح له بالدخول كمسؤول' : 'Unauthorized admin email')),
                 );
                 return;
               }
@@ -1339,7 +1413,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               } catch (e) {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(isAr ? 'خطأ في المصادقة: $e' : 'Auth error: $e')),
+                  SnackBar(content: Text(isAr ? 'فشل التحقق: تأكد من صحة البريد وكلمة المرور' : 'Auth failed: Check email & password')),
                 );
               }
             },
@@ -1355,6 +1429,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     _uniqueIds.clear();
 
     final level = AppSettings.instance.appFilterMode;
+    final blacklisted = RemoteAdminConfig.instance.blacklistedMediaIds.toSet();
 
     try {
       final res = await Future.wait([
@@ -1363,11 +1438,19 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         StreamService.fetchByCategoryName('action', page: 0, level: level),
       ]);
 
-      final allMovies = res[0];
-      final allSeries = res[1];
-      final actionList = res[2];
+      final allMovies = res[0].where((x) => !blacklisted.contains((x['nb'] ?? x['id']).toString())).toList();
+      final allSeries = res[1].where((x) => !blacklisted.contains((x['nb'] ?? x['id']).toString())).toList();
+      final actionList = res[2].where((x) => !blacklisted.contains((x['nb'] ?? x['id']).toString())).toList();
 
-      final hero = allMovies.take(5).toList();
+      List<dynamic> hero = [];
+      final pinned = RemoteAdminConfig.instance.pinnedHeroIds;
+      if (pinned.isNotEmpty) {
+        hero = allMovies.where((x) => pinned.contains((x['nb'] ?? x['id']).toString())).toList();
+      }
+      if (hero.isEmpty) {
+        hero = allMovies.take(5).toList();
+      }
+
       final heroIds = hero.map((e) => (e['nb'] ?? e['id']).toString()).toSet();
 
       final featured = allMovies.where((it) {
@@ -1406,6 +1489,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   Future<void> _fetchMore() async {
     setState(() => _isLoadingMore = true);
     final level = AppSettings.instance.appFilterMode;
+    final blacklisted = RemoteAdminConfig.instance.blacklistedMediaIds.toSet();
 
     final res = await Future.wait([
       StreamService.fetchFeed(isSeries: false, page: _page, perPage: 16, level: level),
@@ -1416,7 +1500,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     final List<dynamic> deduplicated = [];
     for (var it in fresh) {
       final id = (it['nb'] ?? it['id'])?.toString();
-      if (id != null && !_uniqueIds.contains(id)) {
+      if (id != null && !_uniqueIds.contains(id) && !blacklisted.contains(id)) {
         _uniqueIds.add(id);
         deduplicated.add(it);
       }
@@ -2628,6 +2712,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   void _showDownloadQualityPicker(String targetId, String title, String poster, bool isAr) async {
     final s = AppSettings.instance;
+    if (!RemoteAdminConfig.instance.allowDownloads) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(isAr ? 'التنزيل معطل مؤقتاً من قبل الإدارة' : 'Downloads are temporarily disabled')),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -3611,6 +3702,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
+  void _showReportDialog(bool isAr) {
+    final reasonCtrl = TextEditingController();
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(isAr ? 'الإبلاغ عن مشكلة ⚠️' : 'Report an Issue ⚠️'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(isAr ? 'صف المشكلة (رابط تالف، لقطة لم تُحجب، ترجمة غير متطابقة)' : 'Describe problem (dead link, missed scene, subtitle issue)'),
+              const SizedBox(height: 8),
+              CupertinoTextField(
+                controller: reasonCtrl,
+                placeholder: isAr ? 'تفاصيل البلاغ...' : 'Report details...',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(child: Text(isAr ? 'إلغاء' : 'Cancel'), onPressed: () => Navigator.pop(ctx)),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: Text(isAr ? 'إرسال' : 'Submit'),
+            onPressed: () async {
+              if (reasonCtrl.text.trim().isNotEmpty) {
+                final pos = _controller?.value.position.inSeconds;
+                await CloudSyncService.reportIssue(
+                  mediaId: _activeMediaId,
+                  title: widget.title,
+                  reason: reasonCtrl.text.trim(),
+                  positionSec: pos,
+                );
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(isAr ? 'تم إرسال بلاغك للإدارة بنجاح، شكراً لمساعدتك!' : 'Report sent successfully!')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   void _videoPlayerListener() {
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized) return;
@@ -4005,6 +4142,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       Divider(color: settings.border, height: 1),
                     ],
+                    ListTile(
+                      leading: Icon(Icons.report_problem_rounded, color: Colors.amber),
+                      title: Text(isAr ? 'الإبلاغ عن خلل في هذا العمل' : 'Report an issue with this media', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showReportDialog(isAr);
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.speed_rounded, color: settings.textSecondary),
                       title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -4657,33 +4803,47 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
 
-  // إعدادات التطبيق العامة
   final _alertCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
   final _minVerCtrl = TextEditingController();
   final _apkUrlCtrl = TextEditingController();
+  final _customUrlCtrl = TextEditingController();
+  final _pinnedHeroesCtrl = TextEditingController();
+  final _blacklistCtrl = TextEditingController();
+  final _popupTitleCtrl = TextEditingController();
+  final _popupBodyCtrl = TextEditingController();
+  final _popupUrlCtrl = TextEditingController();
+
   bool _maintenance = false;
   bool _censorActive = true;
+  bool _allowDownloads = true;
   String _selectedDefaultQuality = '360p';
 
-  // إضافة وحذف المشاهد الحساسة
   final _mediaIdCtrl = TextEditingController();
   final _startSecCtrl = TextEditingController();
   final _endSecCtrl = TextEditingController();
   List<Map<String, dynamic>> _loadedScenesForMedia = [];
   bool _isSearchingScenes = false;
 
-  // إحصائيات سحابية
   int _totalUsersCount = 0;
   int _totalCensoredDocsCount = 0;
+  int _totalReportsCount = 0;
   bool _isLoadingStats = true;
+
+  Map<String, int> _serverLatencies = {
+    'Cee Stream Primary': -1,
+    'Censor Engine API': -1,
+    'Firestore Database': -1,
+  };
+  bool _isTestingPing = false;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     _loadCurrentConfig();
     _loadCloudStats();
+    _testServerPings();
   }
 
   void _loadCurrentConfig() async {
@@ -4693,11 +4853,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       setState(() {
         _maintenance = d['is_maintenance'] ?? false;
         _censorActive = d['censor_enabled'] ?? true;
+        _allowDownloads = d['allow_downloads'] ?? true;
         _selectedDefaultQuality = d['default_quality'] ?? '360p';
         _alertCtrl.text = d['global_alert'] ?? '';
         _msgCtrl.text = d['maintenance_msg'] ?? '';
         _minVerCtrl.text = (d['min_version'] ?? 1).toString();
         _apkUrlCtrl.text = d['update_url'] ?? '';
+        _customUrlCtrl.text = d['custom_base_url'] ?? '';
+        _popupTitleCtrl.text = d['popup_title'] ?? '';
+        _popupBodyCtrl.text = d['popup_body'] ?? '';
+        _popupUrlCtrl.text = d['popup_action_url'] ?? '';
+
+        if (d['pinned_hero_ids'] is List) {
+          _pinnedHeroesCtrl.text = (d['pinned_hero_ids'] as List).join(',');
+        }
+        if (d['blacklisted_ids'] is List) {
+          _blacklistCtrl.text = (d['blacklisted_ids'] as List).join(',');
+        }
       });
     }
   }
@@ -4707,11 +4879,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     try {
       final usersSnap = await FirebaseFirestore.instance.collection('users').count().get();
       final censorSnap = await FirebaseFirestore.instance.collection('censored_scenes').count().get();
+      final reportsSnap = await FirebaseFirestore.instance.collection('user_reports').count().get();
 
       if (mounted) {
         setState(() {
           _totalUsersCount = usersSnap.count ?? 0;
           _totalCensoredDocsCount = censorSnap.count ?? 0;
+          _totalReportsCount = reportsSnap.count ?? 0;
           _isLoadingStats = false;
         });
       }
@@ -4720,21 +4894,73 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     }
   }
 
+  void _testServerPings() async {
+    setState(() => _isTestingPing = true);
+    final results = <String, int>{};
+
+    // 1. اختبار استجابة سيرفر Cee
+    final sw1 = Stopwatch()..start();
+    try {
+      await http.get(Uri.parse('https://cee.buzz/api/android/video/V/2/itemsPerPage/1/level/0/videoKind/1/sortParam/desc/pageNumber/0'), headers: StreamService.stealthHeaders).timeout(const Duration(seconds: 5));
+      sw1.stop();
+      results['Cee Stream Primary'] = sw1.elapsedMilliseconds;
+    } catch (_) {
+      results['Cee Stream Primary'] = 9999;
+    }
+
+    // 2. اختبار محرك الفلترة على Render
+    final sw2 = Stopwatch()..start();
+    try {
+      await http.get(Uri.parse(ContentFilterEngine.serverBaseUrl)).timeout(const Duration(seconds: 5));
+      sw2.stop();
+      results['Censor Engine API'] = sw2.elapsedMilliseconds;
+    } catch (_) {
+      results['Censor Engine API'] = 9999;
+    }
+
+    // 3. اختبار قاعدة بيانات Firestore
+    final sw3 = Stopwatch()..start();
+    try {
+      await FirebaseFirestore.instance.collection('app_config').doc('global_settings').get();
+      sw3.stop();
+      results['Firestore Database'] = sw3.elapsedMilliseconds;
+    } catch (_) {
+      results['Firestore Database'] = 9999;
+    }
+
+    if (mounted) {
+      setState(() {
+        _serverLatencies = results;
+        _isTestingPing = false;
+      });
+    }
+  }
+
   void _saveGlobalSettings() async {
+    final pinnedList = _pinnedHeroesCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final blackList = _blacklistCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
     await FirebaseFirestore.instance.collection('app_config').doc('global_settings').set({
       'is_maintenance': _maintenance,
       'censor_enabled': _censorActive,
+      'allow_downloads': _allowDownloads,
       'default_quality': _selectedDefaultQuality,
       'global_alert': _alertCtrl.text.trim(),
       'maintenance_msg': _msgCtrl.text.trim(),
       'min_version': int.tryParse(_minVerCtrl.text.trim()) ?? 1,
       'update_url': _apkUrlCtrl.text.trim(),
+      'custom_base_url': _customUrlCtrl.text.trim(),
+      'pinned_hero_ids': pinnedList,
+      'blacklisted_ids': blackList,
+      'popup_title': _popupTitleCtrl.text.trim(),
+      'popup_body': _popupBodyCtrl.text.trim(),
+      'popup_action_url': _popupUrlCtrl.text.trim(),
       'last_admin_update': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تحديث وحفظ الإعدادات العامة لجميع المستخدمين بنجاح! ✅')),
+        const SnackBar(content: Text('تم نشر كافة التعديلات والإعدادات السحابية لكل المستخدمين! ✅')),
       );
     }
   }
@@ -4819,6 +5045,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
             unselectedLabelColor: s.textSecondary,
             tabs: const [
               Tab(icon: Icon(Icons.settings_suggest_rounded, size: 20), text: 'التحكم العام'),
+              Tab(icon: Icon(Icons.speed_rounded, size: 20), text: 'السيرفرات والشبكة'),
               Tab(icon: Icon(Icons.shield_rounded, size: 20), text: 'إدارة الحجب'),
               Tab(icon: Icon(Icons.analytics_rounded, size: 20), text: 'الإحصائيات'),
             ],
@@ -4827,7 +5054,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         body: TabBarView(
           controller: _tabCtrl,
           children: [
-            // تبويب 1: التحكم العام وإدارة السيرفر
+            // 1. التحكم العام والإعلانات
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -4838,7 +5065,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('حالة السيرفر والتحكم الفوري', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('حالة السيرفر وقفل التطبيق', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 10),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -4860,10 +5087,165 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => _censorActive = v),
                       ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('السماح للمستخدمين بتنزيل الفيديوهات'),
+                        value: _allowDownloads,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) => setState(() => _allowDownloads = v),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('الشريط الإخباري والنافذة المنبثقة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _alertCtrl,
+                        decoration: const InputDecoration(labelText: 'شريط تنبيه ملون في أعلى الشاشة الرئيسية'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _popupTitleCtrl,
+                        decoration: const InputDecoration(labelText: 'عنوان النافذة المنبثقة الإجبارية'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _popupBodyCtrl,
+                        decoration: const InputDecoration(labelText: 'نص الرسالة المنبثقة (اتركها فارغة لتعطيلها)'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _popupUrlCtrl,
+                        decoration: const InputDecoration(labelText: 'رابط تفاعلي تفتحه الرسالة المنبثقة'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('تخصيص الواجهة وقائمة الحظر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _pinnedHeroesCtrl,
+                        decoration: const InputDecoration(labelText: 'معرفات بنر الهيرو المتحرك مفصولة بفواصل (123,456)'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _blacklistCtrl,
+                        decoration: const InputDecoration(labelText: 'قائمة الأعمال المحظورة مفصولة بفواصل (Blacklist IDs)'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _minVerCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'أدنى رقم إصدار مطلوب (Force Update)'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _apkUrlCtrl,
+                        decoration: const InputDecoration(labelText: 'رابط الـ APK المباشر للتحديث الإجباري'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(14),
+                    onPressed: _saveGlobalSettings,
+                    child: const Text('حفظ ونشر التعديلات فوراً', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+
+            // 2. فحص سرعة وحالة السيرفرات والشبكة
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('سرعة استجابة السيرفرات (Ping Latency)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          IconButton(
+                            icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                            onPressed: _isTestingPing ? null : _testServerPings,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ..._serverLatencies.entries.map((e) {
+                        final ms = e.value;
+                        final isDown = ms == 9999 || ms < 0;
+                        final color = isDown ? Colors.redAccent : (ms < 350 ? Colors.greenAccent : Colors.amber);
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: s.surfaceLight,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: color.withOpacity(0.5)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(isDown ? Icons.cancel_rounded : Icons.check_circle_rounded, color: color, size: 20),
+                              const SizedBox(width: 10),
+                              Text(e.key, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              const Spacer(),
+                              Text(
+                                isDown ? 'غير متصل (Offline)' : '${ms} ms',
+                                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('تبديل رابط السيرفر الأساسي (Dynamic CDN)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 8),
+                      TextField(
+                        controller: _customUrlCtrl,
+                        decoration: const InputDecoration(labelText: 'رابط بديل لـ cee.buzz في حال تم حجبه'),
+                      ),
+                      const SizedBox(height: 14),
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('الجودة الافتراضية للبث عند بدء الفيديو'),
+                        title: const Text('الجودة الافتراضية المفروضة للبث'),
                         trailing: DropdownButton<String>(
                           value: _selectedDefaultQuality,
                           dropdownColor: s.surface,
@@ -4878,49 +5260,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('الإعلانات والتحديث الإجباري', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _alertCtrl,
-                        decoration: const InputDecoration(labelText: 'شريط إعلان وتنبيه يظهر في أعلى الواجهة الرئيسية'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _minVerCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'أدنى رقم إصدار مطلوب (Force Update Version)'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _apkUrlCtrl,
-                        decoration: const InputDecoration(labelText: 'رابط تنزيل التحديث المباشر (APK Direct Link)'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(14),
-                    onPressed: _saveGlobalSettings,
-                    child: const Text('حفظ ونشر التعديلات فوراً لكل الأجهزة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
-                  ),
-                ),
               ],
             ),
 
-            // تبويب 2: فحص وإدارة المشاهد الحساسة
+            // 3. فحص وإدارة المشاهد الحساسة
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -4998,7 +5341,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // تبويب 3: الإحصائيات السحابية
+            // 4. الإحصائيات وبلاغات المستخدمين
             _isLoadingStats
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
                 : ListView(
@@ -5029,6 +5372,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                                     Text('$_totalCensoredDocsCount', style: const TextStyle(color: Colors.amber, fontSize: 24, fontWeight: FontWeight.bold)),
                                     const SizedBox(height: 4),
                                     Text('أعمال مفهرسة للحجب', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('$_totalReportsCount', style: const TextStyle(color: Colors.redAccent, fontSize: 24, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Text('بلاغات المشاكل', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                                   ],
                                 ),
                               ],
