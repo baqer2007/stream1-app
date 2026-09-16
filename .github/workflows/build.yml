@@ -2,14 +2,10 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
-
-permissions:
-  contents: write
-  actions: write
 
 jobs:
   build:
@@ -18,48 +14,37 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Persistent Keystore
-        run: |
-          mkdir -p ~/.android
-          if [ ! -f android/app/release.keystore ]; then
-            keytool -genkey -v -keystore android/app/release.keystore -storepass onebrtv123 -alias onebrkey -keypass onebrtv123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ONEBR TV,OU=Media,O=ONEBR,C=IQ"
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add android/app/release.keystore
-            git commit -m "chore: add release keystore [skip ci]" || true
-            git push origin HEAD:${{ github.ref_name }} || true
-          fi
-          cp android/app/release.keystore ~/.android/debug.keystore
+          distribution: 'zulu'
+          java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Generate App Icon
-        run: flutter pub run flutter_launcher_icons
-
-      - name: Build APK
-        run: flutter build apk --release --no-tree-shake-icons --obfuscate --split-debug-info=build/app/outputs/symbols
-
-      - name: Print Persistent APK SHA-1
+      - name: Build APK with Obfuscation
         run: |
-          keytool -list -v -keystore android/app/release.keystore -alias onebrkey -storepass onebrtv123 -keypass onebrtv123
+          flutter build apk --release \
+            --no-tree-shake-icons \
+            --obfuscate \
+            --split-debug-info=build/app/outputs/symbols
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload Obfuscation Symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols
+          path: build/app/outputs/symbols
