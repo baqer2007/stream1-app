@@ -78,19 +78,16 @@ class ChromaVisionEngine {
       final cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
       final cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
-      final bool isSkinYCbCr = (cb >= 77 && cb <= 127) && (cr >= 133 && cr <= 173);
-      final bool isSkinRGB = (r > 95 && g > 40 && b > 20) &&
-          (r - g).abs() > 15 &&
-          (r > g && r > b) &&
-          (r - b) > 15;
+      final bool isSkinYCbCr = (cb >= 85 && cb <= 125) && (cr >= 138 && cr <= 170);
+      final bool isValidBrightness = r > 90 && r < 235 && g > 55 && b > 35;
 
-      if (isSkinYCbCr || isSkinRGB) {
+      if (isSkinYCbCr && isValidBrightness) {
         skinPixels++;
       }
     }
 
     final double ratio = skinPixels / totalPixels;
-    return ratio > 0.45;
+    return ratio > 0.62;
   }
 }
 
@@ -505,7 +502,7 @@ class AppSettings extends ChangeNotifier {
   int appFilterMode = 0;
   String appLanguage = 'ar';
   String selectedFont = 'iPhone';
-  bool autoSmartDownload = false;
+  autoSmartDownload = false;
   bool smartNotifications = true;
   bool tvModeEnabled = false;
 
@@ -2983,7 +2980,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isSeekingNow = false;
 
   bool _isAutoQuality = false;
-  String _activeQuality = '720p';
+  String _activeQuality = '360p';
   String _currentStreamUrl = '';
   List<Map<String, dynamic>> _currentQualities = [];
 
@@ -3048,7 +3045,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.portraitUp,
     ]);
 
-    _loadCombinedTimestamps();
+    _loadLayeredTimestamps();
 
     if (widget.isLocalFile && widget.videoUrl.isNotEmpty) {
       _initPlayer(widget.videoUrl, isLocal: true);
@@ -3064,40 +3061,40 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _loadCombinedTimestamps() {
-    StreamService.fetchCeeSkippingDurations(_activeMediaId).then((ceeSegs) {
-      if (ceeSegs.isNotEmpty && mounted) {
-        setState(() {
-          _sensitiveSegments.addAll(ceeSegs);
-        });
-      }
-    });
+  void _loadLayeredTimestamps() async {
+    // الطبقة 1: فحص سيرفرات cee الرسمية أولاً
+    final ceeSegs = await StreamService.fetchCeeSkippingDurations(_activeMediaId);
+    if (ceeSegs.isNotEmpty && mounted) {
+      setState(() {
+        _sensitiveSegments.addAll(ceeSegs);
+      });
+      return;
+    }
 
-    ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
-      if (cloudSegs.isNotEmpty && mounted) {
-        setState(() {
-          _sensitiveSegments.addAll(cloudSegs);
-        });
-      } else if (widget.titleEn.isNotEmpty) {
-        ContentFilterEngine.triggerBackendScan(
-          mediaId: _activeMediaId,
-          titleEn: widget.titleEn,
-          imdbId: widget.imdbId,
-        );
+    // الطبقة 2: التوجه لقاعدة البيانات السحابية Firestore في حال عدم توفرها في cee
+    final cloudSegs = await ContentFilterEngine.fetchCloudTimestamps(_activeMediaId);
+    if (cloudSegs.isNotEmpty && mounted) {
+      setState(() {
+        _sensitiveSegments.addAll(cloudSegs);
+      });
+    } else if (widget.titleEn.isNotEmpty) {
+      ContentFilterEngine.triggerBackendScan(
+        mediaId: _activeMediaId,
+        titleEn: widget.titleEn,
+        imdbId: widget.imdbId,
+      );
 
-        Future.delayed(const Duration(seconds: 4), () {
-          if (mounted && _sensitiveSegments.isEmpty) {
-            ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((delayedSegs) {
-              if (delayedSegs.isNotEmpty && mounted) {
-                setState(() {
-                  _sensitiveSegments.addAll(delayedSegs);
-                });
-              }
+      Future.delayed(const Duration(seconds: 4), () async {
+        if (mounted && _sensitiveSegments.isEmpty) {
+          final delayedSegs = await ContentFilterEngine.fetchCloudTimestamps(_activeMediaId);
+          if (delayedSegs.isNotEmpty && mounted) {
+            setState(() {
+              _sensitiveSegments.addAll(delayedSegs);
             });
           }
-        });
-      }
-    });
+        }
+      });
+    }
   }
 
   void _loadWatchedState() async {
@@ -3122,12 +3119,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       String targetUrl = source['video_url'] ?? '';
       if (qualitiesList.isNotEmpty) {
+        // تحديد دقة 360p كخيار افتراضي أولي
         final preferred = qualitiesList.firstWhere(
-          (q) => (q['resolution'] ?? '').toString().contains('720'),
+          (q) => (q['resolution'] ?? '').toString().contains('360'),
           orElse: () => qualitiesList.first,
         );
         targetUrl = preferred['url'] ?? targetUrl;
-        _activeQuality = preferred['resolution'] ?? 'Default';
+        _activeQuality = preferred['resolution'] ?? '360p';
       }
 
       _currentStreamUrl = targetUrl;
@@ -3352,7 +3350,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
           if (isSkinAnomaly) {
             _consecutiveSkinHits++;
-            if (_consecutiveSkinHits >= 2) {
+            // اشتراط 3 ثوانٍ متتالية لمنع التخطي الخاطئ في المشاهد العادية
+            if (_consecutiveSkinHits >= 3) {
               _triggerChromaEvasion();
             }
           } else {
@@ -3402,37 +3401,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     Future.delayed(const Duration(seconds: 3), () {
       _isSeekingNow = false;
     });
-  }
-
-  void _flagCurrentSceneQuickly(bool isAr) async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-
-    final curSec = _controller!.value.position.inSeconds;
-    final start = (curSec - 2).clamp(0, 999999);
-    final end = curSec + 25;
-
-    setState(() {
-      _sensitiveSegments.add({'start': start, 'end': end});
-    });
-
-    _controller!.seekTo(Duration(seconds: end + 1));
-    HapticFeedback.heavyImpact();
-
-    try {
-      await FirebaseFirestore.instance.collection('censored_scenes').doc(_activeMediaId).set({
-        'scenes': FieldValue.arrayUnion([{'start': start, 'end': end}])
-      }, SetOptions(merge: true));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'تم تخطي وتثبيت اللقطة الحساسة في السحابة للجميع 🛡️' : 'Scene flagged and synced to cloud 🛡️'),
-            backgroundColor: Colors.green[800],
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (_) {}
   }
 
   void _videoPlayerListener() {
@@ -3570,7 +3538,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentSecondarySubText = '';
     });
 
-    _loadCombinedTimestamps();
+    _loadLayeredTimestamps();
 
     final source = await StreamService.getVideoSource(epId);
     final sub = await StreamService.getVideoExtendedInfo(epId);
@@ -3580,11 +3548,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _loadWatchedState();
 
     if (source != null) {
+      final qualitiesList = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
       setState(() {
-        _currentQualities = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
+        _currentQualities = qualitiesList;
       });
-      _currentStreamUrl = source['video_url'];
-      _initPlayer(source['video_url']);
+
+      String targetUrl = source['video_url'] ?? '';
+      if (qualitiesList.isNotEmpty) {
+        final preferred = qualitiesList.firstWhere(
+          (q) => (q['resolution'] ?? '').toString().contains('360'),
+          orElse: () => qualitiesList.first,
+        );
+        targetUrl = preferred['url'] ?? targetUrl;
+        _activeQuality = preferred['resolution'] ?? '360p';
+      }
+
+      _currentStreamUrl = targetUrl;
+      _initPlayer(targetUrl);
       final path = sub['arTranslationFilePath']?.toString() ?? '';
       final pathEn = sub['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesPipeline(path, pathEn);
@@ -4283,11 +4263,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                IconButton(
-                                  tooltip: isAr ? 'تثبيت لقطة حساسة للتخطي' : 'Flag Sensitive Scene',
-                                  icon: const Icon(Icons.shield_outlined, color: Colors.amber, size: 22),
-                                  onPressed: () => _flagCurrentSceneQuickly(isAr),
-                                ),
                                 if (widget.episodes.isNotEmpty)
                                   IconButton(
                                     tooltip: isAr ? 'قائمة الحلقات' : 'Episodes',
