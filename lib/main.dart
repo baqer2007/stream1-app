@@ -1529,7 +1529,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -1560,7 +1560,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: hasFocus ? AppColors.primary : s.border,
-                      width: 1.5 : 0.5,
+                      width: hasFocus ? 1.5 : 0.5,
                     ),
                   ),
                   child: Row(
@@ -3065,7 +3065,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _loadCombinedTimestamps() {
-    // 1. استدعاء فوري لسيرفر cee الرسمي لجلب فترات التخطي المطابقة لنسخة الفيديو
     StreamService.fetchCeeSkippingDurations(_activeMediaId).then((ceeSegs) {
       if (ceeSegs.isNotEmpty && mounted) {
         setState(() {
@@ -3074,7 +3073,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
 
-    // 2. بالتوازي: جلب الفترات المسجلة في Firestore أو طلب مسح إضافي
     ContentFilterEngine.fetchCloudTimestamps(_activeMediaId).then((cloudSegs) {
       if (cloudSegs.isNotEmpty && mounted) {
         setState(() {
