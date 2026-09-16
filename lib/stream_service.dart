@@ -101,16 +101,13 @@ class StreamService {
     return [];
   }
 
-  /// مسار البحث الرسمي المأخوذ من فحص الشبكة
+  /// مسار البحث الرسمي المأخوذ من فحص الشبكة مع تشفير Base64
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     final cleanQ = query.trim();
     if (cleanQ.isEmpty) return [];
 
     try {
-      // 1. تشفير Base64 وحذف علامات التساوي ليتطابق مع طلب المتصفح
       String b64 = base64.encode(utf8.encode(cleanQ)).replaceAll('=', '');
-
-      // 2. الرابط المباشر الرسمي من فحص الشبكة
       final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/$level';
 
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 10));
@@ -222,7 +219,37 @@ class StreamService {
     return [];
   }
 
-  static String extractPoster(Map<String, dynamic> item, {bool highRes = false}) {
+  /// جلب فترات اللقطات الحساسة الرسمية بالثواني من سيرفر cee
+  static Future<List<Map<String, int>>> fetchCeeSkippingDurations(String mediaId) async {
+    try {
+      final url = Uri.parse('https://cee.buzz/api/android/skippingDurations/id/$mediaId');
+      final response = await http.get(url, headers: stealthHeaders).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+        if (decoded is Map<String, dynamic>) {
+          final List starts = decoded['start'] ?? [];
+          final List ends = decoded['end'] ?? [];
+
+          List<Map<String, int>> results = [];
+          final len = starts.length < ends.length ? starts.length : ends.length;
+
+          for (int i = 0; i < len; i++) {
+            final startSec = (double.tryParse(starts[i].toString()) ?? 0.0).floor();
+            final endSec = (double.tryParse(ends[i].toString()) ?? 0.0).ceil();
+            if (endSec > startSec) {
+              results.add({'start': startSec, 'end': endSec});
+            }
+          }
+          return results;
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static String extractPoster(dynamic item, {bool highRes = false}) {
+    if (item == null) return '';
     if (highRes) {
       if (item['imgObjUrl'] != null && item['imgObjUrl'].toString().isNotEmpty) {
         return item['imgObjUrl'].toString();
