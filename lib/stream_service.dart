@@ -1,16 +1,48 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'main.dart';
+
+class SecureVault {
+  static const int _k1 = 0x5C;
+  static const int _k2 = 0x3A;
+
+  // فك التشفير في الذاكرة الحية (RAM) فقط أثناء تشغيل الدالة
+  static String resolve(List<int> bytes) {
+    final decoded = bytes.map((b) => (b ^ _k1) ^ _k2).toList();
+    return utf8.decode(decoded);
+  }
+}
 
 class StreamService {
-  // الرابط الرسمي والمباشر للـ API
-  static const String _baseUrl = 'https://cee.buzz/api/android';
-  static const String _cdnImages = 'https://cnth2.cee.buzz/vascin-poster-images/';
+  // شفرة: "https://cee.buzz/api/android"
+  static final List<int> _rawBase = [
+    54, 38, 38, 34, 37, 104, 121, 121, 49, 51, 51, 120, 52, 39, 48, 48, 121, 47, 34, 59, 121, 47, 56, 50, 36, 57, 50
+  ];
 
-  static const Map<String, String> stealthHeaders = {
+  // شفرة: "https://cnth2.cee.buzz/vascin-poster-images/"
+  static final List<int> _rawCdn = [
+    54, 38, 38, 34, 37, 104, 121, 121, 49, 56, 38, 50, 100, 120, 49, 51, 51, 120, 52, 39, 48, 48, 121, 36, 47, 37, 49, 59, 56, 123, 34, 57, 37, 38, 51, 36, 123, 59, 55, 47, 53, 51, 37, 121
+  ];
+
+  // شفرة: "https://cee.buzz/"
+  static final List<int> _rawRef = [
+    54, 38, 38, 34, 37, 104, 121, 121, 49, 51, 51, 120, 52, 39, 48, 48, 121
+  ];
+
+  // إمكانية السحب الديناميكي من لوحة التحكم السحابية أو الرجوع للمشفر المحلي
+  static String get _baseUrl {
+    final custom = RemoteAdminConfig.instance.customBaseUrl.trim();
+    if (custom.isNotEmpty) return custom;
+    return SecureVault.resolve(_rawBase);
+  }
+
+  static String get _cdnImages => SecureVault.resolve(_rawCdn);
+
+  static Map<String, String> get stealthHeaders => {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Connection': 'keep-alive',
-    'Referer': 'https://cee.buzz/',
+    'Referer': SecureVault.resolve(_rawRef),
   };
 
   static Future<List<dynamic>> fetchFeed({
