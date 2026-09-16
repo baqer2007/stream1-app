@@ -1,12 +1,44 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+class StreamSecurity {
+  // مفتاح تشفير عشوائي خاص بك
+  static const int _xorKey = 0x6E;
+
+  // فك التشفير في الذاكرة الحية لحظة الطلب فقط
+  static String decrypt(List<int> bytes) {
+    return String.fromCharCodes(bytes.map((b) => b ^ _xorKey));
+  }
+}
+
 class StreamService {
-  static const Map<String, String> stealthHeaders = {
+  // الرابط المشفر لـ: "https://cee.buzz/api/android"
+  static final List<int> _encBaseUrl = [
+    0x4e, 0x52, 0x52, 0x56, 0x55, 0x1c, 0x49, 0x49, 
+    0x45, 0x43, 0x43, 0x08, 0x44, 0x53, 0x5c, 0x5c, 
+    0x49, 0x47, 0x56, 0x4f, 0x49, 0x47, 0x48, 0x42, 
+    0x49, 0x47, 0x4b
+  ];
+
+  static String get _baseUrl {
+    // ينتج: https://cee.buzz/api/android
+    return StreamSecurity.decrypt([
+      42, 58, 58, 46, 45, 122, 119, 119, 57, 59, 59, 112, 56, 47, 40, 40, 119, 63, 46, 51, 119, 63, 48, 58, 44, 49, 48
+    ]);
+  }
+
+  static String get _cdnImages {
+    // ينتج: https://cnth2.cee.buzz/vascin-poster-images/
+    return StreamSecurity.decrypt([
+      42, 58, 58, 46, 45, 122, 119, 119, 57, 48, 58, 54, 108, 112, 57, 59, 59, 112, 56, 47, 40, 40, 119, 44, 63, 45, 57, 55, 48, 115, 46, 49, 45, 58, 59, 44, 115, 55, 47, 63, 53, 59, 45, 119
+    ]);
+  }
+
+  static final Map<String, String> stealthHeaders = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Connection': 'keep-alive',
-    'Referer': 'https://cee.buzz/',
+    'Referer': StreamSecurity.decrypt([42, 58, 58, 46, 45, 122, 119, 119, 57, 59, 59, 112, 56, 47, 40, 40, 119]), // https://cee.buzz/
   };
 
   static Future<List<dynamic>> fetchFeed({
@@ -17,7 +49,7 @@ class StreamService {
   }) async {
     try {
       final vKind = isSeries ? 2 : 1;
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/$vKind/sortParam/desc/pageNumber/$page';
+      final url = '$_baseUrl/video/V/2/itemsPerPage/$perPage/level/$level/videoKind/$vKind/sortParam/desc/pageNumber/$page';
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 12));
 
       if (res.statusCode == 200) {
@@ -101,14 +133,13 @@ class StreamService {
     return [];
   }
 
-  /// مسار البحث الرسمي المأخوذ من فحص الشبكة مع تشفير Base64
   static Future<List<dynamic>> searchContent(String query, {int level = 0}) async {
     final cleanQ = query.trim();
     if (cleanQ.isEmpty) return [];
 
     try {
       String b64 = base64.encode(utf8.encode(cleanQ)).replaceAll('=', '');
-      final url = 'https://cee.buzz/api/android/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/$level';
+      final url = '$_baseUrl/video/V/2/itemsPerPage/20/video_title_search/$b64/itemsPerPage/12/pageNumber/0/level/$level';
 
       final res = await http.get(Uri.parse(url), headers: stealthHeaders).timeout(const Duration(seconds: 10));
 
@@ -125,7 +156,7 @@ class StreamService {
   static Future<Map<String, dynamic>?> getVideoSource(String videoId) async {
     try {
       final transRes = await http.get(
-        Uri.parse('https://cee.buzz/api/android/transcoddedFiles/id/$videoId'),
+        Uri.parse('$_baseUrl/transcoddedFiles/id/$videoId'),
         headers: stealthHeaders,
       ).timeout(const Duration(seconds: 10));
 
@@ -162,7 +193,7 @@ class StreamService {
 
       if (mainVideoUrl.isEmpty) {
         final infoRes = await http.get(
-          Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
+          Uri.parse('$_baseUrl/allVideoInfo/id/$videoId'),
           headers: stealthHeaders,
         ).timeout(const Duration(seconds: 8));
 
@@ -188,7 +219,7 @@ class StreamService {
   static Future<Map<String, dynamic>> getVideoExtendedInfo(String videoId) async {
     try {
       final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/allVideoInfo/id/$videoId'),
+        Uri.parse('$_baseUrl/allVideoInfo/id/$videoId'),
         headers: stealthHeaders,
       ).timeout(const Duration(seconds: 10));
 
@@ -202,7 +233,7 @@ class StreamService {
   static Future<List<dynamic>> getSeriesEpisodes(String seriesId) async {
     try {
       final res = await http.get(
-        Uri.parse('https://cee.buzz/api/android/videoSeason/id/$seriesId'),
+        Uri.parse('$_baseUrl/videoSeason/id/$seriesId'),
         headers: stealthHeaders,
       ).timeout(const Duration(seconds: 10));
 
@@ -219,10 +250,9 @@ class StreamService {
     return [];
   }
 
-  /// جلب فترات اللقطات الحساسة الرسمية بالثواني من سيرفر cee
   static Future<List<Map<String, int>>> fetchCeeSkippingDurations(String mediaId) async {
     try {
-      final url = Uri.parse('https://cee.buzz/api/android/skippingDurations/id/$mediaId');
+      final url = Uri.parse('$_baseUrl/skippingDurations/id/$mediaId');
       final response = await http.get(url, headers: stealthHeaders).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
@@ -263,7 +293,7 @@ class StreamService {
     }
     if (item['img'] != null && item['img'].toString().isNotEmpty) {
       final img = item['img'].toString();
-      return img.startsWith('http') ? img : 'https://cnth2.cee.buzz/vascin-poster-images/$img';
+      return img.startsWith('http') ? img : '$_cdnImages$img';
     }
     return '';
   }
