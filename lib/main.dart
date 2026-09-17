@@ -1009,7 +1009,11 @@ class PremiumService {
   static DateTime? _expiresAt;
   static bool _loaded = false;
 
-  static bool get isPremium => _isPremium && (_expiresAt == null || _expiresAt!.isAfter(DateTime.now()));
+  static bool get isPremium {
+    if (!_isPremium) return false;
+    return _expiresAt == null || _expiresAt!.isAfter(DateTime.now());
+  }
+
   static DateTime? get expiresAt => _expiresAt;
 
   static Future<bool> refresh() async {
@@ -1026,7 +1030,8 @@ class PremiumService {
       final data = doc.data();
       final sub = data?['subscription'];
 
-      if (sub is Map<String, dynamic>) {
+      if (sub is Map) {
+        final plan = (sub['plan'] ?? '').toString().toLowerCase();
         final status = (sub['status'] ?? '').toString().toLowerCase();
         final expiresRaw = sub['expiresAt'];
 
@@ -1038,7 +1043,8 @@ class PremiumService {
         }
 
         _expiresAt = expires;
-        _isPremium = status == 'active' &&
+        _isPremium = plan == 'premium' &&
+            status == 'active' &&
             (expires == null || expires.isAfter(DateTime.now()));
       } else {
         _isPremium = false;
@@ -1052,6 +1058,11 @@ class PremiumService {
 
     _loaded = true;
     return isPremium;
+  }
+
+  static Future<bool> forceRefresh() async {
+    _loaded = false;
+    return await refresh();
   }
 
   static Future<bool> hasAccess(PremiumFeature feature) async {
@@ -3696,6 +3707,14 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               trailing: const Icon(Icons.arrow_downward_rounded, color: Colors.white70),
                               onTap: () async {
                                 HapticFeedback.lightImpact();
+
+                                final allowed = await PremiumGuard.require(
+                                  context,
+                                  PremiumFeature.smartDownloads,
+                                );
+                                if (!allowed) return;
+
+                                if (!context.mounted) return;
                                 Navigator.pop(context);
 
                                 final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
@@ -8408,4 +8427,3 @@ class FocusBuilder extends StatelessWidget {
       ),
     );
   }
-}
