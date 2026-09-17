@@ -57,6 +57,7 @@ class RemoteAdminConfig {
   int minAppVersion = 1;
   String updateDownloadUrl = '';
   String customBaseUrl = '';
+  String aiEndpoint = '';
   List<String> pinnedHeroIds = [];
   List<String> blacklistedMediaIds = [];
   String popupTitle = '';
@@ -88,6 +89,7 @@ class RemoteAdminConfig {
           minAppVersion = data['min_version'] ?? 1;
           updateDownloadUrl = data['update_url'] ?? '';
           customBaseUrl = data['custom_base_url'] ?? '';
+          aiEndpoint = data['ai_endpoint'] ?? '';
           popupTitle = data['popup_title'] ?? '';
           popupBody = data['popup_body'] ?? '';
           popupActionUrl = data['popup_action_url'] ?? '';
@@ -1009,11 +1011,7 @@ class PremiumService {
   static DateTime? _expiresAt;
   static bool _loaded = false;
 
-  static bool get isPremium {
-    if (!_isPremium) return false;
-    return _expiresAt == null || _expiresAt!.isAfter(DateTime.now());
-  }
-
+  static bool get isPremium => _isPremium && (_expiresAt == null || _expiresAt!.isAfter(DateTime.now()));
   static DateTime? get expiresAt => _expiresAt;
 
   static Future<bool> refresh() async {
@@ -1030,8 +1028,7 @@ class PremiumService {
       final data = doc.data();
       final sub = data?['subscription'];
 
-      if (sub is Map) {
-        final plan = (sub['plan'] ?? '').toString().toLowerCase();
+      if (sub is Map<String, dynamic>) {
         final status = (sub['status'] ?? '').toString().toLowerCase();
         final expiresRaw = sub['expiresAt'];
 
@@ -1043,8 +1040,7 @@ class PremiumService {
         }
 
         _expiresAt = expires;
-        _isPremium = plan == 'premium' &&
-            status == 'active' &&
+        _isPremium = status == 'active' &&
             (expires == null || expires.isAfter(DateTime.now()));
       } else {
         _isPremium = false;
@@ -1058,11 +1054,6 @@ class PremiumService {
 
     _loaded = true;
     return isPremium;
-  }
-
-  static Future<bool> forceRefresh() async {
-    _loaded = false;
-    return await refresh();
   }
 
   static Future<bool> hasAccess(PremiumFeature feature) async {
@@ -3707,14 +3698,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               trailing: const Icon(Icons.arrow_downward_rounded, color: Colors.white70),
                               onTap: () async {
                                 HapticFeedback.lightImpact();
-
-                                final allowed = await PremiumGuard.require(
-                                  context,
-                                  PremiumFeature.smartDownloads,
-                                );
-                                if (!allowed) return;
-
-                                if (!context.mounted) return;
                                 Navigator.pop(context);
 
                                 final cleanId = targetId.replaceAll(RegExp(r'[^\w\.-]'), '_');
@@ -7544,11 +7527,316 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
 }
 
 
-// ========================= ONEBR SMART FEATURES =========================
+// ========================= ONEBR SMART AI SEARCH =========================
+// Local semantic AI-style search: understands Arabic/English, genre, year,
+// content type, approximate titles and natural-language requests.
+
+class OnebrAiIntent {
+  final String original;
+  final String searchText;
+  final String? mediaType;
+  final int? year;
+  final String? genre;
+  final bool continueWatching;
+
+  const OnebrAiIntent({
+    required this.original,
+    required this.searchText,
+    this.mediaType,
+    this.year,
+    this.genre,
+    this.continueWatching = false,
+  });
+}
+
+class OnebrAiQueryParser {
+  static const Map<String, List<String>> genres = {
+    'action': ['اكشن', 'أكشن', 'حركة', 'قتال', 'مطاردات', 'action'],
+    'horror': ['رعب', 'مرعب', 'مخيف', 'horror'],
+    'comedy': ['كوميديا', 'كوميدي', 'مضحك', 'ضحك', 'comedy'],
+    'romance': ['رومانسي', 'رومانسية', 'حب', 'عاطفي', 'romance'],
+    'drama': ['دراما', 'درامي', 'drama'],
+    'thriller': ['اثارة', 'إثارة', 'تشويق', 'thriller'],
+    'crime': ['جريمة', 'مجرم', 'عصابات', 'crime'],
+    'animation': ['انيميشن', 'رسوم', 'كرتون', 'animation'],
+    'fantasy': ['فانتازيا', 'خيال', 'سحر', 'fantasy'],
+    'sci-fi': ['خيال علمي', 'فضاء', 'مستقبل', 'science fiction', 'sci-fi'],
+  };
+
+  static const Set<String> noise = {
+    'اريد', 'أريد', 'ابي', 'أبي', 'ابغى', 'أبغى', 'اعطني', 'أعطني',
+    'هات', 'جيب', 'ابحث', 'بحث', 'عن', 'لي', 'شيء', 'شي', 'فيلم',
+    'فلم', 'افلام', 'أفلام', 'مسلسل', 'مسلسلات', 'شاهد', 'شوف',
+    'ممكن', 'please', 'want', 'give', 'me', 'find', 'search', 'movie',
+    'film', 'series', 'show', 'watch',
+  };
+
+  static OnebrAiIntent parse(String input) {
+    final original = input.trim();
+    final n = SearchEngineUtils.normalize(original);
+
+    String? mediaType;
+    if (RegExp(r'(^| )مسلسل( |$)|(^| )مسلسلات( |$)|(^| )series( |$)|(^| )show( |$)').hasMatch(n)) {
+      mediaType = 'series';
+    } else if (RegExp(r'(^| )فيلم( |$)|(^| )افلام( |$)|(^| )movie( |$)|(^| )film( |$)').hasMatch(n)) {
+      mediaType = 'movie';
+    }
+
+    int? year;
+    final y = RegExp(r'\b(19\d{2}|20\d{2})\b').firstMatch(n);
+    if (y != null) year = int.tryParse(y.group(1)!);
+
+    String? genre;
+    for (final entry in genres.entries) {
+      if (entry.value.any((g) => n.contains(SearchEngineUtils.normalize(g)))) {
+        genre = entry.key;
+        break;
+      }
+    }
+
+    final continueWatching = n.contains('اكمل') || n.contains('تابع') ||
+        n.contains('اكمل المشاهده') || n.contains('continue');
+
+    final tokens = n
+        .split(RegExp(r'[^a-z0-9\u0600-\u06ff]+'))
+        .where((x) => x.length >= 2 && !noise.contains(x))
+        .where((x) => !RegExp(r'^(19\d{2}|20\d{2})$').hasMatch(x))
+        .toList();
+
+    return OnebrAiIntent(
+      original: original,
+      searchText: tokens.join(' ').trim().isEmpty ? original : tokens.join(' ').trim(),
+      mediaType: mediaType,
+      year: year,
+      genre: genre,
+      continueWatching: continueWatching,
+    );
+  }
+}
+
+class OnebrAiSearchResult {
+  final List<dynamic> items;
+  final String explanation;
+  const OnebrAiSearchResult(this.items, this.explanation);
+}
+
+class OnebrAiPlan {
+  final String reply;
+  final List<String> queries;
+  final List<String> genres;
+  final List<String> keywords;
+  final String? mediaType;
+  final int? year;
+
+  const OnebrAiPlan({
+    required this.reply,
+    this.queries = const [],
+    this.genres = const [],
+    this.keywords = const [],
+    this.mediaType,
+    this.year,
+  });
+
+  factory OnebrAiPlan.fromJson(Map<String, dynamic> json) {
+    List<String> strings(dynamic v) => v is List
+        ? v.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+        : const [];
+    return OnebrAiPlan(
+      reply: (json['reply'] ?? '').toString().trim(),
+      queries: strings(json['queries']),
+      genres: strings(json['genres']),
+      keywords: strings(json['keywords']),
+      mediaType: json['mediaType']?.toString(),
+      year: int.tryParse('${json['year'] ?? ''}'),
+    );
+  }
+}
+
+class OnebrAiBackend {
+  static Future<OnebrAiPlan?> analyze({
+    required String input,
+    required bool arabic,
+    List<Map<String, String>> history = const [],
+  }) async {
+    final endpoint = RemoteAdminConfig.instance.aiEndpoint.trim();
+    if (endpoint.isEmpty) return null;
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final token = await user?.getIdToken();
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      };
+      final response = await http.post(
+        Uri.parse(endpoint),
+        headers: headers,
+        body: jsonEncode({
+          'message': input,
+          'language': arabic ? 'ar' : 'en',
+          'history': history.take(10).toList(),
+        }),
+      ).timeout(const Duration(seconds: 25));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      return OnebrAiPlan.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+class OnebrAiSearchEngine {
+  static Future<OnebrAiSearchResult> search(
+    String input, {
+    required bool arabic,
+    int level = 0,
+    List<Map<String, String>> history = const [],
+  }) async {
+    final intent = OnebrAiQueryParser.parse(input);
+
+    if (intent.continueWatching) {
+      final resume = await LocalStorageService.getList('resume_playback_list');
+      final items = resume.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      return OnebrAiSearchResult(
+        items.take(20).toList(),
+        arabic ? 'عرضت لك ما بدأت بمشاهدته مؤخراً 🎬' : 'Here is what you started watching recently 🎬',
+      );
+    }
+
+    final ai = await OnebrAiBackend.analyze(
+      input: input,
+      arabic: arabic,
+      history: history,
+    );
+
+    final queries = <String>[
+      input.trim(),
+      intent.searchText,
+      ...?ai?.queries,
+      ...?ai?.keywords,
+    ];
+
+    if (intent.genre != null) {
+      queries.add(intent.genre!);
+      queries.addAll(OnebrAiQueryParser.genres[intent.genre!] ?? const []);
+    }
+    if (ai != null) {
+      for (final g in ai.genres) {
+        queries.add(g);
+        queries.addAll(OnebrAiQueryParser.genres[g] ?? const []);
+      }
+    }
+
+    final merged = <String, Map<String, dynamic>>{};
+    for (final q in queries.where((q) => q.trim().isNotEmpty).toSet().take(12)) {
+      try {
+        final found = await SmartSearchEngine.search(
+          q,
+          level: level,
+          enforceFreeLimit: false,
+        );
+        for (final raw in found) {
+          if (raw is! Map) continue;
+          final item = Map<String, dynamic>.from(raw);
+          final id = '${item['nb'] ?? item['id'] ?? item['tmdb_id'] ?? item['imdb_id'] ?? ''}';
+          if (id.isNotEmpty) merged[id] = item;
+        }
+      } catch (_) {}
+    }
+
+    final wantedType = ai?.mediaType ?? intent.mediaType;
+    final wantedYear = ai?.year ?? intent.year;
+    final wantedGenres = <String>{
+      ...?ai?.genres,
+      if (intent.genre != null) intent.genre!,
+    };
+
+    double score(Map<String, dynamic> item) {
+      var value = 0.0;
+      final hay = SearchEngineUtils.normalize([
+        item['title'], item['name'], item['ar_title'], item['en_title'],
+        item['original_title'], item['overview'], item['description'],
+        item['genre'], item['genres'], item['category'], item['categories'],
+        item['actor'], item['actors'], item['cast'], item['director'],
+        item['keywords'],
+      ].map((e) => e?.toString() ?? '').join(' '));
+
+      final normalizedInput = SearchEngineUtils.normalize(input);
+      if (normalizedInput.length >= 3 && hay.contains(normalizedInput)) value += 45;
+
+      for (final q in queries) {
+        final nq = SearchEngineUtils.normalize(q);
+        if (nq.length >= 3 && hay.contains(nq)) value += 12;
+      }
+
+      for (final keyword in (ai?.keywords ?? const <String>[])) {
+        final nk = SearchEngineUtils.normalize(keyword);
+        if (nk.length >= 2 && hay.contains(nk)) value += 9;
+      }
+
+      for (final genre in wantedGenres) {
+        final aliases = OnebrAiQueryParser.genres[genre] ?? [genre];
+        if (aliases.any((a) => hay.contains(SearchEngineUtils.normalize(a)))) value += 18;
+      }
+
+      if (wantedYear != null) {
+        final itemYear = int.tryParse(
+          '${item['year'] ?? item['release_year'] ?? (item['release_date']?.toString().split('-').first ?? '')}',
+        );
+        if (itemYear == wantedYear) value += 35;
+        else if (itemYear != null) value -= 5;
+      }
+
+      if (wantedType != null) {
+        final type = SearchEngineUtils.normalize(
+          '${item['type'] ?? item['media_type'] ?? item['content_type'] ?? item['is_series'] ?? ''}',
+        );
+        if (wantedType == 'series' && (type.contains('series') || type.contains('مسلسل') || type == 'true')) value += 22;
+        if (wantedType == 'movie' && (type.contains('movie') || type.contains('فيلم') || type == 'false')) value += 22;
+      }
+
+      final rating = double.tryParse('${item['stars'] ?? item['rating'] ?? item['vote_average'] ?? 0}') ?? 0;
+      value += rating.clamp(0, 10) * 0.7;
+      return value;
+    }
+
+    var items = merged.values.toList()
+      ..sort((a, b) => score(b).compareTo(score(a)));
+
+    final blacklisted = RemoteAdminConfig.instance.blacklistedMediaIds.toSet();
+    items = items.where((item) {
+      final id = (item['nb'] ?? item['id'])?.toString();
+      return id != null && !blacklisted.contains(id);
+    }).take(24).toList();
+
+    final understood = <String>[];
+    if (wantedType == 'movie') understood.add(arabic ? 'فيلم' : 'movie');
+    if (wantedType == 'series') understood.add(arabic ? 'مسلسل' : 'series');
+    understood.addAll(wantedGenres.take(3));
+    if (wantedYear != null) understood.add('$wantedYear');
+
+    final fallback = items.isEmpty
+        ? (arabic
+            ? 'لم أجد أعمالاً مناسبة داخل مكتبة ONEBR لهذا الطلب. جرّب وصفاً مختلفاً أو اذكر اسماً قريباً من العمل الذي تبحث عنه.'
+            : 'I could not find a good match in the ONEBR library. Try another description or mention a title you like.')
+        : (arabic
+            ? 'فهمت طلبك${understood.isEmpty ? '' : ' كـ ${understood.join(' • ')}'} ووجدت ${items.length} نتيجة. هذه النتائج مرتبة حسب مدى ملاءمتها لطلبك 👇'
+            : 'I understood your request${understood.isEmpty ? '' : ' as ${understood.join(' • ')}'} and found ${items.length} matches ranked by relevance 👇');
+
+    final reply = ai?.reply.trim().isNotEmpty == true
+        ? '${ai!.reply.trim()}${items.isNotEmpty ? '\n\nعرضت لك النتائج المطابقة من مكتبة ONEBR 👇' : ''}'
+        : fallback;
+
+    return OnebrAiSearchResult(items, reply);
+  }
+}
 
 class OnebrAssistantScreen extends StatefulWidget {
   const OnebrAssistantScreen({super.key});
-
   @override
   State<OnebrAssistantScreen> createState() => _OnebrAssistantScreenState();
 }
@@ -7563,12 +7851,10 @@ class _OnebrAssistantScreenState extends State<OnebrAssistantScreen> {
   @override
   void initState() {
     super.initState();
-    _messages.add({
-      'from': 'ai',
-      'text': AppSettings.instance.appLanguage == 'ar'
-          ? 'مرحباً 👋 أنا ONEBR AI. أخبرني ماذا تريد أن تشاهد وسأبحث لك داخل مكتبة ONEBR.'
-          : 'Hi 👋 I’m ONEBR AI. Tell me what you want to watch and I’ll search the ONEBR library for you.',
-    });
+    final ar = AppSettings.instance.appLanguage == 'ar';
+    _messages.add({'from': 'ai', 'text': ar
+        ? 'مرحباً 👋 أنا ONEBR AI. اكتب طلبك بطريقتك الطبيعية، مثل: فيلم أكشن 2024، فيلم رعب، مسلسل كوميدي، شيء مثل Spider-Man، أو أكمل ما بدأت.'
+        : 'Hi 👋 I’m ONEBR AI. Ask naturally: action movie 2024, horror movie, comedy series, something like Spider-Man, or continue watching.'});
   }
 
   @override
@@ -7579,69 +7865,38 @@ class _OnebrAssistantScreenState extends State<OnebrAssistantScreen> {
   }
 
   String _title(dynamic item, bool ar) =>
-      (ar ? (item['ar_title'] ?? item['en_title']) : (item['en_title'] ?? item['ar_title']))?.toString() ?? '';
+      (ar ? (item['ar_title'] ?? item['en_title'] ?? item['title']) :
+       (item['en_title'] ?? item['ar_title'] ?? item['title']))?.toString() ?? '';
 
   Future<void> _ask(String raw) async {
     final q = raw.trim();
-    if (q.isEmpty) return;
+    if (q.isEmpty || _loading) return;
     final ar = AppSettings.instance.appLanguage == 'ar';
     _controller.clear();
-    setState(() {
-      _messages.add({'from': 'user', 'text': q});
-      _loading = true;
-    });
+    setState(() { _messages.add({'from': 'user', 'text': q}); _loading = true; _recommendations = []; });
 
-    final normalized = SearchEngineUtils.normalize(q);
     try {
-      List<dynamic> results;
-      if (normalized.contains('اكشن') || normalized.contains('action')) {
-        results = await StreamService.fetchByCategoryName('action', page: 0, level: AppSettings.instance.appFilterMode);
-      } else if (normalized.contains('رعب') || normalized.contains('horror')) {
-        results = await StreamService.fetchByCategoryName('horror', page: 0, level: AppSettings.instance.appFilterMode);
-      } else if (normalized.contains('كوميديا') || normalized.contains('comedy')) {
-        results = await StreamService.fetchByCategoryName('comedy', page: 0, level: AppSettings.instance.appFilterMode);
-      } else if (normalized.contains('مسلسل') || normalized.contains('series')) {
-        results = await StreamService.fetchFeed(isSeries: true, page: 0, perPage: 20, level: AppSettings.instance.appFilterMode);
-      } else if (normalized.contains('فيلم') || normalized.contains('movie')) {
-        results = await StreamService.fetchFeed(isSeries: false, page: 0, perPage: 20, level: AppSettings.instance.appFilterMode);
-      } else if (normalized.contains('اكمل') || normalized.contains('تابع') || normalized.contains('continue')) {
-        final resume = await LocalStorageService.getList('resume_playback_list');
-        results = resume;
-      } else {
-        results = await SmartSearchEngine.search(
-          q,
-          level: AppSettings.instance.appFilterMode,
-          enforceFreeLimit: false,
-        );
-      }
-
-      results = results.where((x) {
-        final id = (x['nb'] ?? x['id'])?.toString();
-        return id != null && !RemoteAdminConfig.instance.blacklistedMediaIds.contains(id);
-      }).take(12).toList();
-
-      if (mounted) {
-        setState(() {
-          _recommendations = results;
-          _loading = false;
-          _messages.add({
-            'from': 'ai',
-            'text': results.isEmpty
-                ? (ar ? 'لم أجد نتائج مناسبة. جرّب اسم فيلم، ممثل، أو نوع مثل أكشن/رعب/كوميديا.' : 'I couldn’t find a match. Try a title, actor, or genre such as action/horror/comedy.')
-                : (ar ? 'وجدت لك ${results.length} اقتراحاً 👇' : 'I found ${results.length} suggestions for you 👇'),
-          });
-        });
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (_scroll.hasClients) _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-        });
-      }
+      final history = _messages
+          .take(10)
+          .map<Map<String, String>>((m) => {
+                'role': m['from'] == 'user' ? 'user' : 'assistant',
+                'text': m['text'].toString(),
+              })
+          .toList();
+      final result = await OnebrAiSearchEngine.search(
+        q,
+        arabic: ar,
+        level: AppSettings.instance.appFilterMode,
+        history: history,
+      );
+      if (!mounted) return;
+      setState(() { _recommendations = result.items; _loading = false; _messages.add({'from': 'ai', 'text': result.explanation}); });
+      Future.delayed(const Duration(milliseconds: 120), () {
+        if (_scroll.hasClients) _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _messages.add({'from': 'ai', 'text': ar ? 'حدث خطأ أثناء البحث. حاول مرة أخرى.' : 'Something went wrong. Please try again.'});
-        });
-      }
+      if (!mounted) return;
+      setState(() { _loading = false; _messages.add({'from': 'ai', 'text': ar ? 'حدث خطأ أثناء البحث. تأكد من الاتصال ثم حاول مرة أخرى.' : 'Search failed. Check your connection and try again.'}); });
     }
   }
 
@@ -7650,136 +7905,42 @@ class _OnebrAssistantScreenState extends State<OnebrAssistantScreen> {
     final s = AppSettings.instance;
     final ar = s.appLanguage == 'ar';
     final suggestions = ar
-        ? ['أريد فيلم أكشن', 'شيء رعب', 'أريد مسلسل', 'أكمل ما بدأت']
-        : ['Action movie', 'Something scary', 'I want a series', 'Continue watching'];
+        ? ['🎬 فيلم أكشن 2024', '👻 فيلم رعب', '😂 مسلسل كوميدي', '🕷️ شيء مثل Spider-Man', '▶️ أكمل ما بدأت']
+        : ['🎬 Action movie 2024', '👻 Horror movie', '😂 Comedy series', '🕷️ Something like Spider-Man', '▶️ Continue watching'];
 
     return Directionality(
       textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text('ONEBR AI', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
-          actions: [
-            IconButton(
-              tooltip: ar ? 'مركز ONEBR' : 'ONEBR Center',
-              icon: const Icon(Icons.dashboard_customize_rounded, color: AppColors.primary),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SmartCenterScreen())),
-            ),
-          ],
+          title: Row(children: [
+            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18)),
+            const SizedBox(width: 9),
+            Text('ONEBR AI', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+          ]),
+          actions: [IconButton(tooltip: ar ? 'مركز ONEBR' : 'ONEBR Center', icon: const Icon(Icons.dashboard_customize_rounded, color: AppColors.primary), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SmartCenterScreen())))],
         ),
-        body: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length + (_loading ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (_loading && i == _messages.length) {
-                    return Align(alignment: ar ? Alignment.centerRight : Alignment.centerLeft, child: Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14)),
-                      child: const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
-                    ));
-                  }
-                  final m = _messages[i];
-                  final user = m['from'] == 'user';
-                  return Align(
-                    alignment: user ? (ar ? Alignment.centerLeft : Alignment.centerRight) : (ar ? Alignment.centerRight : Alignment.centerLeft),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                      constraints: const BoxConstraints(maxWidth: 340),
-                      decoration: BoxDecoration(
-                        color: user ? AppColors.primary : s.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: user ? Colors.transparent : s.border),
-                      ),
-                      child: Text(m['text'].toString(), style: TextStyle(color: user ? Colors.white : s.textPrimary, fontSize: 13, height: 1.45)),
-                    ),
-                  );
-                },
-              ),
-            ),
-            if (_recommendations.isNotEmpty)
-              SizedBox(
-                height: 185,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _recommendations.length,
-                  itemBuilder: (_, i) {
-                    final it = _recommendations[i];
-                    final poster = StreamService.extractPoster(it);
-                    return GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: Map<String, dynamic>.from(it)))),
-                      child: Container(
-                        width: 105,
-                        margin: const EdgeInsets.only(left: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isEmpty ? Container(color: s.surface) : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover, width: double.infinity),
-                            )),
-                            const SizedBox(height: 5),
-                            Text(_title(it, ar), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            SizedBox(
-              height: 100,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                children: suggestions.map((x) => Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: ActionChip(
-                    avatar: const Icon(Icons.auto_awesome_rounded, size: 16, color: AppColors.primary),
-                    label: Text(x),
-                    onPressed: () => _ask(x),
-                  ),
-                )).toList(),
-              ),
-            ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        onSubmitted: _ask,
-                        style: TextStyle(color: s.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: ar ? 'اسأل ONEBR AI...' : 'Ask ONEBR AI...',
-                          filled: true,
-                          fillColor: s.surface,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: s.border)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FloatingActionButton(
-                      mini: true,
-                      backgroundColor: AppColors.primary,
-                      onPressed: () => _ask(_controller.text),
-                      child: const Icon(Icons.send_rounded, color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+        body: Column(children: [
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 4), padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.primary.withOpacity(.45))),
+            child: Row(children: [const Icon(Icons.psychology_rounded, color: AppColors.primary, size: 27), const SizedBox(width: 10), Expanded(child: Text(ar ? 'بحث ذكي يفهم العربية والإنجليزية والسنة والنوع والأسماء القريبة، ثم يرتب النتائج تلقائياً.' : 'Smart search understands Arabic, English, years, genres and approximate titles, then ranks results automatically.', style: TextStyle(color: s.textPrimary, fontSize: 11.5, height: 1.45)))]),
+          ),
+          Expanded(child: ListView.builder(
+            controller: _scroll, padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), itemCount: _messages.length + (_loading ? 1 : 0),
+            itemBuilder: (_, i) {
+              if (_loading && i == _messages.length) return Align(alignment: ar ? Alignment.centerRight : Alignment.centerLeft, child: Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border)), child: const Row(mainAxisSize: MainAxisSize.min, children: [SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)), SizedBox(width: 10), Text('AI', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold))])));
+              final m = _messages[i]; final user = m['from'] == 'user';
+              return Align(alignment: user ? (ar ? Alignment.centerLeft : Alignment.centerRight) : (ar ? Alignment.centerRight : Alignment.centerLeft), child: Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11), constraints: const BoxConstraints(maxWidth: 350), decoration: BoxDecoration(color: user ? AppColors.primary : s.surface, borderRadius: BorderRadius.circular(17), border: Border.all(color: user ? Colors.transparent : s.border)), child: Text(m['text'].toString(), style: TextStyle(color: user ? Colors.white : s.textPrimary, fontSize: 13, height: 1.5))));
+            },
+          )),
+          if (_recommendations.isNotEmpty) SizedBox(height: 205, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: _recommendations.length, itemBuilder: (_, i) {
+            final it = _recommendations[i]; final poster = StreamService.extractPoster(it);
+            return GestureDetector(onTap: () { LocalStorageService.appendItem('recent_search_history', it, maxLength: 20); Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: Map<String, dynamic>.from(it)))); }, child: Container(width: 112, margin: const EdgeInsets.only(left: 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(AppRadius.card), child: poster.isEmpty ? Container(color: s.surface, child: const Center(child: Icon(Icons.movie_rounded, color: Colors.white38))) : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover, width: double.infinity, placeholder: (_, __) => Container(color: s.surface), errorWidget: (_, __, ___) => Container(color: s.surface, child: const Icon(Icons.broken_image_rounded, color: Colors.white38))))), const SizedBox(height: 6), Text(_title(it, ar), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600))])));
+          })),
+          SizedBox(height: 54, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5), children: suggestions.map((x) => Padding(padding: const EdgeInsets.only(left: 8), child: ActionChip(avatar: const Icon(Icons.auto_awesome_rounded, size: 15, color: AppColors.primary), label: Text(x), onPressed: () => _ask(x)))).toList())),
+          SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 10), child: Row(children: [Expanded(child: TextField(controller: _controller, onSubmitted: _ask, style: TextStyle(color: s.textPrimary), textInputAction: TextInputAction.search, decoration: InputDecoration(hintText: ar ? 'اكتب ماذا تريد أن تشاهد...' : 'Tell ONEBR AI what you want to watch...', hintStyle: TextStyle(color: s.textSecondary, fontSize: 12), filled: true, fillColor: s.surface, prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary), border: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide(color: s.border)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide(color: s.border)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: const BorderSide(color: AppColors.primary, width: 1.7))))), const SizedBox(width: 8), FloatingActionButton(mini: true, backgroundColor: AppColors.primary, onPressed: _loading ? null : () => _ask(_controller.text), child: const Icon(Icons.arrow_upward_rounded, color: Colors.white))]))),
+        ]),
       ),
     );
   }
@@ -8427,4 +8588,5 @@ class FocusBuilder extends StatelessWidget {
       ),
     );
   }
+
 }
