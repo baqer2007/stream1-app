@@ -27,7 +27,9 @@ dependencies:
   android_intent_plus: ^5.0.2
   cloud_firestore: ^5.0.0
   firebase_messaging: ^15.0.0
-
+  firebase_ai: ^3.8.0
+  firebase_app_check: ^0.4.1+4
+  
   package_info_plus: ^8.1.0
   cached_network_image: ^3.3.1
   wakelock_plus: ^1.2.8
