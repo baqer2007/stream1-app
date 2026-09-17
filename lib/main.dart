@@ -1009,6 +1009,241 @@ class MaintenanceLockScreen extends StatelessWidget {
   }
 }
 
+
+class LibraryScreen extends StatefulWidget {
+  const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  List<Map<String, dynamic>> _watchlist = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    AppSettings.instance.addListener(_refresh);
+    _loadWatchlist();
+  }
+
+  @override
+  void dispose() {
+    AppSettings.instance.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadWatchlist() async {
+    final list = await LocalStorageService.getList('user_watchlist');
+    if (!mounted) return;
+    setState(() {
+      _watchlist = list;
+      _loading = false;
+    });
+  }
+
+  Future<void> _toggleTheme() async {
+    AppSettings.instance.toggleTheme();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut().catchError((_) {});
+    AppSettings.instance.logout();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم تسجيل الخروج' : 'Signed out')),
+      );
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final isAr = s.appLanguage == 'ar';
+
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(
+          title: Text(isAr ? 'الحساب والمفضلة' : 'Account & Library'),
+          actions: [
+            IconButton(
+              tooltip: isAr ? 'تبديل المظهر' : 'Toggle theme',
+              icon: Icon(s.isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
+              onPressed: _toggleTheme,
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _loadWatchlist,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: s.surface,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: s.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.person_rounded, color: AppColors.primary, size: 30),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s.userName?.isNotEmpty == true ? s.userName! : (isAr ? 'مستخدم ONEBR TV' : 'ONEBR TV User'),
+                            style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            s.userEmail?.isNotEmpty == true ? s.userEmail! : (isAr ? 'لم يتم تسجيل بريد إلكتروني' : 'No email connected'),
+                            style: TextStyle(color: s.textSecondary, fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _sectionTitle(isAr ? 'إعدادات سريعة' : 'Quick Settings', s),
+              Container(
+                decoration: BoxDecoration(
+                  color: s.surface,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: s.border),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(s.isDarkMode ? Icons.dark_mode_rounded : Icons.light_mode_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'المظهر' : 'Appearance', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: Text(s.isDarkMode ? (isAr ? 'الوضع الداكن' : 'Dark mode') : (isAr ? 'الوضع الفاتح' : 'Light mode'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                      trailing: CupertinoSwitch(value: s.isDarkMode, activeColor: AppColors.primary, onChanged: (_) => _toggleTheme()),
+                    ),
+                    Divider(color: s.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'اللغة' : 'Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => s.updateLanguage(isAr ? 'en' : 'ar'),
+                        child: Text(isAr ? 'العربية' : 'English', style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    Divider(color: s.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.subtitles_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'إعدادات الترجمة' : 'Subtitle Settings', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen())),
+                    ),
+                    Divider(color: s.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.movie_filter_rounded, color: AppColors.primary),
+                      title: Text(isAr ? 'طلب فيلم أو مسلسل' : 'Request Movie or Series', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContentRequestScreen())),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              _sectionTitle(isAr ? 'المفضلة' : 'Watchlist', s),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+                )
+              else if (_watchlist.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: s.border),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.bookmark_border_rounded, color: s.textSecondary, size: 42),
+                      const SizedBox(height: 10),
+                      Text(isAr ? 'لا توجد أفلام أو مسلسلات محفوظة بعد' : 'Your watchlist is empty', style: TextStyle(color: s.textSecondary, fontSize: 13)),
+                    ],
+                  ),
+                )
+              else
+                ..._watchlist.map((media) {
+                  final title = (media['title_ar'] ?? media['title_en'] ?? media['name'] ?? media['title'] ?? 'ONEBR TV').toString();
+                  final poster = (media['poster'] ?? media['poster_path'] ?? media['image'] ?? '').toString();
+                  final id = (media['nb'] ?? media['id'] ?? title).toString();
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: s.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: s.border),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: poster.isNotEmpty
+                            ? Image.network(poster, width: 46, height: 64, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 64, child: Icon(Icons.movie_rounded)))
+                            : const SizedBox(width: 46, height: 64, child: Icon(Icons.movie_rounded)),
+                      ),
+                      title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                      subtitle: Text(isAr ? 'محفوظ في المفضلة' : 'Saved to watchlist', style: TextStyle(color: s.textSecondary, fontSize: 10)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
+                        onPressed: () async {
+                          await LocalStorageService.removeItem('user_watchlist', id);
+                          await _loadWatchlist();
+                        },
+                      ),
+                    ),
+                  );
+                }),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout_rounded),
+                label: Text(isAr ? 'تسجيل الخروج' : 'Sign out'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title, AppSettings s) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, right: 4, left: 4),
+      child: Text(title, style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
 class MainNavigationHolder extends StatefulWidget {
   const MainNavigationHolder({super.key});
 
