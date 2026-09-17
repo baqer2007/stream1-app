@@ -36,6 +36,7 @@ dependencies:
   # New features: clip/share + external subtitles
   file_picker: ^10.3.3
   share_plus: 11.1.0
+  qr_flutter: ^4.1.0
   ffmpeg_kit_flutter_new_https: ^2.6.2
 
 dev_dependencies:
