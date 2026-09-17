@@ -28,6 +28,93 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'stream_service.dart';
 
+// ==========================================
+// قاموس الترجمة الشامل (Localization Engine)
+// ==========================================
+class Tr {
+  static final Map<String, Map<String, String>> _values = {
+    'app_name': {'ar': 'ONEBR TV', 'en': 'ONEBR TV'},
+    'home': {'ar': 'الرئيسية', 'en': 'Home'},
+    'categories': {'ar': 'الأقسام', 'en': 'Categories'},
+    'search': {'ar': 'بحث', 'en': 'Search'},
+    'profile': {'ar': 'الحساب', 'en': 'Profile'},
+    'movies': {'ar': 'الأفلام', 'en': 'Movies'},
+    'series': {'ar': 'المسلسلات', 'en': 'Series'},
+    'watch_now': {'ar': 'شاهد الآن', 'en': 'Watch Now'},
+    'continue_watching': {'ar': 'متابعة المشاهدة', 'en': 'Continue Watching'},
+    'clear_all': {'ar': 'إزالة الكل', 'en': 'Clear All'},
+    'action_movies': {'ar': 'أفلام الحركة والأكشن', 'en': 'Action Movies'},
+    'featured_movies': {'ar': 'الأفلام المميزة', 'en': 'Featured Movies'},
+    'recently_added': {'ar': 'أُضيف مؤخراً', 'en': 'Recently Added'},
+    'explore_more': {'ar': 'استكشف المزيد من الأعمال', 'en': 'Explore More Titles'},
+    'more': {'ar': 'المزيد', 'en': 'More'},
+    'cancel': {'ar': 'إلغاء', 'en': 'Cancel'},
+    'close': {'ar': 'إغلاق', 'en': 'Close'},
+    'exit': {'ar': 'خروج', 'en': 'Exit'},
+    'exit_dialog_title': {'ar': 'الخروج من ONEBR TV', 'en': 'Exit ONEBR TV'},
+    'exit_dialog_desc': {'ar': 'هل ترغب حقاً في إغلاق التطبيق؟', 'en': 'Are you sure you want to exit?'},
+    'roulette_title': {'ar': 'اقترحنا لك هذا العمل! 🎬', 'en': 'Our Pick For You! 🎬'},
+    'view_details': {'ar': 'مشاهدة التفاصيل', 'en': 'View Details'},
+    'search_hint': {'ar': 'بحث عن فيلم أو مسلسل...', 'en': 'Search movies or series...'},
+    'all': {'ar': 'الكل', 'en': 'All'},
+    'no_results': {'ar': 'لم يتم العثور على نتائج تطابق هذا البحث', 'en': 'No results found'},
+    'recent_searches': {'ar': 'عمليات البحث الأخيرة', 'en': 'Recent Searches'},
+    'clear_history': {'ar': 'مسح السجل', 'en': 'Clear History'},
+    'search_type_start': {'ar': 'ابدأ بكتابة اسم العمل للبحث الفوري', 'en': 'Type title to start search'},
+    'cast': {'ar': 'طاقم التمثيل', 'en': 'Cast'},
+    'watch_trailer': {'ar': 'مشاهدة الإعلان الرسمي', 'en': 'Watch Official Trailer'},
+    'play': {'ar': 'تشغيل', 'en': 'Play'},
+    'episodes': {'ar': 'الحلقات', 'en': 'Episodes'},
+    'episode': {'ar': 'الحلقة', 'en': 'Episode'},
+    'season': {'ar': 'الموسم', 'en': 'Season'},
+    'watched': {'ar': 'تمت المشاهدة', 'en': 'Watched'},
+    'similar_works': {'ar': 'أعمال مقترحة ومشابهة', 'en': 'Similar & Recommended'},
+    'saved': {'ar': 'في المفضلة', 'en': 'Saved'},
+    'watchlist': {'ar': 'المفضلة', 'en': 'Watchlist'},
+    'download': {'ar': 'تحميل', 'en': 'Download'},
+    'downloads': {'ar': 'التنزيلات', 'en': 'Downloads'},
+    'stats': {'ar': 'الإحصائيات', 'en': 'Stats'},
+    'settings': {'ar': 'الإعدادات', 'en': 'Settings'},
+    'no_downloads': {'ar': 'لا توجد تنزيلات حالياً', 'en': 'No downloads yet'},
+    'ready_offline': {'ar': 'جاهز للمشاهدة بدون إنترنت', 'en': 'Ready to watch offline'},
+    'download_failed': {'ar': 'فشل التنزيل أو لم يكتمل', 'en': 'Download failed'},
+    'downloading': {'ar': 'جاري التحميل', 'en': 'Downloading'},
+    'login': {'ar': 'تسجيل الدخول', 'en': 'Sign In'},
+    'register': {'ar': 'إنشاء حساب', 'en': 'Register'},
+    'logout': {'ar': 'تسجيل الخروج', 'en': 'Logout'},
+    'guest_user': {'ar': 'مستخدم زائر', 'en': 'Guest User'},
+    'app_language': {'ar': 'لغة التطبيق', 'en': 'App Language'},
+    'app_font': {'ar': 'خط التطبيق', 'en': 'App Font'},
+    'dark_mode': {'ar': 'الوضع الداكن', 'en': 'Dark Mode'},
+    'light_mode': {'ar': 'الوضع الفاتح', 'en': 'Light Mode'},
+    'tv_mode': {'ar': 'وضع التلفاز', 'en': 'TV Mode'},
+    'speed': {'ar': 'سرعة التشغيل', 'en': 'Playback Speed'},
+    'sleep_timer': {'ar': 'مؤقت النوم', 'en': 'Sleep Timer'},
+    'aspect_ratio': {'ar': 'أبعاد الشاشة', 'en': 'Aspect Ratio'},
+    'fit_screen': {'ar': 'ملء الشاشة', 'en': 'Fit Screen'},
+    'original': {'ar': 'طبيعي', 'en': 'Original'},
+    'clip_reel': {'ar': 'قص ومشاركة ريلز (Reel/Short)', 'en': 'Clip & Share (Reel/Short)'},
+    'clip_desc': {'ar': 'اختر مدة المقطع لمشاركته فورياً مع أصدقائك:', 'en': 'Select clip length to share:'},
+    'share_clip_btn': {'ar': 'مشاركة المقطع الآن 🚀', 'en': 'Share Clip Now 🚀'},
+    'custom_subs': {'ar': 'إضافة ترجمة خارجية مخصصة', 'en': 'Add Custom Subtitles'},
+    'sub_offset': {'ar': 'مزامنة توقيت الترجمة (ثوانٍ)', 'en': 'Subtitle Sync Offset (seconds)'},
+    'request_media': {'ar': 'طلب عمل سينمائي', 'en': 'Request Movie / Series'},
+    'request_desc': {'ar': 'أدخل اسم العمل وسنقوم بإضافته للمنصة:', 'en': 'Enter title to be added:'},
+    'send_request': {'ar': 'إرسال الطلب', 'en': 'Submit Request'},
+    'social_accounts': {'ar': 'حسابات وتواصل التطبيق الرسمية', 'en': 'Official Community & Support'},
+    'open_external': {'ar': 'مشغل خارجي (VLC / MX)', 'en': 'External Player (VLC / MX)'},
+    'report_issue': {'ar': 'الإبلاغ عن مشكلة', 'en': 'Report an Issue'},
+    'dual_subtitles': {'ar': 'الترجمة المزدوجة', 'en': 'Dual Subtitles'},
+    'skip_intro': {'ar': 'تخطي المقدمة', 'en': 'Skip Intro'},
+    'next_ep_in': {'ar': 'الحلقة التالية خلال', 'en': 'Next episode in'},
+  };
+
+  static String text(String key) {
+    final lang = AppSettings.instance.appLanguage;
+    return _values[key]?[lang] ?? _values[key]?['ar'] ?? key;
+  }
+}
+
 class SecureHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
@@ -42,6 +129,9 @@ class SecureHttpOverrides extends HttpOverrides {
   }
 }
 
+// ==========================================
+// إدارة الإعدادات السحابية والروابط للأدمن
+// ==========================================
 class RemoteAdminConfig {
   static final RemoteAdminConfig instance = RemoteAdminConfig._();
   RemoteAdminConfig._();
@@ -50,16 +140,37 @@ class RemoteAdminConfig {
   String maintenanceMsg = 'التطبيق في وضع الصيانة المجدولة حالياً، يرجى المحاولة لاحقاً 🛠️';
   String globalAlert = '';
   bool globalCensorEnabled = true;
-  bool allowDownloads = true;
+  allowDownloads = true;
   String defaultGlobalQuality = '360p';
   int minAppVersion = 1;
   String updateDownloadUrl = '';
   String customBaseUrl = '';
+  String customCensorApiUrl = '';
   List<String> pinnedHeroIds = [];
   List<String> blacklistedMediaIds = [];
+  List<String> bannedDeviceIds = [];
   String popupTitle = '';
   String popupBody = '';
   String popupActionUrl = '';
+
+  // حسابات التواصل والدعم
+  String telegramUrl = 'https://t.me/onebr_tv';
+  String whatsappUrl = 'https://wa.me/9647700000000';
+  String facebookUrl = 'https://facebook.com/onebrtv';
+  String instagramUrl = 'https://instagram.com/onebrtv';
+  String websiteUrl = 'https://onebr.tv';
+  String supportEmail = 'support@onebr.tv';
+
+  // مفاتيح التحكم السحابية بالميزات (Feature Flags)
+  bool featureExternalPlayer = true;
+  bool featureDownloads = true;
+  bool featureClips = true;
+  bool featureCustomSubtitles = true;
+  bool featureRoulette = true;
+  bool featureUserRequests = true;
+
+  // مسارات الترجمة السحابية المخصصة
+  Map<String, dynamic> subtitleOverrides = {};
 
   static const List<String> authorizedAdminEmails = [
     'admin@onebr.tv',
@@ -86,15 +197,36 @@ class RemoteAdminConfig {
           minAppVersion = data['min_version'] ?? 1;
           updateDownloadUrl = data['update_url'] ?? '';
           customBaseUrl = data['custom_base_url'] ?? '';
+          customCensorApiUrl = data['censor_api_url'] ?? '';
           popupTitle = data['popup_title'] ?? '';
           popupBody = data['popup_body'] ?? '';
           popupActionUrl = data['popup_action_url'] ?? '';
+
+          telegramUrl = data['telegram_url'] ?? telegramUrl;
+          whatsappUrl = data['whatsapp_url'] ?? whatsappUrl;
+          facebookUrl = data['facebook_url'] ?? facebookUrl;
+          instagramUrl = data['instagram_url'] ?? instagramUrl;
+          websiteUrl = data['website_url'] ?? websiteUrl;
+          supportEmail = data['support_email'] ?? supportEmail;
+
+          featureExternalPlayer = data['feat_external_player'] ?? true;
+          featureDownloads = data['feat_downloads'] ?? true;
+          featureClips = data['feat_clips'] ?? true;
+          featureCustomSubtitles = data['feat_custom_subs'] ?? true;
+          featureRoulette = data['feat_roulette'] ?? true;
+          featureUserRequests = data['feat_user_requests'] ?? true;
 
           if (data['pinned_hero_ids'] is List) {
             pinnedHeroIds = List<String>.from(data['pinned_hero_ids']);
           }
           if (data['blacklisted_ids'] is List) {
             blacklistedMediaIds = List<String>.from(data['blacklisted_ids']);
+          }
+          if (data['banned_device_ids'] is List) {
+            bannedDeviceIds = List<String>.from(data['banned_device_ids']);
+          }
+          if (data['subtitle_overrides'] is Map) {
+            subtitleOverrides = Map<String, dynamic>.from(data['subtitle_overrides']);
           }
 
           onUpdate();
@@ -163,7 +295,11 @@ class ContentFilterEngine {
     'عاري', 'مضاجعة', 'جنس', 'ممارسة الجنس', 'فراش', 'السرير', 'ثدي', 'يخلع', 'تخلع'
   ];
 
-  static const String serverBaseUrl = 'https://onebr-censor-api.onrender.com';
+  static String get serverBaseUrl {
+    final custom = RemoteAdminConfig.instance.customCensorApiUrl.trim();
+    if (custom.isNotEmpty) return custom;
+    return 'https://onebr-censor-api.onrender.com';
+  }
 
   static List<Map<String, int>> parseSubtitles(List<Subtitle> subs) {
     final List<Map<String, int>> segments = [];
@@ -332,6 +468,18 @@ class CloudSyncService {
         'position_sec': positionSec,
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'pending',
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> submitContentRequest(String title, String type, String note) async {
+    try {
+      await _firestore.collection('content_requests').add({
+        'title': title,
+        'type': type,
+        'note': note,
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (_) {}
   }
@@ -569,6 +717,9 @@ class BackgroundDownloadService {
   }
 }
 
+// ==========================================
+// إدارة حالة التطبيق والثيم واللغة
+// ==========================================
 class AppSettings extends ChangeNotifier {
   static final AppSettings instance = AppSettings._();
   AppSettings._();
@@ -581,6 +732,7 @@ class AppSettings extends ChangeNotifier {
   bool subHasShadow = true;
   double subBottomPadding = 26.0;
   String subBackgroundMode = 'semi';
+  double subOffsetSeconds = 0.0;
   bool enableDualSubtitlesFlag = false;
   int appFilterMode = 0;
   String appLanguage = 'ar';
@@ -683,12 +835,18 @@ class AppSettings extends ChangeNotifier {
     if (bgMode != null) await p.setString('player_sub_bg_mode', bgMode);
   }
 
+  void updateSubOffset(double offset) {
+    subOffsetSeconds = offset;
+    notifyListeners();
+  }
+
   void resetSubtitles() async {
     subFontSize = 18.0;
     subColor = Colors.white;
     subHasShadow = true;
     subBottomPadding = 26.0;
     subBackgroundMode = 'semi';
+    subOffsetSeconds = 0.0;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setDouble('player_sub_size', 18.0);
@@ -700,12 +858,6 @@ class AppSettings extends ChangeNotifier {
     enableDualSubtitlesFlag = val;
     notifyListeners();
     (await SharedPreferences.getInstance()).setBool('player_dual_sub', val);
-  }
-
-  void updateSkipScenes(bool val) async {
-    skipSensitiveScenes = val;
-    notifyListeners();
-    (await SharedPreferences.getInstance()).setBool('player_skip_sens', val);
   }
 
   void updateSmartNotifications(bool val) async {
@@ -798,6 +950,9 @@ void main() async {
   runApp(const OnebrTvApp());
 }
 
+// ==========================================
+// التطبيق مع الربط التفاعلي للثيم
+// ==========================================
 class OnebrTvApp extends StatefulWidget {
   const OnebrTvApp({super.key});
 
@@ -809,7 +964,6 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
   @override
   void initState() {
     super.initState();
-    AppSettings.instance.addListener(() => setState(() {}));
     RemoteAdminConfig.instance.listenToSettings(() {
       if (mounted) setState(() {});
     });
@@ -817,30 +971,53 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-    final r = RemoteAdminConfig.instance;
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) {
+        final s = AppSettings.instance;
+        final r = RemoteAdminConfig.instance;
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'ONEBR TV',
-      theme: (s.isDarkMode ? ThemeData.dark() : ThemeData.light()).copyWith(
-        scaffoldBackgroundColor: s.bg,
-        primaryColor: AppColors.primary,
-        cardColor: s.surface,
-        textTheme: s.getCustomTextTheme(),
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          systemOverlayStyle: s.isDarkMode ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        ),
-        colorScheme: s.isDarkMode
-            ? const ColorScheme.dark(primary: AppColors.primary, surface: AppColors.darkSurface)
-            : const ColorScheme.light(primary: AppColors.primary, surface: AppColors.lightSurface),
-      ),
-      home: r.isMaintenance && !RemoteAdminConfig.isEmailAdmin(s.userEmail)
-          ? const MaintenanceLockScreen()
-          : const MainNavigationHolder(),
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: Tr.text('app_name'),
+          themeMode: s.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          theme: ThemeData.light().copyWith(
+            scaffoldBackgroundColor: AppColors.lightBackground,
+            primaryColor: AppColors.primary,
+            cardColor: AppColors.lightSurface,
+            textTheme: s.getCustomTextTheme(),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              systemOverlayStyle: SystemUiOverlayStyle.dark,
+            ),
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              surface: AppColors.lightSurface,
+            ),
+          ),
+          darkTheme: ThemeData.dark().copyWith(
+            scaffoldBackgroundColor: AppColors.darkBackground,
+            primaryColor: AppColors.primary,
+            cardColor: AppColors.darkSurface,
+            textTheme: s.getCustomTextTheme(),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              systemOverlayStyle: SystemUiOverlayStyle.light,
+            ),
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primary,
+              surface: AppColors.darkSurface,
+            ),
+          ),
+          home: r.isMaintenance && !RemoteAdminConfig.isEmailAdmin(s.userEmail)
+              ? const MaintenanceLockScreen()
+              : const MainNavigationHolder(),
+        );
+      },
     );
   }
 }
@@ -919,7 +1096,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
             ),
             actions: [
               CupertinoDialogAction(
-                child: const Text('إغلاق'),
+                child: Text(Tr.text('close')),
                 onPressed: () => Navigator.pop(ctx),
               ),
               if (r.popupActionUrl.isNotEmpty)
@@ -954,16 +1131,16 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
     final shouldExit = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('الخروج من ONEBR TV'),
-        content: const Text('هل ترغب حقاً في إغلاق التطبيق؟'),
+        title: Text(Tr.text('exit_dialog_title')),
+        content: Text(Tr.text('exit_dialog_desc')),
         actions: [
           CupertinoDialogAction(
-            child: const Text('إلغاء'),
+            child: Text(Tr.text('cancel')),
             onPressed: () => Navigator.of(ctx).pop(false),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
-            child: const Text('خروج'),
+            child: Text(Tr.text('exit')),
             onPressed: () => Navigator.of(ctx).pop(true),
           ),
         ],
@@ -1009,8 +1186,8 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
                   selectedItemColor: AppColors.primary,
                   unselectedItemColor: s.textSecondary,
                   type: BottomNavigationBarType.fixed,
-                  selectedFontSize: 10,
-                  unselectedFontSize: 10,
+                  selectedFontSize: 11,
+                  unselectedFontSize: 11,
                   onTap: (i) {
                     HapticFeedback.lightImpact();
                     setState(() => _currentIndex = i);
@@ -1018,19 +1195,19 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
                   items: [
                     BottomNavigationBarItem(
                       icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.home_filled, size: 23)),
-                      label: isAr ? 'الرئيسية' : 'Home',
+                      label: Tr.text('home'),
                     ),
                     BottomNavigationBarItem(
                       icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.grid_view_rounded, size: 23)),
-                      label: isAr ? 'الأقسام' : 'Categories',
+                      label: Tr.text('categories'),
                     ),
                     BottomNavigationBarItem(
                       icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.search_rounded, size: 23)),
-                      label: isAr ? 'بحث' : 'Search',
+                      label: Tr.text('search'),
                     ),
                     BottomNavigationBarItem(
                       icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.person_rounded, size: 23)),
-                      label: isAr ? 'الحساب' : 'Profile',
+                      label: Tr.text('profile'),
                     ),
                   ],
                 ),
@@ -1069,7 +1246,7 @@ class CategoriesScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text(isAr ? 'الأقسام والتصنيفات' : 'Categories & Genres', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: s.textPrimary)),
+          title: Text(Tr.text('categories'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: s.textPrimary)),
         ),
         body: ListView.separated(
           physics: const BouncingScrollPhysics(),
@@ -1080,36 +1257,31 @@ class CategoriesScreen extends StatelessWidget {
             final cat = _allCategories[i];
             final title = isAr ? cat['ar'] : cat['en'];
 
-            return FocusBuilder(
-              builder: (context, hasFocus) => Container(
-                decoration: BoxDecoration(
-                  color: hasFocus ? s.surfaceLight : s.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: hasFocus ? AppColors.primary : s.border,
-                    width: hasFocus ? 1.5 : 0.5,
+            return Container(
+              decoration: BoxDecoration(
+                color: s.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: s.border, width: 0.5),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                leading: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: s.surfaceLight,
+                    borderRadius: BorderRadius.circular(10),
                   ),
+                  child: Icon(cat['icon'], color: AppColors.primary, size: 20),
                 ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  leading: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: s.surfaceLight,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(cat['icon'], color: AppColors.primary, size: 20),
-                  ),
-                  title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: s.textPrimary)),
-                  trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary, size: 20),
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => FullCategoryView(title: title, categoryEn: cat['key'])),
-                    );
-                  },
-                ),
+                title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: s.textPrimary)),
+                trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary, size: 20),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => FullCategoryView(title: title, categoryEn: cat['key'])),
+                  );
+                },
               ),
             );
           },
@@ -1230,44 +1402,39 @@ class _FullCategoryViewState extends State<FullCategoryView> {
             final poster = StreamService.extractPoster(it);
             final title = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
 
-            return FocusBuilder(
-              builder: (context, hasFocus) => InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it)));
-                },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: s.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.card),
-                          border: Border.all(
-                            color: hasFocus ? AppColors.primary : s.border,
-                            width: hasFocus ? 2.0 : 0.5,
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.card),
-                          child: poster.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: poster,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, __) => Container(color: s.surfaceLight),
-                                  errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
-                                )
-                              : Container(color: s.surface),
-                        ),
+            return InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it)));
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: s.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        border: Border.all(color: s.border, width: 0.5),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        child: poster.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: poster,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(color: s.surfaceLight),
+                                errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                              )
+                            : Container(color: s.surface),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                ],
               ),
             );
           },
@@ -1305,7 +1472,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   void initState() {
     super.initState();
     _loadFeed();
-    AppSettings.instance.addListener(_onSettingsChanged);
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
@@ -1318,13 +1484,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
   @override
   void dispose() {
-    AppSettings.instance.removeListener(_onSettingsChanged);
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _onSettingsChanged() {
-    if (mounted) setState(() {});
   }
 
   void _handleSecretAdminTap() {
@@ -1385,7 +1546,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         ),
         actions: [
           CupertinoDialogAction(
-            child: Text(isAr ? 'إلغاء' : 'Cancel'),
+            child: Text(Tr.text('cancel')),
             onPressed: () => Navigator.pop(ctx),
           ),
           CupertinoDialogAction(
@@ -1552,16 +1713,16 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     showCupertinoDialog(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: Text(isAr ? 'اقترحنا لك هذا العمل! 🎬' : 'Our Pick For You! 🎬'),
+        title: Text(Tr.text('roulette_title')),
         content: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         ),
         actions: [
-          CupertinoDialogAction(child: Text(isAr ? 'إلغاء' : 'Cancel'), onPressed: () => Navigator.pop(ctx)),
+          CupertinoDialogAction(child: Text(Tr.text('cancel')), onPressed: () => Navigator.pop(ctx)),
           CupertinoDialogAction(
             isDefaultAction: true,
-            child: Text(isAr ? 'مشاهدة التفاصيل' : 'View Details'),
+            child: Text(Tr.text('view_details')),
             onPressed: () {
               Navigator.pop(ctx);
               _openDetails(randomItem);
@@ -1602,7 +1763,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               GestureDetector(
                 onTap: _handleSecretAdminTap,
                 child: Text(
-                  'ONEBR TV',
+                  Tr.text('app_name'),
                   style: TextStyle(
                     color: s.textPrimary,
                     fontWeight: FontWeight.bold,
@@ -1613,7 +1774,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               ),
               const Spacer(),
               IconButton(
-                tooltip: s.isDarkMode ? (isAr ? 'الوضع الفاتح' : 'Light Mode') : (isAr ? 'الوضع الداكن' : 'Dark Mode'),
+                tooltip: s.isDarkMode ? Tr.text('light_mode') : Tr.text('dark_mode'),
                 icon: Icon(s.isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded, color: s.textPrimary, size: 20),
                 onPressed: () {
                   HapticFeedback.selectionClick();
@@ -1621,18 +1782,19 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 },
               ),
               IconButton(
-                tooltip: isAr ? 'وضع التلفاز' : 'TV Mode',
+                tooltip: Tr.text('tv_mode'),
                 icon: Icon(isTv ? Icons.tv_rounded : Icons.phone_android_rounded, color: isTv ? AppColors.primary : s.textSecondary, size: 20),
                 onPressed: () {
                   HapticFeedback.selectionClick();
                   s.updateTvMode(!isTv);
                 },
               ),
-              IconButton(
-                tooltip: isAr ? 'شنو نباوع اليوم؟' : 'Roulette',
-                icon: const Icon(Icons.casino_rounded, color: AppColors.star, size: 22),
-                onPressed: _spinMovieRoulette,
-              ),
+              if (r.featureRoulette)
+                IconButton(
+                  tooltip: 'Roulette',
+                  icon: const Icon(Icons.casino_rounded, color: AppColors.star, size: 22),
+                  onPressed: _spinMovieRoulette,
+                ),
             ],
           ),
         ),
@@ -1673,13 +1835,13 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       if (_resumeList.isNotEmpty) _buildResumeSection(isAr),
 
                       _buildMediaShelf(
-                        isAr ? 'أفلام الحركة والأكشن' : 'Action Movies',
+                        Tr.text('action_movies'),
                         _marvelItems,
                         () => Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => FullCategoryView(
-                              title: isAr ? 'أفلام الحركة والأكشن' : 'Action Movies',
+                              title: Tr.text('action_movies'),
                               categoryEn: 'action',
                             ),
                           ),
@@ -1688,13 +1850,13 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       ),
 
                       _buildMediaShelf(
-                        isAr ? 'الأفلام المميزة' : 'Featured Movies',
+                        Tr.text('featured_movies'),
                         _featuredItems,
                         () => Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => FullCategoryView(
-                              title: isAr ? 'الأفلام المميزة' : 'Featured Movies',
+                              title: Tr.text('featured_movies'),
                               isTopRated: true,
                             ),
                           ),
@@ -1703,9 +1865,9 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       ),
 
                       _buildMediaShelf(
-                        isAr ? 'أُضيف مؤخراً' : 'Recently Added',
+                        Tr.text('recently_added'),
                         _recentItems,
-                        () => _openSectionView(isAr ? 'أُضيف مؤخراً' : 'Recently Added', true),
+                        () => _openSectionView(Tr.text('recently_added'), true),
                         isAr,
                       ),
 
@@ -1714,7 +1876,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(isAr ? 'استكشف المزيد من الأعمال' : 'Explore More Titles', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(Tr.text('explore_more'), style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                             const Icon(Icons.movie_filter_rounded, color: AppColors.primary, size: 18),
                           ],
                         ),
@@ -1738,48 +1900,43 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             final t = isAr ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
                             final score = (it['stars'] ?? '7.0').toString();
 
-                            return FocusBuilder(
-                              builder: (context, hasFocus) => InkWell(
-                                onTap: () => _openDetails(it),
-                                borderRadius: BorderRadius.circular(AppRadius.card),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: s.surface,
-                                          borderRadius: BorderRadius.circular(AppRadius.card),
-                                          border: Border.all(
-                                            color: hasFocus ? AppColors.primary : s.border,
-                                            width: 2.0,
-                                          ),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(AppRadius.card),
-                                          child: poster.isNotEmpty
-                                              ? CachedNetworkImage(
-                                                  imageUrl: poster,
-                                                  width: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                  placeholder: (_, __) => Container(color: s.surfaceLight),
-                                                  errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
-                                                )
-                                              : Container(color: s.surface),
-                                        ),
+                            return InkWell(
+                              onTap: () => _openDetails(it),
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: s.surface,
+                                        borderRadius: BorderRadius.circular(AppRadius.card),
+                                        border: Border.all(color: s.border, width: 0.5),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(AppRadius.card),
+                                        child: poster.isNotEmpty
+                                            ? CachedNetworkImage(
+                                                imageUrl: poster,
+                                                width: double.infinity,
+                                                fit: BoxFit.cover,
+                                                placeholder: (_, __) => Container(color: s.surfaceLight),
+                                                errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                                              )
+                                            : Container(color: s.surface),
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
-                                        const SizedBox(width: 3),
-                                        Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
+                                      const SizedBox(width: 3),
+                                      Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ],
                               ),
                             );
                           },
@@ -1807,62 +1964,52 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       child: Row(
         children: [
           Expanded(
-            child: FocusBuilder(
-              builder: (context, hasFocus) => InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  _openSectionView(isAr ? 'الأفلام السينمائية' : 'Movies', false);
-                },
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: hasFocus ? s.surfaceLight : s.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
-                      Text(isAr ? 'الأفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                    ],
-                  ),
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _openSectionView(Tr.text('movies'), false);
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: s.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: s.border, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.play_arrow_rounded, color: AppColors.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text(Tr.text('movies'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                  ],
                 ),
               ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: FocusBuilder(
-              builder: (context, hasFocus) => InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  _openSectionView(isAr ? 'المسلسلات والأنمي' : 'TV Series', true);
-                },
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: hasFocus ? s.surfaceLight : s.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: hasFocus ? AppColors.primary : s.border,
-                      width: hasFocus ? 1.5 : 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.tv_rounded, color: Colors.amber, size: 18),
-                      const SizedBox(width: 8),
-                      Text(isAr ? 'المسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                    ],
-                  ),
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _openSectionView(Tr.text('series'), true);
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: s.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: s.border, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.tv_rounded, color: Colors.amber, size: 18),
+                    const SizedBox(width: 8),
+                    Text(Tr.text('series'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                  ],
                 ),
               ),
             ),
@@ -1942,7 +2089,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                           minSize: 0,
                           onPressed: () => _openDetails(item),
                           child: Text(
-                            isAr ? 'شاهد الآن' : 'Watch',
+                            Tr.text('watch_now'),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),
@@ -1985,14 +2132,14 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(isAr ? 'متابعة المشاهدة' : 'Continue Watching', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+              Text(Tr.text('continue_watching'), style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
               GestureDetector(
                 onTap: () async {
                   HapticFeedback.lightImpact();
                   await LocalStorageService.setList('resume_playback_list', []);
                   setState(() => _resumeList = []);
                 },
-                child: Text(isAr ? 'إزالة الكل' : 'Clear All', style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
+                child: Text(Tr.text('clear_all'), style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -2100,7 +2247,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(isAr ? 'المزيد' : 'More', style: TextStyle(color: s.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                  child: Text(Tr.text('more'), style: TextStyle(color: s.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],
@@ -2122,48 +2269,43 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               return Container(
                 width: 105,
                 margin: const EdgeInsets.only(left: 10),
-                child: FocusBuilder(
-                  builder: (context, hasFocus) => InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    onTap: () => _openDetails(it),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: s.surface,
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              border: Border.all(
-                                color: hasFocus ? AppColors.primary : s.border,
-                                width: 2.0,
-                              ),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isNotEmpty
-                                  ? CachedNetworkImage(
-                                      imageUrl: poster,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => Container(color: s.surfaceLight),
-                                      errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
-                                    )
-                                  : Container(color: s.surface),
-                            ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  onTap: () => _openDetails(it),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: s.surface,
+                            borderRadius: BorderRadius.circular(AppRadius.card),
+                            border: Border.all(color: s.border, width: 0.5),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.card),
+                            child: poster.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: poster,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => Container(color: s.surfaceLight),
+                                    errorWidget: (_, __, ___) => Container(color: s.surfaceLight, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+                                  )
+                                : Container(color: s.surface),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                        Row(
-                          children: [
-                            const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
-                            const SizedBox(width: 3),
-                            Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, color: AppColors.star, size: 12),
+                          const SizedBox(width: 3),
+                          Text(score, style: TextStyle(color: s.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -2286,7 +2428,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                     onChanged: _onQueryChanged,
                     style: TextStyle(color: s.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: isAr ? 'بحث عن فيلم أو مسلسل...' : 'Search movies or series...',
+                      hintText: Tr.text('search_hint'),
                       hintStyle: TextStyle(color: s.textSecondary, fontSize: 13),
                       border: InputBorder.none,
                       prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary, size: 22),
@@ -2309,11 +2451,11 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Row(
                     children: [
-                      _buildFilterChip(isAr ? 'الكل' : 'All', _filterType == 'all', () => setState(() => _filterType = 'all')),
+                      _buildFilterChip(Tr.text('all'), _filterType == 'all', () => setState(() => _filterType = 'all')),
                       const SizedBox(width: 8),
-                      _buildFilterChip(isAr ? 'أفلام' : 'Movies', _filterType == 'movie', () => setState(() => _filterType = 'movie')),
+                      _buildFilterChip(Tr.text('movies'), _filterType == 'movie', () => setState(() => _filterType = 'movie')),
                       const SizedBox(width: 8),
-                      _buildFilterChip(isAr ? 'مسلسلات' : 'Series', _filterType == 'series', () => setState(() => _filterType = 'series')),
+                      _buildFilterChip(Tr.text('series'), _filterType == 'series', () => setState(() => _filterType = 'series')),
                     ],
                   ),
                 ),
@@ -2325,7 +2467,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                             ? _buildCategorizedResults(isAr)
                             : Center(
                                 child: Text(
-                                  isAr ? 'لم يتم العثور على نتائج تطابق هذا البحث' : 'No results found',
+                                  Tr.text('no_results'),
                                   style: TextStyle(color: s.textSecondary, fontSize: 13),
                                 ),
                               )
@@ -2373,7 +2515,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         if (showSeries && _seriesResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'المسلسلات' : 'Series', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(Tr.text('series'), style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
           ..._seriesResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
           Divider(color: s.border, height: 24),
@@ -2381,7 +2523,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         if (showMovies && _movieResults.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(isAr ? 'الأفلام' : 'Movies', style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(Tr.text('movies'), style: TextStyle(color: s.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ),
           ..._movieResults.map<Widget>((it) => _buildMediaSearchRow(it, isAr)).toList(),
         ],
@@ -2456,7 +2598,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     if (_recentSearches.isEmpty) {
       return Center(
         child: Text(
-          isAr ? 'ابدأ بكتابة اسم العمل للبحث الفوري' : 'Type title to start search',
+          Tr.text('search_type_start'),
           style: TextStyle(color: s.textSecondary, fontSize: 12),
         ),
       );
@@ -2469,14 +2611,14 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(isAr ? 'عمليات البحث الأخيرة' : 'Recent Searches', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+            Text(Tr.text('recent_searches'), style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
             GestureDetector(
               onTap: () async {
                 HapticFeedback.lightImpact();
                 await LocalStorageService.setList('recent_search_history', []);
                 _loadRecents();
               },
-              child: Text(isAr ? 'مسح السجل' : 'Clear History', style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+              child: Text(Tr.text('clear_history'), style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -2671,7 +2813,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         builder: (_) => PlayerScreen(
           mediaId: targetId,
           title: title,
-          subtitleTextHeader: isAr ? 'الموسم $_selectedSeason - الحلقة $idx' : 'Season $_selectedSeason - Episode $idx',
+          subtitleTextHeader: isAr ? '${Tr.text('season')} $_selectedSeason - ${Tr.text('episode')} $idx' : 'Season $_selectedSeason - Episode $idx',
           videoUrl: '',
           qualities: const [],
           episodes: _seasonsMap[_selectedSeason] ?? [],
@@ -2791,7 +2933,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 );
 
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل في خلفية النظام! راقب شريط الإشعارات' : 'Download started in background!')),
+                                  SnackBar(content: Text(isAr ? 'بدأ التنزيل في خلفية النظام!' : 'Download started in background!')),
                                 );
                               },
                             ),
@@ -2912,7 +3054,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 child: Text('IMDb $score', style: const TextStyle(color: AppColors.star, fontSize: 11, fontWeight: FontWeight.bold)),
                               ),
                               const SizedBox(width: 8),
-                              Text('$year • ${_isSeries ? (isAr ? 'مسلسل' : 'Series') : (isAr ? 'فيلم' : 'Movie')}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text('$year • ${_isSeries ? Tr.text('series') : Tr.text('movies')}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -2930,7 +3072,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                     Icon(_isWatchlist ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined, color: _isWatchlist ? AppColors.primary : Colors.white, size: 26),
                                     const SizedBox(height: 4),
                                     Text(
-                                      _isWatchlist ? (isAr ? 'في المفضلة' : 'Saved') : (isAr ? 'المفضلة' : 'Watchlist'),
+                                      _isWatchlist ? Tr.text('saved') : Tr.text('watchlist'),
                                       style: TextStyle(color: _isWatchlist ? AppColors.primary : Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
                                     ),
                                   ],
@@ -2948,7 +3090,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   children: [
                                     const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
                                     const SizedBox(width: 4),
-                                    Text(isAr ? 'شاهد الآن' : 'Watch Now', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text(Tr.text('watch_now'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                                   ],
                                 ),
                               ),
@@ -2959,7 +3101,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                   children: [
                                     const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 24),
                                     const SizedBox(height: 4),
-                                    Text(isAr ? 'تحميل' : 'Download', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                                    Text(Tr.text('download'), style: const TextStyle(color: Colors.white70, fontSize: 10)),
                                   ],
                                 ),
                               ),
@@ -2994,7 +3136,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     const SizedBox(height: 14),
 
                     if (_realActors.isNotEmpty) ...[
-                      Text(isAr ? 'طاقم التمثيل' : 'Cast', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                      Text(Tr.text('cast'), style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       SizedBox(
                         height: 40,
@@ -3032,9 +3174,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                           children: [
                             const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 22),
                             const SizedBox(width: 8),
-                            Text(isAr ? 'مشاهدة الإعلان الرسمي' : 'Watch Official Trailer', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                            Text(Tr.text('watch_trailer'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
                             const Spacer(),
-                            Text(isAr ? 'تشغيل' : 'Play', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                            Text(Tr.text('play'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
                           ],
                         ),
                       ),
@@ -3051,7 +3193,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         const SizedBox(width: 16),
                         Icon(Icons.thumb_down_rounded, color: s.textSecondary, size: 16),
                         const SizedBox(width: 4),
-                        Text('84', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        const Text('84', style: TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
                     ),
                     Divider(color: s.border, height: 32),
@@ -3060,7 +3202,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(isAr ? 'الحلقات' : 'Episodes', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text(Tr.text('episodes'), style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                           if (sortedSeasonKeys.length > 1)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -3073,7 +3215,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 dropdownColor: s.surface,
                                 value: _selectedSeason,
                                 underline: const SizedBox(),
-                                items: sortedSeasonKeys.map<DropdownMenuItem<int>>((season) => DropdownMenuItem(value: season, child: Text(isAr ? 'الموسم $season' : 'Season $season', style: TextStyle(color: s.textPrimary, fontSize: 12)))).toList(),
+                                items: sortedSeasonKeys.map<DropdownMenuItem<int>>((season) => DropdownMenuItem(value: season, child: Text('${Tr.text('season')} $season', style: TextStyle(color: s.textPrimary, fontSize: 12)))).toList(),
                                 onChanged: (v) {
                                   if (v != null) {
                                     setState(() {
@@ -3095,73 +3237,68 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             final targetId = (ep['nb'] ?? ep['id']).toString();
                             final isWatched = _watchedEpisodes.contains(targetId);
 
-                            return FocusBuilder(
-                              builder: (context, hasFocus) => Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                decoration: BoxDecoration(
-                                  color: hasFocus ? s.surfaceLight : s.surface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: hasFocus ? AppColors.primary : s.border,
-                                    width: 2.0,
-                                  ),
-                                ),
-                                child: InkWell(
-                                  onTap: () => _playEpisode(ep, idx, isAr),
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Row(
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(Icons.download_rounded, color: s.textSecondary, size: 20),
-                                          onPressed: () => _showDownloadQualityPicker(targetId, '$title - ${isAr ? "حلقة" : "Ep"} $idx', poster, isAr),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: s.surface,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: s.border, width: 0.5),
+                              ),
+                              child: InkWell(
+                                onTap: () => _playEpisode(ep, idx, isAr),
+                                borderRadius: BorderRadius.circular(14),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Row(
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.download_rounded, color: s.textSecondary, size: 20),
+                                        onPressed: () => _showDownloadQualityPicker(targetId, '$title - ${Tr.text('episode')} $idx', poster, isAr),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('${Tr.text('episode')} $idx', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                                            const SizedBox(height: 4),
+                                            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                            if (isWatched) ...[
                                               const SizedBox(height: 4),
-                                              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                              if (isWatched) ...[
-                                                const SizedBox(height: 4),
-                                                Row(
-                                                  children: [
-                                                    const Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
-                                                    const SizedBox(width: 4),
-                                                    Text(isAr ? 'تمت المشاهدة' : 'Watched', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                                                  ],
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(AppRadius.chip),
-                                          child: Stack(
-                                            alignment: Alignment.center,
-                                            children: [
-                                              Container(
-                                                width: 110,
-                                                height: 65,
-                                                color: Colors.black26,
-                                                child: poster.isNotEmpty
-                                                    ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
-                                                    : null,
-                                              ),
-                                              Container(
-                                                width: 28, height: 28,
-                                                decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
-                                                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.visibility_rounded, color: Colors.greenAccent, size: 14),
+                                                  const SizedBox(width: 4),
+                                                  Text(Tr.text('watched'), style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                ],
                                               ),
                                             ],
-                                          ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(AppRadius.chip),
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            Container(
+                                              width: 110,
+                                              height: 65,
+                                              color: Colors.black26,
+                                              child: poster.isNotEmpty
+                                                  ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
+                                                  : null,
+                                            ),
+                                            Container(
+                                              width: 28, height: 28,
+                                              decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle, border: Border.all(color: Colors.white38)),
+                                              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -3173,7 +3310,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
                     if (_similarMedia.isNotEmpty) ...[
                       const SizedBox(height: 24),
-                      Text(isAr ? 'أعمال مقترحة ومشابهة' : 'Similar & Recommended', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(Tr.text('similar_works'), style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                       SizedBox(
                         height: 175,
@@ -3189,31 +3326,28 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             return Container(
                               width: 105,
                               margin: const EdgeInsets.only(left: 10),
-                              child: FocusBuilder(
-                                builder: (context, hasFocus) => InkWell(
-                                  borderRadius: BorderRadius.circular(AppRadius.card),
-                                  onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(AppRadius.card),
-                                            border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(AppRadius.card),
-                                            child: simPoster.isNotEmpty
-                                                ? CachedNetworkImage(imageUrl: simPoster, fit: BoxFit.cover, width: double.infinity)
-                                                : Container(color: s.surface),
-                                          ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(AppRadius.card),
+                                onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: it))),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(AppRadius.card),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(AppRadius.card),
+                                          child: simPoster.isNotEmpty
+                                              ? CachedNetworkImage(imageUrl: simPoster, fit: BoxFit.cover, width: double.infinity)
+                                              : Container(color: s.surface),
                                         ),
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(simTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(simTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                  ],
                                 ),
                               ),
                             );
@@ -3232,6 +3366,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
+// ==========================================
+// مشغل الفيديو مع أدوات الريلز والترجمة
+// ==========================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -3432,7 +3569,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentStreamUrl = targetUrl;
       _initPlayer(targetUrl);
 
-      final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
+      // فحص إذا كان هناك رابط ترجمة مخصص ومسجل في الأدمن للعمل
+      final overrideSub = RemoteAdminConfig.instance.subtitleOverrides[id];
+      String subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
+      if (overrideSub != null && overrideSub['url'] != null) {
+        subAr = overrideSub['url'].toString();
+        if (overrideSub['offset'] != null) {
+          AppSettings.instance.subOffsetSeconds = (overrideSub['offset'] as num).toDouble();
+        }
+      }
+
       final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesPipeline(subAr, subEn);
     }
@@ -3675,23 +3821,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _controller!.seekTo(target > _controller!.value.duration ? _controller!.value.duration : target);
     HapticFeedback.heavyImpact();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.remove_red_eye_outlined, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text('تم رصد لقطة حساسة وتخطيها ذكياً عبر الرؤية البصرية 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          backgroundColor: AppColors.primaryDark,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
-
     try {
       await FirebaseFirestore.instance.collection('censored_scenes').doc(_activeMediaId).set({
         'scenes': FieldValue.arrayUnion([{'start': startSec, 'end': endSec}])
@@ -3701,52 +3830,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     Future.delayed(const Duration(seconds: 3), () {
       _isSeekingNow = false;
     });
-  }
-
-  void _showReportDialog(bool isAr) {
-    final reasonCtrl = TextEditingController();
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(isAr ? 'الإبلاغ عن مشكلة ⚠️' : 'Report an Issue ⚠️'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(isAr ? 'صف المشكلة (رابط تالف، لقطة لم تُحجب، ترجمة غير متطابقة)' : 'Describe problem (dead link, missed scene, subtitle issue)'),
-              const SizedBox(height: 8),
-              CupertinoTextField(
-                controller: reasonCtrl,
-                placeholder: isAr ? 'تفاصيل البلاغ...' : 'Report details...',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(child: Text(isAr ? 'إلغاء' : 'Cancel'), onPressed: () => Navigator.pop(ctx)),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: Text(isAr ? 'إرسال' : 'Submit'),
-            onPressed: () async {
-              if (reasonCtrl.text.trim().isNotEmpty) {
-                final pos = _controller?.value.position.inSeconds;
-                await CloudSyncService.reportIssue(
-                  mediaId: _activeMediaId,
-                  title: widget.title,
-                  reason: reasonCtrl.text.trim(),
-                  positionSec: pos,
-                );
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(isAr ? 'تم إرسال بلاغك للإدارة بنجاح، شكراً لمساعدتك!' : 'Report sent successfully!')),
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
   }
 
   void _videoPlayerListener() {
@@ -3766,6 +3849,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
+    // الحجب التلقائي يعمل في الخلفية بهدوء وبدون أي زر على الشاشة
     if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty && !_isSeekingNow) {
       final currentSec = pos.inSeconds;
       for (var seg in _sensitiveSegments) {
@@ -3776,37 +3860,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
           _lastSkippedSecond = start;
           ctrl.seekTo(Duration(seconds: end + 1));
           HapticFeedback.heavyImpact();
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.shield_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text('تم تجاوز لقطة غير لائقة تلقائياً 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                backgroundColor: AppColors.primaryDark,
-                duration: Duration(seconds: 2),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
           break;
         }
       }
     }
 
+    // توقيت الترجمة مع مراعاة الإزاحة المخصصة
+    final offsetMs = (AppSettings.instance.subOffsetSeconds * 1000).toInt();
+    final adjustedPos = Duration(milliseconds: (pos.inMilliseconds + offsetMs).clamp(0, dur.inMilliseconds));
+
     if (_subtitles.isNotEmpty) {
       String matchedText = '';
       for (var s in _subtitles) {
-        if (pos >= s.start && pos <= s.end) {
+        if (adjustedPos >= s.start && adjustedPos <= s.end) {
           matchedText = s.text;
           break;
         }
-        if (s.start > pos) break;
+        if (s.start > adjustedPos) break;
       }
       if (matchedText != _currentSubText && mounted) {
         setState(() => _currentSubText = matchedText);
@@ -3816,11 +3886,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (AppSettings.instance.enableDualSubtitlesFlag && _secondarySubtitles.isNotEmpty) {
       String matchedText2 = '';
       for (var s in _secondarySubtitles) {
-        if (pos >= s.start && pos <= s.end) {
+        if (adjustedPos >= s.start && adjustedPos <= s.end) {
           matchedText2 = s.text;
           break;
         }
-        if (s.start > pos) break;
+        if (s.start > adjustedPos) break;
       }
       if (matchedText2 != _currentSecondarySubText && mounted) {
         setState(() => _currentSecondarySubText = matchedText2);
@@ -3875,7 +3945,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _isReady = false;
       _activeEpIndex = epIdx;
       _activeMediaId = epId;
-      _activeHeader = AppSettings.instance.appLanguage == 'ar' ? 'الحلقة $epIdx' : 'Episode $epIdx';
+      _activeHeader = '${Tr.text('episode')} $epIdx';
       _showAutoNext = false;
       _subtitles.clear();
       _secondarySubtitles.clear();
@@ -3971,6 +4041,179 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
+  // أداة إنشاء ومشاركة الريلز
+  void _openReelsClipperDialog() {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final curSec = _controller!.value.position.inSeconds;
+    int clipLength = 15;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => Directionality(
+          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: AppSettings.instance.glassFill,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.movie_creation_rounded, color: AppColors.primary, size: 24),
+                        const SizedBox(width: 8),
+                        Text(Tr.text('clip_reel'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(Tr.text('clip_desc'), style: TextStyle(color: AppSettings.instance.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [5, 10, 15, 30].map((sec) {
+                        final isSel = clipLength == sec;
+                        return ChoiceChip(
+                          label: Text('$sec ثوانٍ', style: TextStyle(color: isSel ? Colors.white : AppSettings.instance.textPrimary)),
+                          selected: isSel,
+                          selectedColor: AppColors.primary,
+                          backgroundColor: AppSettings.instance.surface,
+                          onSelected: (_) => setDState(() => clipLength = sec),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: AppSettings.instance.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppSettings.instance.border, width: 0.5)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('من توقيت ${_formatTime(Duration(seconds: curSec))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
+                          const Icon(Icons.arrow_forward_rounded, size: 16, color: AppColors.primary),
+                          Text('إلى ${_formatTime(Duration(seconds: curSec + clipLength))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          final shareText = '🎬 شاهد هذه اللقطة من "${widget.title}" بدقة 4K عبر تطبيق ONEBR TV!\n'
+                              '⏱️ التوقيت: ${_formatTime(Duration(seconds: curSec))} - ${_formatTime(Duration(seconds: curSec + clipLength))}\n'
+                              '📥 حمل التطبيق مجاناً: https://onebr.tv/watch/${widget.mediaId}?t=$curSec';
+                          Clipboard.setData(ClipboardData(text: shareText));
+                          final uri = Uri.parse('sms:?body=${Uri.encodeComponent(shareText)}');
+                          launchUrl(uri).catchError((_) => false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم نسخ وتجهيز كليب الريلز للمشاركة بنجاح! 🚀')),
+                          );
+                        },
+                        child: Text(Tr.text('share_clip_btn'), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // أداة استيراد الترجمات الخارجية وتعديل التوقيت
+  void _openCustomSubtitlesDialog() {
+    final subUrlCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => Directionality(
+          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: AppSettings.instance.glassFill,
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(Tr.text('custom_subs'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 12),
+                    CupertinoTextField(
+                      controller: subUrlCtrl,
+                      placeholder: 'https://example.com/arabic_sub.srt',
+                      style: TextStyle(color: AppSettings.instance.textPrimary),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(12),
+                        onPressed: () {
+                          if (subUrlCtrl.text.trim().isNotEmpty) {
+                            Navigator.pop(ctx);
+                            _loadSubs(subUrlCtrl.text.trim(), isSecondary: false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('تم تحميل ملف الترجمة الخارجي وتطبيقه! 📝')),
+                            );
+                          }
+                        },
+                        child: const Text('تحميل وتطبيق الترجمة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+                      ),
+                    ),
+                    Divider(color: AppSettings.instance.border, height: 28),
+                    Text(Tr.text('sub_offset'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline_rounded, color: AppColors.primary, size: 28),
+                          onPressed: () {
+                            setDState(() {
+                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds - 0.5);
+                            });
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('${AppSettings.instance.subOffsetSeconds.toStringAsFixed(1)}s', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 28),
+                          onPressed: () {
+                            setDState(() {
+                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds + 0.5);
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showEpisodesDrawer() {
     HapticFeedback.selectionClick();
     final isAr = AppSettings.instance.appLanguage == 'ar';
@@ -3990,7 +4233,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(isAr ? 'قائمة الحلقات' : 'Episode List', style: TextStyle(color: AppSettings.instance.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(Tr.text('episodes'), style: TextStyle(color: AppSettings.instance.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   Expanded(
                     child: ListView.builder(
@@ -4000,25 +4243,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         final ep = widget.episodes[i];
                         final idx = i + 1;
                         final isCurrent = idx == _activeEpIndex;
-                        return FocusBuilder(
-                          builder: (context, hasFocus) => Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(
-                              color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppSettings.instance.surface,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: hasFocus ? AppColors.primary : AppSettings.instance.border,
-                                width: hasFocus ? 1.5 : 0.5,
-                              ),
-                            ),
-                            child: ListTile(
-                              title: Text(isAr ? 'الحلقة $idx' : 'Episode $idx', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
-                              trailing: isCurrent ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary) : null,
-                              onTap: () {
-                                Navigator.pop(context);
-                                _switchEpisode(ep, idx);
-                              },
-                            ),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: isCurrent ? AppColors.primary.withOpacity(0.3) : AppSettings.instance.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppSettings.instance.border, width: 0.5),
+                          ),
+                          child: ListTile(
+                            title: Text('${Tr.text('episode')} $idx', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+                            trailing: isCurrent ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary) : null,
+                            onTap: () {
+                              Navigator.pop(context);
+                              _switchEpisode(ep, idx);
+                            },
                           ),
                         );
                       },
@@ -4115,6 +4353,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _openSettingsBottomSheet() {
     final settings = AppSettings.instance;
     final isAr = settings.appLanguage == 'ar';
+    final r = RemoteAdminConfig.instance;
 
     showModalBottomSheet(
       context: context,
@@ -4132,10 +4371,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (!widget.isLocalFile) ...[
+                    if (!widget.isLocalFile && r.featureExternalPlayer) ...[
                       ListTile(
                         leading: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'فتح في مشغل خارجي (VLC / MX)' : 'Open in External Player', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        title: Text(Tr.text('open_external'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                         onTap: () {
                           Navigator.pop(context);
                           _castToTv();
@@ -4143,9 +4382,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       Divider(color: settings.border, height: 1),
                     ],
+                    if (r.featureCustomSubtitles) ...[
+                      ListTile(
+                        leading: const Icon(Icons.subtitles_outlined, color: Colors.cyanAccent),
+                        title: Text(Tr.text('custom_subs'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openCustomSubtitlesDialog();
+                        },
+                      ),
+                      Divider(color: settings.border, height: 1),
+                    ],
                     ListTile(
-                      leading: Icon(Icons.report_problem_rounded, color: Colors.amber),
-                      title: Text(isAr ? 'الإبلاغ عن خلل في هذا العمل' : 'Report an issue with this media', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      leading: const Icon(Icons.report_problem_rounded, color: Colors.amber),
+                      title: Text(Tr.text('report_issue'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                       onTap: () {
                         Navigator.pop(context);
                         _showReportDialog(isAr);
@@ -4154,29 +4404,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.speed_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(Tr.text('speed'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: Text('${_playbackSpeed}x', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
                       onTap: () {
                         Navigator.pop(context);
                         _showSpeedPicker(isAr);
                       },
                     ),
-                    if (!widget.isLocalFile && _currentQualities.isNotEmpty) ...[
-                      Divider(color: settings.border, height: 1),
-                      ListTile(
-                        leading: Icon(Icons.hd_rounded, color: settings.textSecondary),
-                        title: Text(isAr ? 'دقة وجودة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: Text(_isAutoQuality ? (isAr ? 'تلقائي (Auto)' : 'Auto') : _activeQuality, style: TextStyle(color: _isAutoQuality ? AppColors.primary : settings.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showQualityPicker(isAr);
-                        },
-                      ),
-                    ],
                     Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.timer_outlined, color: settings.textSecondary),
-                      title: Text(isAr ? 'مؤقت النوم' : 'Sleep Timer', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(Tr.text('sleep_timer'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: Text(_sleepMinutesRemaining != null ? '$_sleepMinutesRemaining min' : (isAr ? 'معطل' : 'Off'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
                       onTap: () {
                         Navigator.pop(context);
@@ -4186,7 +4424,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.subtitles_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'الترجمة المزدوجة (عربي + إنجليزي)' : 'Dual Subtitles (AR + EN)', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(Tr.text('dual_subtitles'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: CupertinoSwitch(
                         value: settings.enableDualSubtitlesFlag,
                         activeColor: AppColors.primary,
@@ -4195,39 +4433,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                     Divider(color: settings.border, height: 1),
                     ListTile(
-                      leading: Icon(Icons.shield_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'إزالة اللقطات الحساسة تلقائياً' : 'Auto Skip Sensitive Scenes', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: CupertinoSwitch(
-                        value: settings.skipSensitiveScenes,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
-                      ),
-                    ),
-                    Divider(color: settings.border, height: 1),
-                    ListTile(
-                      leading: Icon(Icons.fast_forward_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'فترة تمرير الفيديو' : 'Seek Duration', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Text(isAr ? '${settings.seekDuration} ثوانٍ' : '${settings.seekDuration}s', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSeekPicker(isAr);
-                      },
-                    ),
-                    Divider(color: settings.border, height: 1),
-                    ListTile(
-                      leading: Icon(Icons.closed_caption_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'إعدادات ومكان الترجمة' : 'Subtitle Settings & Position', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: settings.textSecondary, size: 20),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
-                      },
-                    ),
-                    Divider(color: settings.border, height: 1),
-                    ListTile(
                       leading: Icon(Icons.aspect_ratio_rounded, color: settings.textSecondary),
-                      title: Text(isAr ? 'أبعاد الشاشة' : 'Aspect Ratio', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: Text(_videoFit == BoxFit.cover ? (isAr ? 'ملء الشاشة' : 'Fit Screen') : (isAr ? 'طبيعي' : 'Original'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      title: Text(Tr.text('aspect_ratio'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(_videoFit == BoxFit.cover ? Tr.text('fit_screen') : Tr.text('original'), style: TextStyle(color: settings.textSecondary, fontSize: 12)),
                       onTap: () {
                         setState(() {
                           _videoFit = _videoFit == BoxFit.cover ? BoxFit.contain : BoxFit.cover;
@@ -4245,66 +4453,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  void _showSeekPicker(bool isAr) {
-    showCupertinoModalPopup(
+  void _showReportDialog(bool isAr) {
+    final reasonCtrl = TextEditingController();
+    showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'فترة التقديم والتأخير' : 'Seek Duration'),
-        actions: [5, 10, 15, 30].map<Widget>((s) => CupertinoActionSheetAction(
-          child: Text(isAr ? '$s ثوانٍ' : '${s}s'),
-          onPressed: () {
-            AppSettings.instance.updateSeek(s);
-            Navigator.pop(context);
-          },
-        )).toList(),
-        cancelButton: CupertinoActionSheetAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.pop(context),
-          child: Text(isAr ? 'إلغاء' : 'Cancel'),
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(Tr.text('report_issue')),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: CupertinoTextField(
+            controller: reasonCtrl,
+            placeholder: isAr ? 'صف الخلل أو المشكلة...' : 'Describe issue...',
+          ),
         ),
-      ),
-    );
-  }
-
-  void _showQualityPicker(bool isAr) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'اختر دقة العرض' : 'Select Quality'),
         actions: [
-          ..._currentQualities.map<Widget>((q) {
-            final res = q['resolution'] ?? '360p';
-            final url = q['url'] ?? '';
-            final isSelected = !_isAutoQuality && _activeQuality == res;
-
-            return CupertinoActionSheetAction(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(res),
-                  if (isSelected) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 18),
-                  ],
-                ],
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() {
-                  _isAutoQuality = false;
-                  _activeQuality = res;
-                });
-                _currentStreamUrl = url;
-                _initPlayer(url, startAt: _controller?.value.position);
-              },
-            );
-          }).toList(),
+          CupertinoDialogAction(child: Text(Tr.text('cancel')), onPressed: () => Navigator.pop(ctx)),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('إرسال'),
+            onPressed: () async {
+              if (reasonCtrl.text.trim().isNotEmpty) {
+                final pos = _controller?.value.position.inSeconds;
+                await CloudSyncService.reportIssue(
+                  mediaId: _activeMediaId,
+                  title: widget.title,
+                  reason: reasonCtrl.text.trim(),
+                  positionSec: pos,
+                );
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('تم إرسال بلاغك للإدارة بنجاح!')),
+                );
+              }
+            },
+          ),
         ],
-        cancelButton: CupertinoActionSheetAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.pop(context),
-          child: Text(isAr ? 'إلغاء' : 'Cancel'),
-        ),
       ),
     );
   }
@@ -4313,7 +4496,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'سرعة التشغيل' : 'Playback Speed'),
+        title: Text(Tr.text('speed')),
         actions: [0.75, 1.0, 1.25, 1.5, 2.0].map<Widget>((s) => CupertinoActionSheetAction(
           child: Text('${s}x'),
           onPressed: () {
@@ -4325,7 +4508,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         cancelButton: CupertinoActionSheetAction(
           isDestructiveAction: true,
           onPressed: () => Navigator.pop(context),
-          child: Text(isAr ? 'إلغاء' : 'Cancel'),
+          child: Text(Tr.text('cancel')),
         ),
       ),
     );
@@ -4335,9 +4518,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
-        title: Text(isAr ? 'إيقاف بعد وقت محدد' : 'Sleep Timer'),
+        title: Text(Tr.text('sleep_timer')),
         actions: [15, 30, 45, 60].map<Widget>((mins) => CupertinoActionSheetAction(
-          child: Text(isAr ? '$mins دقيقة' : '$mins minutes'),
+          child: Text('$mins دقيقة'),
           onPressed: () {
             Navigator.pop(context);
             _sleepTimer?.cancel();
@@ -4355,16 +4538,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
             setState(() => _sleepMinutesRemaining = null);
             Navigator.pop(context);
           },
-          child: Text(isAr ? 'إلغاء المؤقت' : 'Turn Off'),
+          child: const Text('إلغاء المؤقت'),
         ),
       ),
-    );
-  }
-
-  void _takeSceneClip(bool isAr) {
-    HapticFeedback.mediumImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(isAr ? 'تم حفظ لقطة الشاشة في استوديو الهاتف! 📸' : 'Snapshot saved to gallery! 📸')),
     );
   }
 
@@ -4525,18 +4701,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                  if (settings.enableDualSubtitlesFlag && _currentSecondarySubText.isNotEmpty)
-                    Positioned(
-                      top: 70, left: 20, right: 20,
-                      child: Center(
-                        child: Text(
-                          _currentSecondarySubText,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.yellowAccent, fontSize: 16, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 8, color: Colors.black)]),
-                        ),
-                      ),
-                    ),
-
                   if (_showSmartSkip && !_isLocked)
                     Positioned(
                       bottom: 85, left: 20,
@@ -4555,7 +4719,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           children: [
                             const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 16),
                             const SizedBox(width: 4),
-                            Text(isAr ? 'تخطي المقدمة' : 'Skip Intro', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text(Tr.text('skip_intro'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -4569,14 +4733,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24, width: 0.5)),
                         child: Row(
                           children: [
-                            Text(isAr ? 'الحلقة التالية خلال $_autoNextCountdown ث' : 'Next episode in $_autoNextCountdown s', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                            Text('${Tr.text('next_ep_in')} $_autoNextCountdown s', style: const TextStyle(color: Colors.white, fontSize: 12)),
                             const SizedBox(width: 8),
                             CupertinoButton(
                               color: AppColors.primary,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minSize: 0,
                               onPressed: _playNextEpisode,
-                              child: Text(isAr ? 'تشغيل الآن' : 'Play Now', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                              child: const Text('تشغيل', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
                             ),
                           ],
                         ),
@@ -4620,22 +4784,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
+                                if (RemoteAdminConfig.instance.featureClips)
+                                  IconButton(
+                                    tooltip: Tr.text('clip_reel'),
+                                    icon: const Icon(Icons.movie_creation_rounded, color: Colors.amber, size: 22),
+                                    onPressed: _openReelsClipperDialog,
+                                  ),
                                 if (widget.episodes.isNotEmpty)
                                   IconButton(
-                                    tooltip: isAr ? 'قائمة الحلقات' : 'Episodes',
+                                    tooltip: Tr.text('episodes'),
                                     icon: const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 24),
                                     onPressed: _showEpisodesDrawer,
-                                  ),
-                                IconButton(
-                                  tooltip: isAr ? 'صانع اللقطات' : 'Snapshot',
-                                  icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
-                                  onPressed: () => _takeSceneClip(isAr),
-                                ),
-                                if (!widget.isLocalFile)
-                                  IconButton(
-                                    tooltip: isAr ? 'مشغل خارجي' : 'External Player',
-                                    icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
-                                    onPressed: _castToTv,
                                   ),
                                 IconButton(icon: const Icon(Icons.tune_rounded, color: Colors.white), onPressed: _openSettingsBottomSheet),
                               ],
@@ -4794,6 +4953,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
+// ==========================================
+// لوحة الأدمن الشاملة والروابط السحابية
+// ==========================================
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -4804,32 +4966,45 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
 
+  // روابط السيرفرات والشبكة
+  final _customUrlCtrl = TextEditingController();
+  final _censorApiCtrl = TextEditingController();
+
+  // مواقع التواصل والدعم
+  final _tgCtrl = TextEditingController();
+  final _waCtrl = TextEditingController();
+  final _fbCtrl = TextEditingController();
+  final _igCtrl = TextEditingController();
+  final _webCtrl = TextEditingController();
+
+  // التنبيهات والصيانة
   final _alertCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
   final _minVerCtrl = TextEditingController();
   final _apkUrlCtrl = TextEditingController();
-  final _customUrlCtrl = TextEditingController();
+
+  // البنرات والحظر
   final _pinnedHeroesCtrl = TextEditingController();
   final _blacklistCtrl = TextEditingController();
-  final _popupTitleCtrl = TextEditingController();
-  final _popupBodyCtrl = TextEditingController();
-  final _popupUrlCtrl = TextEditingController();
+  final _bannedDevicesCtrl = TextEditingController();
+
+  // الترجمة السحابية
+  final _subMediaIdCtrl = TextEditingController();
+  final _subUrlCtrl = TextEditingController();
+  final _subOffsetCtrl = TextEditingController();
+
+  // البث المباشر IPTV
+  final _channelNameCtrl = TextEditingController();
+  final _channelUrlCtrl = TextEditingController();
+  final _channelCatCtrl = TextEditingController();
 
   bool _maintenance = false;
   bool _censorActive = true;
   bool _allowDownloads = true;
-  String _selectedDefaultQuality = '360p';
-
-  final _mediaIdCtrl = TextEditingController();
-  final _startSecCtrl = TextEditingController();
-  final _endSecCtrl = TextEditingController();
-  List<Map<String, dynamic>> _loadedScenesForMedia = [];
-  bool _isSearchingScenes = false;
-
-  int _totalUsersCount = 0;
-  int _totalCensoredDocsCount = 0;
-  int _totalReportsCount = 0;
-  bool _isLoadingStats = true;
+  bool _featExternal = true;
+  bool _featClips = true;
+  bool _featCustomSubs = true;
+  bool _featRequests = true;
 
   Map<String, int> _serverLatencies = {
     'Cee Stream Primary': -1,
@@ -4841,9 +5016,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 5, vsync: this);
     _loadCurrentConfig();
-    _loadCloudStats();
     _testServerPings();
   }
 
@@ -4855,15 +5029,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         _maintenance = d['is_maintenance'] ?? false;
         _censorActive = d['censor_enabled'] ?? true;
         _allowDownloads = d['allow_downloads'] ?? true;
-        _selectedDefaultQuality = d['default_quality'] ?? '360p';
+        _featExternal = d['feat_external_player'] ?? true;
+        _featClips = d['feat_clips'] ?? true;
+        _featCustomSubs = d['feat_custom_subs'] ?? true;
+        _featRequests = d['feat_user_requests'] ?? true;
+
         _alertCtrl.text = d['global_alert'] ?? '';
         _msgCtrl.text = d['maintenance_msg'] ?? '';
         _minVerCtrl.text = (d['min_version'] ?? 1).toString();
         _apkUrlCtrl.text = d['update_url'] ?? '';
         _customUrlCtrl.text = d['custom_base_url'] ?? '';
-        _popupTitleCtrl.text = d['popup_title'] ?? '';
-        _popupBodyCtrl.text = d['popup_body'] ?? '';
-        _popupUrlCtrl.text = d['popup_action_url'] ?? '';
+        _censorApiCtrl.text = d['censor_api_url'] ?? '';
+
+        _tgCtrl.text = d['telegram_url'] ?? RemoteAdminConfig.instance.telegramUrl;
+        _waCtrl.text = d['whatsapp_url'] ?? RemoteAdminConfig.instance.whatsappUrl;
+        _fbCtrl.text = d['facebook_url'] ?? RemoteAdminConfig.instance.facebookUrl;
+        _igCtrl.text = d['instagram_url'] ?? RemoteAdminConfig.instance.instagramUrl;
+        _webCtrl.text = d['website_url'] ?? RemoteAdminConfig.instance.websiteUrl;
 
         if (d['pinned_hero_ids'] is List) {
           _pinnedHeroesCtrl.text = (d['pinned_hero_ids'] as List).join(',');
@@ -4871,27 +5053,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         if (d['blacklisted_ids'] is List) {
           _blacklistCtrl.text = (d['blacklisted_ids'] as List).join(',');
         }
+        if (d['banned_device_ids'] is List) {
+          _bannedDevicesCtrl.text = (d['banned_device_ids'] as List).join(',');
+        }
       });
-    }
-  }
-
-  void _loadCloudStats() async {
-    setState(() => _isLoadingStats = true);
-    try {
-      final usersSnap = await FirebaseFirestore.instance.collection('users').count().get();
-      final censorSnap = await FirebaseFirestore.instance.collection('censored_scenes').count().get();
-      final reportsSnap = await FirebaseFirestore.instance.collection('user_reports').count().get();
-
-      if (mounted) {
-        setState(() {
-          _totalUsersCount = usersSnap.count ?? 0;
-          _totalCensoredDocsCount = censorSnap.count ?? 0;
-          _totalReportsCount = reportsSnap.count ?? 0;
-          _isLoadingStats = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingStats = false);
     }
   }
 
@@ -4937,91 +5102,85 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   void _saveGlobalSettings() async {
     final pinnedList = _pinnedHeroesCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     final blackList = _blacklistCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final bannedList = _bannedDevicesCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
     await FirebaseFirestore.instance.collection('app_config').doc('global_settings').set({
       'is_maintenance': _maintenance,
       'censor_enabled': _censorActive,
       'allow_downloads': _allowDownloads,
-      'default_quality': _selectedDefaultQuality,
+      'feat_external_player': _featExternal,
+      'feat_clips': _featClips,
+      'feat_custom_subs': _featCustomSubs,
+      'feat_user_requests': _featRequests,
       'global_alert': _alertCtrl.text.trim(),
       'maintenance_msg': _msgCtrl.text.trim(),
       'min_version': int.tryParse(_minVerCtrl.text.trim()) ?? 1,
       'update_url': _apkUrlCtrl.text.trim(),
       'custom_base_url': _customUrlCtrl.text.trim(),
+      'censor_api_url': _censorApiCtrl.text.trim(),
+      'telegram_url': _tgCtrl.text.trim(),
+      'whatsapp_url': _waCtrl.text.trim(),
+      'facebook_url': _fbCtrl.text.trim(),
+      'instagram_url': _igCtrl.text.trim(),
+      'website_url': _webCtrl.text.trim(),
       'pinned_hero_ids': pinnedList,
       'blacklisted_ids': blackList,
-      'popup_title': _popupTitleCtrl.text.trim(),
-      'popup_body': _popupBodyCtrl.text.trim(),
-      'popup_action_url': _popupUrlCtrl.text.trim(),
+      'banned_device_ids': bannedList,
       'last_admin_update': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم نشر كافة التعديلات والإعدادات السحابية لكل المستخدمين! ✅')),
+        const SnackBar(content: Text('تم نشر وحفظ كافة التعديلات والمواقع السحابية بنجاح! ✅')),
       );
     }
   }
 
-  void _fetchScenesForCurrentMedia() async {
-    final id = _mediaIdCtrl.text.trim();
-    if (id.isEmpty) return;
+  void _saveSubtitleOverride() async {
+    final id = _subMediaIdCtrl.text.trim();
+    final url = _subUrlCtrl.text.trim();
+    final offset = double.tryParse(_subOffsetCtrl.text.trim()) ?? 0.0;
 
-    setState(() => _isSearchingScenes = true);
-    try {
-      final doc = await FirebaseFirestore.instance.collection('censored_scenes').doc(id).get();
-      if (doc.exists && doc.data()?['scenes'] != null) {
-        final List raw = doc.data()!['scenes'];
-        setState(() {
-          _loadedScenesForMedia = List<Map<String, dynamic>>.from(raw);
-          _isSearchingScenes = false;
-        });
-      } else {
-        setState(() {
-          _loadedScenesForMedia = [];
-          _isSearchingScenes = false;
-        });
+    if (id.isEmpty || url.isEmpty) return;
+
+    await FirebaseFirestore.instance.collection('app_config').doc('global_settings').set({
+      'subtitle_overrides': {
+        id: {'url': url, 'offset': offset}
       }
-    } catch (_) {
-      setState(() => _isSearchingScenes = false);
-    }
-  }
-
-  void _addCustomCensorScene() async {
-    final id = _mediaIdCtrl.text.trim();
-    final start = int.tryParse(_startSecCtrl.text.trim());
-    final end = int.tryParse(_endSecCtrl.text.trim());
-
-    if (id.isEmpty || start == null || end == null) return;
-
-    await FirebaseFirestore.instance.collection('censored_scenes').doc(id).set({
-      'scenes': FieldValue.arrayUnion([{'start': start, 'end': end}])
     }, SetOptions(merge: true));
 
-    _startSecCtrl.clear();
-    _endSecCtrl.clear();
-    _fetchScenesForCurrentMedia();
+    _subMediaIdCtrl.clear();
+    _subUrlCtrl.clear();
+    _subOffsetCtrl.clear();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تمت إضافة المشهد الحساس للعمل $id وتثبيته في السحابة! 🛡️')),
+        SnackBar(content: Text('تم تثبيت مسار الترجمة للعمل $id سحابياً!')),
       );
     }
   }
 
-  void _deleteCensorScene(Map<String, dynamic> scene) async {
-    final id = _mediaIdCtrl.text.trim();
-    if (id.isEmpty) return;
+  void _addIptvChannel() async {
+    final name = _channelNameCtrl.text.trim();
+    final url = _channelUrlCtrl.text.trim();
+    final cat = _channelCatCtrl.text.trim();
 
-    await FirebaseFirestore.instance.collection('censored_scenes').doc(id).update({
-      'scenes': FieldValue.arrayRemove([scene])
+    if (name.isEmpty || url.isEmpty) return;
+
+    await FirebaseFirestore.instance.collection('iptv_channels').add({
+      'name': name,
+      'url': url,
+      'category': cat.isNotEmpty ? cat : 'عام',
+      'created_at': FieldValue.serverTimestamp(),
     });
 
-    _fetchScenesForCurrentMedia();
+    _channelNameCtrl.clear();
+    _channelUrlCtrl.clear();
+    _channelCatCtrl.clear();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف اللقطة المحددة من قاعدة البيانات! 🗑️')),
+        const SnackBar(content: Text('تمت إضافة قناة البث المباشر بنجاح! 📺')),
       );
     }
   }
@@ -5038,20 +5197,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
           title: const Text('لوحة تحكم الأدمن - ONEBR Center', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           bottom: TabBar(
             controller: _tabCtrl,
+            isScrollable: true,
             indicatorColor: AppColors.primary,
             labelColor: AppColors.primary,
             unselectedLabelColor: s.textSecondary,
             tabs: const [
               Tab(icon: Icon(Icons.settings_suggest_rounded, size: 20), text: 'التحكم العام'),
-              Tab(icon: Icon(Icons.speed_rounded, size: 20), text: 'السيرفرات والشبكة'),
-              Tab(icon: Icon(Icons.shield_rounded, size: 20), text: 'إدارة الحجب'),
-              Tab(icon: Icon(Icons.analytics_rounded, size: 20), text: 'الإحصائيات'),
+              Tab(icon: Icon(Icons.share_rounded, size: 20), text: 'حسابات التواصل'),
+              Tab(icon: Icon(Icons.toggle_on_rounded, size: 20), text: 'مفاتيح الميزات'),
+              Tab(icon: Icon(Icons.live_tv_rounded, size: 20), text: 'البث والترجمات'),
+              Tab(icon: Icon(Icons.mark_chat_unread_rounded, size: 20), text: 'طلبات المستخدمين'),
             ],
           ),
         ),
         body: TabBarView(
           controller: _tabCtrl,
           children: [
+            // تبويب 1: العام والصيانة
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5067,116 +5229,103 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('وضع الصيانة (قفل التطبيق عن الجميع)'),
-                        subtitle: const Text('يمنع المستخدمين العاديين من الدخول أثناء التحديثات', style: TextStyle(fontSize: 11)),
                         value: _maintenance,
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => _maintenance = v),
                       ),
-                      TextField(
-                        controller: _msgCtrl,
-                        decoration: const InputDecoration(labelText: 'رسالة الصيانة التي ستظهر للعامة'),
-                      ),
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('نظام الفلترة والحجب الذكي لجميع المستخدمين'),
-                        value: _censorActive,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) => setState(() => _censorActive = v),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('السماح للمستخدمين بتنزيل الفيديوهات'),
-                        value: _allowDownloads,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) => setState(() => _allowDownloads = v),
-                      ),
+                      TextField(controller: _msgCtrl, decoration: const InputDecoration(labelText: 'رسالة الصيانة')),
+                      const SizedBox(height: 10),
+                      TextField(controller: _alertCtrl, decoration: const InputDecoration(labelText: 'شريط التنبيه الإخباري')),
+                      const SizedBox(height: 10),
+                      TextField(controller: _customUrlCtrl, decoration: const InputDecoration(labelText: 'رابط سيرفر البث الأساسي (Custom CDN Base URL)')),
+                      const SizedBox(height: 10),
+                      TextField(controller: _censorApiCtrl, decoration: const InputDecoration(labelText: 'رابط سيرفر الفلترة (Censor Engine API URL)')),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('الشريط الإخباري والنافذة المنبثقة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('البنرات والحظر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 10),
-                      TextField(
-                        controller: _alertCtrl,
-                        decoration: const InputDecoration(labelText: 'شريط تنبيه ملون في أعلى الشاشة الرئيسية'),
-                      ),
+                      TextField(controller: _pinnedHeroesCtrl, decoration: const InputDecoration(labelText: 'معرفات بنر الهيرو المتحرك (12,34,56)')),
                       const SizedBox(height: 10),
-                      TextField(
-                        controller: _popupTitleCtrl,
-                        decoration: const InputDecoration(labelText: 'عنوان النافذة المنبثقة الإجبارية'),
-                      ),
+                      TextField(controller: _blacklistCtrl, decoration: const InputDecoration(labelText: 'قائمة الأعمال المحظورة (IDs)')),
                       const SizedBox(height: 10),
-                      TextField(
-                        controller: _popupBodyCtrl,
-                        decoration: const InputDecoration(labelText: 'نص الرسالة المنبثقة (اتركها فارغة لتعطيلها)'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _popupUrlCtrl,
-                        decoration: const InputDecoration(labelText: 'رابط تفاعلي تفتحه الرسالة المنبثقة'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('تخصيص الواجهة وقائمة الحظر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _pinnedHeroesCtrl,
-                        decoration: const InputDecoration(labelText: 'معرفات بنر الهيرو المتحرك مفصولة بفواصل (123,456)'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _blacklistCtrl,
-                        decoration: const InputDecoration(labelText: 'قائمة الأعمال المحظورة مفصولة بفواصل (Blacklist IDs)'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _minVerCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'أدنى رقم إصدار مطلوب (Force Update)'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _apkUrlCtrl,
-                        decoration: const InputDecoration(labelText: 'رابط الـ APK المباشر للتحديث الإجباري'),
-                      ),
+                      TextField(controller: _bannedDevicesCtrl, decoration: const InputDecoration(labelText: 'الأجهزة المحظورة (Banned IDs)')),
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(14),
-                    onPressed: _saveGlobalSettings,
-                    child: const Text('حفظ ونشر التعديلات فوراً', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
-                  ),
+                CupertinoButton(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                  onPressed: _saveGlobalSettings,
+                  child: const Text('حفظ ونشر التعديلات سحابياً فوراً', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             ),
 
+            // تبويب 2: مواقع التواصل الاجتماعي
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('تعديل حسابات التطبيق الرسمية المعروضة للمستخدمين', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 12),
+                      TextField(controller: _tgCtrl, decoration: const InputDecoration(labelText: 'رابط قناة تيليجرام (Telegram)', prefixIcon: Icon(Icons.send_rounded, color: Colors.blue))),
+                      const SizedBox(height: 10),
+                      TextField(controller: _waCtrl, decoration: const InputDecoration(labelText: 'رابط الدعم عبر واتساب (WhatsApp)', prefixIcon: Icon(Icons.chat_bubble_rounded, color: Colors.green))),
+                      const SizedBox(height: 10),
+                      TextField(controller: _igCtrl, decoration: const InputDecoration(labelText: 'رابط حساب إنستغرام (Instagram)', prefixIcon: Icon(Icons.camera_alt_rounded, color: Colors.pink))),
+                      const SizedBox(height: 10),
+                      TextField(controller: _fbCtrl, decoration: const InputDecoration(labelText: 'رابط صفحة فيسبوك (Facebook)', prefixIcon: Icon(Icons.thumb_up_rounded, color: Colors.blueAccent))),
+                      const SizedBox(height: 10),
+                      TextField(controller: _webCtrl, decoration: const InputDecoration(labelText: 'الموقع الرسمي للتطبيق (Website)', prefixIcon: Icon(Icons.language_rounded, color: Colors.teal))),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                CupertinoButton(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                  onPressed: _saveGlobalSettings,
+                  child: const Text('تحديث ونشر روابط التواصل', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                ),
+              ],
+            ),
+
+            // تبويب 3: مفاتيح الميزات وفحص البينج
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('التحكم بالميزات للمستخدمين (Remote Feature Flags)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      SwitchListTile(title: const Text('تفعيل ميزة تنزيل الحلقات'), value: _allowDownloads, onChanged: (v) => setState(() => _allowDownloads = v)),
+                      SwitchListTile(title: const Text('تفعيل أداة قص ومشاركة الريلز (Clips)'), value: _featClips, onChanged: (v) => setState(() => _featClips = v)),
+                      SwitchListTile(title: const Text('تفعيل المشغل الخارجي (VLC / MX)'), value: _featExternal, onChanged: (v) => setState(() => _featExternal = v)),
+                      SwitchListTile(title: const Text('تفعيل إضافة الترجمة المخصصة للمستخدمين'), value: _featCustomSubs, onChanged: (v) => setState(() => _featCustomSubs = v)),
+                      SwitchListTile(title: const Text('تفعيل قسم طلب الأفلام والمسلسلات'), value: _featRequests, onChanged: (v) => setState(() => _featRequests = v)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
@@ -5187,78 +5336,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('سرعة استجابة السيرفرات (Ping Latency)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                          IconButton(
-                            icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-                            onPressed: _isTestingPing ? null : _testServerPings,
-                          ),
+                          IconButton(icon: const Icon(Icons.refresh_rounded, color: AppColors.primary), onPressed: _isTestingPing ? null : _testServerPings),
                         ],
                       ),
-                      const SizedBox(height: 12),
                       ..._serverLatencies.entries.map((e) {
                         final ms = e.value;
                         final isDown = ms == 9999 || ms < 0;
                         final color = isDown ? Colors.redAccent : (ms < 350 ? Colors.greenAccent : Colors.amber);
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: s.surfaceLight,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: color.withOpacity(0.5)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(isDown ? Icons.cancel_rounded : Icons.check_circle_rounded, color: color, size: 20),
-                              const SizedBox(width: 10),
-                              Text(e.key, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                              const Spacer(),
-                              Text(
-                                isDown ? 'غير متصل (Offline)' : '${ms} ms',
-                                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ],
-                          ),
+                        return ListTile(
+                          title: Text(e.key, style: const TextStyle(fontSize: 13)),
+                          trailing: Text(isDown ? 'Offline' : '$ms ms', style: TextStyle(color: color, fontWeight: FontWeight.bold)),
                         );
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('تبديل رابط السيرفر الأساسي (Dynamic CDN)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _customUrlCtrl,
-                        decoration: const InputDecoration(labelText: 'رابط بديل لـ cee.buzz في حال تم حجبه'),
-                      ),
-                      const SizedBox(height: 14),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('الجودة الافتراضية المفروضة للبث'),
-                        trailing: DropdownButton<String>(
-                          value: _selectedDefaultQuality,
-                          dropdownColor: s.surface,
-                          items: ['240p', '360p', '480p', '720p', '1080p']
-                              .map((q) => DropdownMenuItem(value: q, child: Text(q)))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedDefaultQuality = val);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: 20),
+                CupertinoButton(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                  onPressed: _saveGlobalSettings,
+                  child: const Text('حفظ إعدادات الميزات', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             ),
 
+            // تبويب 4: الترجمات وقنوات IPTV
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5269,309 +5372,92 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('إضافة أو حذف لقطات عمل معين', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('تجاوز وتثبيت رابط ترجمة سحابي لعمل معين', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _mediaIdCtrl,
-                              decoration: const InputDecoration(labelText: 'معرف العمل (Media ID)'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          IconButton(
-                            icon: const Icon(Icons.search_rounded, color: AppColors.primary),
-                            onPressed: _fetchScenesForCurrentMedia,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(child: TextField(controller: _startSecCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'البداية (ثوانٍ)'))),
-                          const SizedBox(width: 10),
-                          Expanded(child: TextField(controller: _endSecCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'النهاية (ثوانٍ)'))),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
-                          onPressed: _addCustomCensorScene,
-                          child: const Text('إضافة المشهد لقاعدة البيانات السحابية', style: TextStyle(color: Colors.white)),
-                        ),
-                      ),
+                      TextField(controller: _subMediaIdCtrl, decoration: const InputDecoration(labelText: 'معرف العمل (Media ID)')),
+                      const SizedBox(height: 8),
+                      TextField(controller: _subUrlCtrl, decoration: const InputDecoration(labelText: 'رابط ملف الترجمة المباشر (.srt)')),
+                      const SizedBox(height: 8),
+                      TextField(controller: _subOffsetCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'إزاحة التوقيت بالثواني (مثال: -1.5 أو 2.0)')),
+                      const SizedBox(height: 12),
+                      ElevatedButton(onPressed: _saveSubtitleOverride, child: const Text('حفظ وتثبيت الترجمة للعمل')),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                _isSearchingScenes
-                    ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.primary)))
-                    : (_loadedScenesForMedia.isEmpty
-                        ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('لا توجد لقطات محفوظة لهذا المعرف أو ابحث أولاً', style: TextStyle(color: s.textSecondary, fontSize: 12))))
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('اللقطات الحالية المفهرسة (${_loadedScenesForMedia.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              const SizedBox(height: 8),
-                              ..._loadedScenesForMedia.map<Widget>((sc) {
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                                  child: ListTile(
-                                    leading: const Icon(Icons.cut_rounded, color: Colors.amber),
-                                    title: Text('من ${sc['start']} ث إلى ${sc['end']} ث (${(sc['end'] - sc['start'])} ثانية)', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.delete_rounded, color: Colors.redAccent),
-                                      onPressed: () => _deleteCensorScene(sc),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ],
-                          )),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('إضافة قناة بث مباشر (IPTV Stream)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 10),
+                      TextField(controller: _channelNameCtrl, decoration: const InputDecoration(labelText: 'اسم القناة (مثل: beIN Sports 1)')),
+                      const SizedBox(height: 8),
+                      TextField(controller: _channelUrlCtrl, decoration: const InputDecoration(labelText: 'رابط البث المباشر (.m3u8)')),
+                      const SizedBox(height: 8),
+                      TextField(controller: _channelCatCtrl, decoration: const InputDecoration(labelText: 'التصنيف (رياضة، أخبار، أطفال)')),
+                      const SizedBox(height: 12),
+                      ElevatedButton(onPressed: _addIptvChannel, child: const Text('إضافة القناة للقائمة')),
+                    ],
+                  ),
+                ),
               ],
             ),
 
-            _isLoadingStats
-                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                : ListView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.cloud_done_rounded, color: AppColors.primary, size: 40),
-                            const SizedBox(height: 10),
-                            const Text('إحصائيات المنصة السحابية المباشرة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                            Divider(color: s.border, height: 30),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                Column(
-                                  children: [
-                                    Text('$_totalUsersCount', style: const TextStyle(color: AppColors.primary, fontSize: 24, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Text('المستخدمين المسجلين', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                  ],
-                                ),
-                                Column(
-                                  children: [
-                                    Text('$_totalCensoredDocsCount', style: const TextStyle(color: Colors.amber, fontSize: 24, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Text('أعمال مفهرسة للحجب', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                  ],
-                                ),
-                                Column(
-                                  children: [
-                                    Text('$_totalReportsCount', style: const TextStyle(color: Colors.redAccent, fontSize: 24, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Text('بلاغات المشاكل', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
+            // تبويب 5: طلبات المحتوى
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('content_requests').orderBy('timestamp', descending: true).snapshots(),
+              builder: (ctx, snap) {
+                if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return Center(child: Text('لا توجد طلبات محتوى معلقة حالياً', style: TextStyle(color: s.textSecondary)));
+                }
+
+                return ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, i) {
+                    final d = docs[i];
+                    final data = d.data() as Map<String, dynamic>;
+                    final isDone = data['status'] == 'completed';
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: s.border, width: 0.5)),
+                      child: ListTile(
+                        leading: Icon(isDone ? Icons.check_circle_rounded : Icons.pending_actions_rounded, color: isDone ? Colors.greenAccent : Colors.amber),
+                        title: Text(data['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+                        subtitle: Text('${data['type'] ?? ''} • ${data['note'] ?? ''}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        trailing: IconButton(
+                          icon: Icon(isDone ? Icons.delete_outline_rounded : Icons.done_all_rounded, color: isDone ? Colors.redAccent : Colors.greenAccent),
+                          onPressed: () {
+                            if (isDone) {
+                              d.reference.delete();
+                            } else {
+                              d.reference.update({'status': 'completed'});
+                            }
+                          },
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      CupertinoButton(
-                        color: s.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        onPressed: _loadCloudStats,
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.refresh_rounded, size: 20),
-                            SizedBox(width: 6),
-                            Text('تحديث الإحصائيات الآن', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class SubtitleSettingsScreen extends StatefulWidget {
-  const SubtitleSettingsScreen({super.key});
-
-  @override
-  State<SubtitleSettingsScreen> createState() => _SubtitleSettingsScreenState();
-}
-
-class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
-  @override
-  Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-    final isAr = s.appLanguage == 'ar';
-
-    return Directionality(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: s.bg,
-        appBar: AppBar(
-          title: Text(isAr ? 'إعدادات الترجمة' : 'Subtitle Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: s.textPrimary)),
-          leading: IconButton(
-            icon: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 28, color: s.textPrimary),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-        body: ListView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              height: 140,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                color: Colors.black,
-                border: Border.all(color: s.border, width: 0.5),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    bottom: (s.subBottomPadding / 90) * 60 + 10,
-                    left: 20, right: 20,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: s.subtitleBackgroundColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\nLive Subtitle Preview' : 'Live Subtitle Preview\nمعاينة الترجمة الحية',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: s.subColor,
-                            fontSize: s.subFontSize,
-                            fontWeight: FontWeight.bold,
-                            shadows: s.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              decoration: BoxDecoration(
-                color: s.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: s.border, width: 0.5),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    title: Text(isAr ? 'خلفية الترجمة' : 'Subtitle Background', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    subtitle: Text(isAr ? 'شفاف، شبه شفاف، غامق' : 'Transparent, Semi, Dark', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                    trailing: CupertinoSlidingSegmentedControl<String>(
-                      groupValue: s.subBackgroundMode,
-                      children: {
-                        'transparent': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'شفاف' : 'Clear', style: TextStyle(color: s.textPrimary, fontSize: 11))),
-                        'semi': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'شبه شفاف' : 'Semi', style: TextStyle(color: s.textPrimary, fontSize: 11))),
-                        'dark': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'غامق' : 'Dark', style: TextStyle(color: s.textPrimary, fontSize: 11))),
-                      },
-                      onValueChanged: (val) {
-                        if (val != null) setState(() => s.updateSubStyle(bgMode: val));
-                      },
-                    ),
-                  ),
-                  Divider(color: s.border, height: 1),
-                  ListTile(
-                    title: Text(isAr ? 'موقع الترجمة من أسفل الفيديو' : 'Bottom Offset', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    subtitle: Slider(
-                      value: s.subBottomPadding,
-                      min: 10.0,
-                      max: 90.0,
-                      activeColor: AppColors.primary,
-                      inactiveColor: s.border,
-                      onChanged: (v) => setState(() => s.updateSubStyle(bottomPadding: v)),
-                    ),
-                    trailing: Text('${s.subBottomPadding.toInt()} dp', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                  ),
-                  Divider(color: s.border, height: 1),
-                  ListTile(
-                    title: Text(isAr ? 'حجم خط الترجمة' : 'Font Size', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: DropdownButton<double>(
-                      dropdownColor: s.surface,
-                      value: s.subFontSize,
-                      underline: const SizedBox(),
-                      items: [
-                        DropdownMenuItem(value: 14.0, child: Text(isAr ? 'صغير' : 'Small', style: TextStyle(color: s.textPrimary))),
-                        DropdownMenuItem(value: 18.0, child: Text(isAr ? 'متوسط' : 'Medium', style: TextStyle(color: s.textPrimary))),
-                        DropdownMenuItem(value: 22.0, child: Text(isAr ? 'كبير' : 'Large', style: TextStyle(color: s.textPrimary))),
-                      ],
-                      onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
-                    ),
-                  ),
-                  Divider(color: s.border, height: 1),
-                  ListTile(
-                    title: Text(isAr ? 'لون الخط' : 'Text Color', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
-                        _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
-                        _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
-                      ],
-                    ),
-                  ),
-                  Divider(color: s.border, height: 1),
-                  ListTile(
-                    title: Text(isAr ? 'ظل حواف الخط' : 'Text Shadow', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    trailing: CupertinoSwitch(
-                      value: s.subHasShadow,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            CupertinoButton(
-              color: s.surface,
-              borderRadius: BorderRadius.circular(14),
-              onPressed: () => setState(() => s.resetSubtitles()),
-              child: Text(isAr ? 'إعادة ضبط الترجمة الافتراضية' : 'Reset to Default', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    );
+                  },
+                );
+              },
             ),
           ],
         ),
       ),
     );
   }
-
-  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
-    return GestureDetector(
-      onTap: tap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 8),
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: c,
-          shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
-        ),
-      ),
-    );
-  }
 }
 
+// ==========================================
+// شاشة المكتبة والإعدادات وحسابات التطبيق
+// ==========================================
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -5655,281 +5541,56 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     }
   }
 
-  void _cleanCache() async {
-    try {
-      final tempDir = Directory.systemTemp;
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم تفريغ الذاكرة المؤقتة بنجاح' : 'Cache cleared successfully')));
-    } catch (_) {}
-  }
+  void _showRequestContentDialog(bool isAr) {
+    final titleCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    String type = 'movie';
 
-  void _showAddProfileDialog(bool isAr) {
-    final s = AppSettings.instance;
-    final ctrl = TextEditingController();
     showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: Text(isAr ? 'إضافة بروفايل جديد' : 'Add New Profile'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: CupertinoTextField(
-            controller: ctrl,
-            placeholder: isAr ? 'اسم الملف الشخصي' : 'Profile Name',
-            style: TextStyle(color: s.textPrimary),
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: Text(isAr ? 'إلغاء' : 'Cancel')),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              if (ctrl.text.isNotEmpty) {
-                AppSettings.instance.addProfile(ctrl.text.trim());
-                Navigator.pop(context);
-              }
-            },
-            child: Text(isAr ? 'إضافة' : 'Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleGoogleSignIn(bool isAr) async {
-    try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        serverClientId: '598398160963-7qus9g8t7kaniqh5offjhbqe2snk9471.apps.googleusercontent.com',
-      );
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) return;
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-      final user = userCredential.user;
-
-      if (user != null) {
-        AppSettings.instance.login(
-          user.displayName ?? (isAr ? 'مستخدم' : 'User'),
-          user.email ?? '',
-        );
-        await _fetchWatchlistFromCloud(user.uid);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'فشل تسجيل الدخول بـ Google: $e' : 'Google sign in failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _handleEmailAuth({
-    required bool isRegister,
-    required String email,
-    required String password,
-    required String name,
-    required bool isAr,
-  }) async {
-    try {
-      UserCredential userCredential;
-      if (isRegister) {
-        userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password.trim(),
-        );
-        if (name.isNotEmpty) {
-          await userCredential.user?.updateDisplayName(name.trim());
-        }
-      } else {
-        userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email.trim(),
-          password: password.trim(),
-        );
-      }
-
-      final user = userCredential.user;
-      if (user != null) {
-        AppSettings.instance.login(
-          user.displayName ?? (name.isNotEmpty ? name : (isAr ? 'مستخدم' : 'User')),
-          user.email ?? email,
-        );
-        await _fetchWatchlistFromCloud(user.uid);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'خطأ في المصادقة: $e' : 'Authentication error: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _fetchWatchlistFromCloud(String uid) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('profiles')
-          .doc(AppSettings.instance.activeProfile)
-          .get();
-      if (doc.exists && doc.data()?['watchlist'] != null) {
-        final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
-        await LocalStorageService.setList('user_watchlist', cloudList);
-        _loadData();
-      }
-    } catch (_) {}
-    if (mounted) setState(() {});
-  }
-
-  void _showAuthDialog(bool isAr) {
-    final s = AppSettings.instance;
-    final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    bool isRegisterMode = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setMState) => Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: s.glassFill,
-                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            isRegisterMode ? (isAr ? 'إنشاء حساب جديد' : 'Create New Account') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
-                            style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.close_rounded, color: s.textPrimary),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      if (isRegisterMode) ...[
-                        CupertinoTextField(
-                          controller: nameCtrl,
-                          placeholder: isAr ? 'الاسم' : 'Name',
-                          style: TextStyle(color: s.textPrimary),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-
-                      CupertinoTextField(
-                        controller: emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        placeholder: isAr ? 'البريد الإلكتروني' : 'Email Address',
-                        style: TextStyle(color: s.textPrimary),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                      ),
-                      const SizedBox(height: 10),
-
-                      CupertinoTextField(
-                        controller: passCtrl,
-                        obscureText: true,
-                        placeholder: isAr ? 'كلمة المرور' : 'Password',
-                        style: TextStyle(color: s.textPrimary),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                      ),
-                      const SizedBox(height: 16),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(12),
-                          onPressed: () async {
-                            if (emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) return;
-                            Navigator.pop(ctx);
-                            await _handleEmailAuth(
-                              isRegister: isRegisterMode,
-                              email: emailCtrl.text.trim(),
-                              password: passCtrl.text.trim(),
-                              name: nameCtrl.text.trim(),
-                              isAr: isAr,
-                            );
-                          },
-                          child: Text(
-                            isRegisterMode ? (isAr ? 'إنشاء حساب' : 'Register') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      TextButton(
-                        onPressed: () => setMState(() => isRegisterMode = !isRegisterMode),
-                        child: Text(
-                          isRegisterMode
-                              ? (isAr ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'Already have an account? Sign In')
-                              : (isAr ? 'ليس لديك حساب؟ إنشاء حساب جديد' : "Don't have an account? Register"),
-                          style: TextStyle(color: s.textSecondary, fontSize: 12),
-                        ),
-                      ),
-
-                      Divider(color: s.border, height: 24),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          color: s.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _handleGoogleSignIn(isAr);
-                          },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
-                              const SizedBox(width: 6),
-                              Text(
-                                isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: s.textPrimary),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => CupertinoAlertDialog(
+          title: Text(Tr.text('request_media')),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(Tr.text('request_desc'), style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 10),
+                CupertinoTextField(controller: titleCtrl, placeholder: isAr ? 'اسم الفيلم أو المسلسل' : 'Title'),
+                const SizedBox(height: 8),
+                CupertinoTextField(controller: noteCtrl, placeholder: isAr ? 'ملاحظة (سنة الإنتاج أو رابط)' : 'Note'),
+                const SizedBox(height: 8),
+                CupertinoSlidingSegmentedControl<String>(
+                  groupValue: type,
+                  children: {
+                    'movie': Text(Tr.text('movies'), style: const TextStyle(fontSize: 12)),
+                    'series': Text(Tr.text('series'), style: const TextStyle(fontSize: 12)),
+                  },
+                  onValueChanged: (v) {
+                    if (v != null) setDState(() => type = v);
+                  },
                 ),
-              ),
+              ],
             ),
           ),
+          actions: [
+            CupertinoDialogAction(child: Text(Tr.text('cancel')), onPressed: () => Navigator.pop(ctx)),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              child: Text(Tr.text('send_request')),
+              onPressed: () async {
+                if (titleCtrl.text.trim().isNotEmpty) {
+                  await CloudSyncService.submitContentRequest(titleCtrl.text.trim(), type, noteCtrl.text.trim());
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم إرسال طلبك للإدارة وسيتم توفيره قريباً! 🎬')),
+                  );
+                }
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -5938,6 +5599,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
+    final r = RemoteAdminConfig.instance;
     final isAr = s.appLanguage == 'ar';
     final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
 
@@ -5946,13 +5608,14 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text(isAr ? 'الحساب والمكتبة' : 'Profile & Library', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
+          title: Text(Tr.text('profile'), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
           actions: [
-            IconButton(
-              tooltip: isAr ? 'تفريغ الكاش' : 'Clear Cache',
-              icon: Icon(Icons.delete_sweep_rounded, color: s.textSecondary),
-              onPressed: _cleanCache,
-            ),
+            if (r.featureUserRequests)
+              IconButton(
+                tooltip: Tr.text('request_media'),
+                icon: const Icon(Icons.add_to_photos_rounded, color: AppColors.primary),
+                onPressed: () => _showRequestContentDialog(isAr),
+              ),
           ],
           bottom: TabBar(
             controller: _tabCtrl,
@@ -5960,18 +5623,19 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             labelColor: AppColors.primary,
             unselectedLabelColor: s.textSecondary,
             tabs: [
-              Tab(text: isAr ? 'التنزيلات' : 'Downloads'),
-              Tab(text: isAr ? 'المفضلة' : 'Watchlist'),
-              Tab(text: isAr ? 'الإحصائيات' : 'Stats'),
-              Tab(text: isAr ? 'الإعدادات' : 'Settings'),
+              Tab(text: Tr.text('downloads')),
+              Tab(text: Tr.text('watchlist')),
+              Tab(text: Tr.text('stats')),
+              Tab(text: Tr.text('settings')),
             ],
           ),
         ),
         body: TabBarView(
           controller: _tabCtrl,
           children: [
+            // تبويب التنزيلات
             _completed.isEmpty
-                ? Center(child: Text(isAr ? 'لا توجد تنزيلات حالياً' : 'No downloads yet', style: TextStyle(color: s.textSecondary)))
+                ? Center(child: Text(Tr.text('no_downloads'), style: TextStyle(color: s.textSecondary)))
                 : ListView.builder(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.all(16),
@@ -5996,106 +5660,58 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: it['poster'].toString().isNotEmpty
-                                        ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
-                                        : Container(width: 50, height: 70, color: s.surfaceLight),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          isCompleted
-                                              ? (isAr ? 'جاهز للمشاهدة بدون إنترنت' : 'Ready to watch offline')
-                                              : (isFailed
-                                                  ? (isAr ? 'فشل التنزيل أو لم يكتمل' : 'Download failed')
-                                                  : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)')),
-                                          style: TextStyle(
-                                            color: isCompleted
-                                                ? Colors.greenAccent
-                                                : (isFailed ? Colors.redAccent : s.textSecondary),
-                                            fontSize: 11,
-                                            fontWeight: (isCompleted || isFailed) ? FontWeight.bold : FontWeight.normal,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (isCompleted)
-                                    IconButton(
-                                      icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
-                                      onPressed: () {
-                                        final subPath = it['subPath']?.toString() ?? '';
-                                        if (file.existsSync()) {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => PlayerScreen(
-                                                mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
-                                                title: it['title'] ?? '',
-                                                videoUrl: filePath,
-                                                subtitleUrl: subPath,
-                                                qualities: const [],
-                                                isLocalFile: true,
-                                                poster: it['poster'] ?? '',
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
-                                    onPressed: () async {
-                                      final taskId = it['taskId']?.toString();
-                                      if (taskId != null) {
-                                        try {
-                                          await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
-                                        } catch (_) {}
-                                      }
-                                      if (file.existsSync()) {
-                                        try {
-                                          file.deleteSync();
-                                        } catch (_) {}
-                                      }
-                                      final subFile = File(it['subPath']?.toString() ?? '');
-                                      if (subFile.existsSync()) {
-                                        try {
-                                          subFile.deleteSync();
-                                        } catch (_) {}
-                                      }
-                                      await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
-                                      _loadData();
-                                    },
-                                  ),
-                                ],
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: it['poster'].toString().isNotEmpty
+                                    ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
+                                    : Container(width: 50, height: 70, color: s.surfaceLight),
                               ),
-                              if (!isCompleted && !isFailed) ...[
-                                const SizedBox(height: 10),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: (progress / 100.0).clamp(0.0, 1.0),
-                                    backgroundColor: Colors.white12,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                    minHeight: 4,
-                                  ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      isCompleted
+                                          ? Tr.text('ready_offline')
+                                          : (isFailed
+                                              ? Tr.text('download_failed')
+                                              : '${Tr.text('downloading')} ($progress%)'),
+                                      style: TextStyle(
+                                        color: isCompleted
+                                            ? Colors.greenAccent
+                                            : (isFailed ? Colors.redAccent : s.textSecondary),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
+                              if (isCompleted)
+                                IconButton(
+                                  icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
+                                  onPressed: () {
+                                    final subPath = it['subPath']?.toString() ?? '';
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => PlayerScreen(
+                                          mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
+                                          title: it['title'] ?? '',
+                                          videoUrl: filePath,
+                                          subtitleUrl: subPath,
+                                          qualities: const [],
+                                          isLocalFile: true,
+                                          poster: it['poster'] ?? '',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                             ],
                           ),
                         ),
@@ -6103,6 +5719,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     },
                   ),
 
+            // تبويب المفضلة
             _watchlist.isEmpty
                 ? Center(child: Text(isAr ? 'لم تقم بحفظ أي عمل بعد' : 'Watchlist is empty', style: TextStyle(color: s.textSecondary)))
                 : GridView.builder(
@@ -6113,43 +5730,32 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     itemBuilder: (ctx, i) {
                       final item = _watchlist[i];
                       final poster = StreamService.extractPoster(item);
-                      return FocusBuilder(
-                        builder: (context, hasFocus) => InkWell(
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
+                        child: ClipRRect(
                           borderRadius: BorderRadius.circular(AppRadius.card),
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isNotEmpty
-                                  ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
-                                  : Container(color: s.surface),
-                            ),
-                          ),
+                          child: poster.isNotEmpty
+                              ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
+                              : Container(color: s.surface),
                         ),
                       );
                     },
                   ),
 
+            // تبويب الإحصائيات
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
                 Container(
                   padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    border: Border.all(color: s.border, width: 0.5),
-                  ),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(AppRadius.card), border: Border.all(color: s.border, width: 0.5)),
                   child: Column(
                     children: [
                       const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 40),
                       const SizedBox(height: 10),
-                      Text(isAr ? 'إحصائيات الملف: ${s.activeProfile}' : 'Stats for: ${s.activeProfile}', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text('إحصائيات المشاهدة: ${s.activeProfile}', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                       Divider(color: s.border, height: 26),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -6158,14 +5764,14 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                             children: [
                               Text('$_statMinutes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 2),
-                              Text(isAr ? 'دقيقة مشاهدة' : 'Minutes Watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                              Text('دقيقة مشاهدة', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                             ],
                           ),
                           Column(
                             children: [
                               Text('$_statEpisodes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 2),
-                              Text(isAr ? 'حلقة مكتملة' : 'Completed Eps', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                              Text('حلقة مكتملة', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                             ],
                           ),
                         ],
@@ -6176,171 +5782,109 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ],
             ),
 
+            // تبويب الإعدادات ومواقع التواصل
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                // بطاقة حسابات ومجتمع التطبيق الرسمي
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                  child: Row(
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(Icons.person_rounded, color: Colors.white)),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.userName ?? (isAr ? 'مستخدم زائر' : 'Guest User'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(s.userEmail ?? (isAr ? 'المزامنة السحابية غير مفعّلة' : 'Sync disabled'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                          ],
-                        ),
+                      Row(
+                        children: [
+                          const Icon(Icons.public_rounded, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Text(Tr.text('social_accounts'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                        ],
                       ),
-                      CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        minSize: 0,
-                        onPressed: s.userName == null ? () => _showAuthDialog(isAr) : () => setState(() => s.logout()),
-                        child: Text(s.userName == null ? (isAr ? 'تسجيل' : 'Login') : (isAr ? 'خروج' : 'Logout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.send_rounded, color: Colors.blue, size: 16),
+                            label: const Text('Telegram'),
+                            backgroundColor: s.surfaceLight,
+                            onPressed: () => launchUrl(Uri.parse(r.telegramUrl), mode: LaunchMode.externalApplication),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.chat_bubble_rounded, color: Colors.green, size: 16),
+                            label: const Text('WhatsApp'),
+                            backgroundColor: s.surfaceLight,
+                            onPressed: () => launchUrl(Uri.parse(r.whatsappUrl), mode: LaunchMode.externalApplication),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.camera_alt_rounded, color: Colors.pink, size: 16),
+                            label: const Text('Instagram'),
+                            backgroundColor: s.surfaceLight,
+                            onPressed: () => launchUrl(Uri.parse(r.instagramUrl), mode: LaunchMode.externalApplication),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.language_rounded, color: Colors.teal, size: 16),
+                            label: const Text('الموقع الرسمي'),
+                            backgroundColor: s.surfaceLight,
+                            onPressed: () => launchUrl(Uri.parse(r.websiteUrl), mode: LaunchMode.externalApplication),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
-
-                Text(isAr ? 'إدارة الملفات الشخصية' : 'Profile Management', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ...s.userProfiles.map<Widget>((p) => ChoiceChip(
-                      label: Text(p, style: TextStyle(color: s.activeProfile == p ? Colors.white : s.textPrimary)),
-                      selected: s.activeProfile == p,
-                      selectedColor: AppColors.primary,
-                      backgroundColor: s.surface,
-                      onSelected: (_) {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          s.switchProfile(p);
-                          _loadData();
-                        });
-                      },
-                    )).toList(),
-                    ActionChip(
-                      avatar: const Icon(Icons.add_rounded, size: 16),
-                      backgroundColor: s.surface,
-                      label: Text(isAr ? 'إضافة بروفايل' : 'Add Profile', style: TextStyle(color: s.textPrimary)),
-                      onPressed: () => _showAddProfileDialog(isAr),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
                 Container(
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: s.border, width: 0.5),
-                  ),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
                   child: Column(
                     children: [
                       ListTile(
-                        leading: const Icon(Icons.notifications_active_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'التنبيه الذكي للمسلسلات' : 'Smart Series Alerts', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        subtitle: Text(isAr ? 'إرسال إشعارات لحظية عند نزول حلقات جديدة' : 'Push notifications when new episodes arrive', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        leading: const Icon(Icons.dark_mode_rounded, color: AppColors.primary),
+                        title: Text(Tr.text('dark_mode'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                         trailing: CupertinoSwitch(
-                          value: s.smartNotifications,
+                          value: s.isDarkMode,
                           activeColor: AppColors.primary,
-                          onChanged: (v) => setState(() => s.updateSmartNotifications(v)),
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'التنزيل الذكي للحلقات' : 'Smart Episode Downloads', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        subtitle: Text(isAr ? 'تنزيل الحلقة التالية ومسح المنتهية تلقائياً' : 'Auto download next episode & clean watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                        trailing: CupertinoSwitch(
-                          value: s.autoSmartDownload,
-                          activeColor: AppColors.primary,
-                          onChanged: (v) => setState(() => s.updateSmartDownload(v)),
+                          onChanged: (_) => s.toggleTheme(),
                         ),
                       ),
                       Divider(color: s.border, height: 1),
                       ListTile(
                         leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        title: Text(Tr.text('app_language'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                         trailing: DropdownButton<String>(
                           dropdownColor: s.surface,
                           value: s.appLanguage,
                           underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: s.textPrimary))),
+                          items: const [
+                            DropdownMenuItem(value: 'ar', child: Text('العربية')),
+                            DropdownMenuItem(value: 'en', child: Text('English')),
                           ],
                           onChanged: (v) {
-                            if (v != null) setState(() => s.updateLanguage(v));
+                            if (v != null) s.updateLanguage(v);
                           },
                         ),
                       ),
                       Divider(color: s.border, height: 1),
                       ListTile(
                         leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'خط التطبيق' : 'App Font', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        title: Text(Tr.text('app_font'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                         trailing: DropdownButton<String>(
                           dropdownColor: s.surface,
                           value: s.selectedFont,
                           underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem(value: 'iPhone', child: Text('iPhone (Apple San Francisco)', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Cairo', child: Text('Cairo', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: s.textPrimary))),
+                          items: const [
+                            DropdownMenuItem(value: 'iPhone', child: Text('iPhone San Francisco')),
+                            DropdownMenuItem(value: 'Cairo', child: Text('Cairo')),
+                            DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal')),
+                            DropdownMenuItem(value: 'Almarai', child: Text('Almarai')),
                           ],
                           onChanged: (v) {
-                            if (v != null) setState(() => s.updateFont(v));
+                            if (v != null) s.updateFont(v);
                           },
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-                Text(isAr ? 'وضع المحتوى' : 'Content Mode', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Container(
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    children: [
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'الافتراضي (الكل)' : 'Default (All Content)', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 0,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
-                      ),
-                      Divider(color: s.border, height: 1),
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 1,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
-                      ),
-                      Divider(color: s.border, height: 1),
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 2,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
                       ),
                     ],
                   ),
