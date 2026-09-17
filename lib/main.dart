@@ -9,7 +9,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math';
 import 'dart:ui';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
@@ -25,7 +24,6 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:ffmpeg_kit_flutter_new_https/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_https/return_code.dart';
@@ -65,21 +63,6 @@ class RemoteAdminConfig {
   String popupTitle = '';
   String popupBody = '';
   String popupActionUrl = '';
-
-  // Remote feature flags / official links / live channels.
-  Map<String, bool> featureFlags = {
-    'clip_share': true,
-    'external_subtitles': true,
-    'social_links': true,
-    'content_requests': true,
-    'subtitle_manager': true,
-    'device_ban': true,
-    'iptv_manager': true,
-  };
-  Map<String, String> socialLinks = {};
-  List<Map<String, dynamic>> iptvChannels = [];
-
-  bool isFeatureEnabled(String key) => featureFlags[key] ?? true;
 
   static const List<String> authorizedAdminEmails = [
     'admin@onebr.tv',
@@ -608,7 +591,6 @@ class AppSettings extends ChangeNotifier {
   bool autoSmartDownload = false;
   bool smartNotifications = true;
   bool tvModeEnabled = false;
-  String themeMode = 'dark'; // dark, light, system
 
   String? userName;
   String? userEmail;
@@ -651,7 +633,6 @@ class AppSettings extends ChangeNotifier {
       autoSmartDownload = p.getBool('app_smart_dl') ?? false;
       smartNotifications = p.getBool('app_smart_notif') ?? true;
       tvModeEnabled = p.getBool('app_tv_mode') ?? false;
-      themeMode = p.getString('app_theme_mode') ?? (isDarkMode ? 'dark' : 'light');
       userName = p.getString('auth_user_name');
       userEmail = p.getString('auth_user_email');
       activeProfile = p.getString('current_active_profile') ?? 'الرئيسي';
@@ -662,19 +643,8 @@ class AppSettings extends ChangeNotifier {
 
   void toggleTheme() async {
     isDarkMode = !isDarkMode;
-    themeMode = isDarkMode ? 'dark' : 'light';
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setBool('app_is_dark_mode', isDarkMode);
-    await p.setString('app_theme_mode', themeMode);
-  }
-
-  void updateThemeMode(String mode) async {
-    themeMode = mode;
-    isDarkMode = mode == 'dark' ? true : mode == 'light' ? false : isDarkMode;
-    notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setString('app_theme_mode', mode);
     await p.setBool('app_is_dark_mode', isDarkMode);
   }
 
@@ -831,90 +801,6 @@ void main() async {
   runApp(const OnebrTvApp());
 }
 
-
-class AppLocalization {
-  static const Map<String, Map<String, String>> _values = {
-    'ar': {
-      'clip_share': 'قص ومشاركة Short / Reels',
-      'external_subtitles': 'استيراد ترجمة خارجية',
-      'subtitle_offset': 'مزامنة توقيت الترجمة',
-      'social_accounts': 'حسابات التطبيق الرسمية',
-      'content_request': 'طلب فيلم أو مسلسل',
-      'link_health': 'فحص حالة الروابط',
-      'iptv_channels': 'قنوات البث المباشر',
-      'advanced_security': 'لوحة الأمان المتقدمة',
-    },
-    'en': {
-      'clip_share': 'Clip & Share Short / Reels',
-      'external_subtitles': 'Import External Subtitle',
-      'subtitle_offset': 'Subtitle Timing Offset',
-      'social_accounts': 'Official App Accounts',
-      'content_request': 'Request a Movie or Series',
-      'link_health': 'Link Health Check',
-      'iptv_channels': 'Live IPTV Channels',
-      'advanced_security': 'Advanced Security Panel',
-    },
-  };
-
-  static String tr(String key, String lang) => _values[lang]?[key] ?? _values['en']?[key] ?? key;
-}
-
-class BanService {
-  static String _installationId = '';
-
-  static Future<String> installationId() async {
-    if (_installationId.isNotEmpty) return _installationId;
-    final p = await SharedPreferences.getInstance();
-    var id = p.getString('installation_id');
-    if (id == null || id.isEmpty) {
-      final seed = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-      id = '${seed}_${Random().nextInt(0x7fffffff).toRadixString(36)}';
-      await p.setString('installation_id', id);
-    }
-    _installationId = id;
-    return id;
-  }
-
-  static Future<bool> isBanned() async {
-    if (!RemoteAdminConfig.instance.isFeatureEnabled('device_ban')) return false;
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      final email = FirebaseAuth.instance.currentUser?.email ?? AppSettings.instance.userEmail;
-      final deviceId = await installationId();
-      if (email != null && email.isNotEmpty) {
-        final emailDoc = await FirebaseFirestore.instance.collection('banned_users').doc(email.trim().toLowerCase()).get();
-        if (emailDoc.exists && emailDoc.data()?['active'] != false) return true;
-      }
-      if (uid != null && uid.isNotEmpty) {
-        final uidDoc = await FirebaseFirestore.instance.collection('banned_users').doc(uid).get();
-        if (uidDoc.exists && uidDoc.data()?['active'] != false) return true;
-      }
-      final deviceDoc = await FirebaseFirestore.instance.collection('banned_devices').doc(deviceId).get();
-      return deviceDoc.exists && deviceDoc.data()?['active'] != false;
-    } catch (_) {
-      return false;
-    }
-  }
-}
-
-class BanLockScreen extends StatelessWidget {
-  const BanLockScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-    return Scaffold(
-      backgroundColor: s.bg,
-      body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.block_rounded, color: AppColors.primary, size: 72),
-        const SizedBox(height: 18),
-        Text(s.appLanguage == 'ar' ? 'تم تقييد الوصول' : 'Access restricted', style: TextStyle(color: s.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        Text(s.appLanguage == 'ar' ? 'تم تعطيل هذا الحساب أو الجهاز من استخدام التطبيق.' : 'This account or device has been restricted from using the app.', textAlign: TextAlign.center, style: TextStyle(color: s.textSecondary, height: 1.5)),
-      ])),
-    ));
-  }
-}
-
 class OnebrTvApp extends StatefulWidget {
   const OnebrTvApp({super.key});
 
@@ -937,13 +823,10 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
     final s = AppSettings.instance;
     final r = RemoteAdminConfig.instance;
 
-    final systemDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final effectiveDark = s.themeMode == 'system' ? systemDark : s.themeMode == 'dark';
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ONEBR TV',
-      theme: (effectiveDark ? ThemeData.dark() : ThemeData.light()).copyWith(
+      theme: (s.isDarkMode ? ThemeData.dark() : ThemeData.light()).copyWith(
         scaffoldBackgroundColor: s.bg,
         primaryColor: AppColors.primary,
         cardColor: s.surface,
@@ -952,23 +835,15 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
-          systemOverlayStyle: effectiveDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+          systemOverlayStyle: s.isDarkMode ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         ),
-        colorScheme: effectiveDark
+        colorScheme: s.isDarkMode
             ? const ColorScheme.dark(primary: AppColors.primary, surface: AppColors.darkSurface)
             : const ColorScheme.light(primary: AppColors.primary, surface: AppColors.lightSurface),
       ),
       home: r.isMaintenance && !RemoteAdminConfig.isEmailAdmin(s.userEmail)
           ? const MaintenanceLockScreen()
-          : FutureBuilder<bool>(
-              future: BanService.isBanned(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
-                }
-                return snapshot.data == true ? const BanLockScreen() : const MainNavigationHolder();
-              },
-            ),
+          : const MainNavigationHolder(),
     );
   }
 }
@@ -1005,241 +880,6 @@ class MaintenanceLockScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-
-class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
-
-  @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
-}
-
-class _LibraryScreenState extends State<LibraryScreen> {
-  List<Map<String, dynamic>> _watchlist = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    AppSettings.instance.addListener(_refresh);
-    _loadWatchlist();
-  }
-
-  @override
-  void dispose() {
-    AppSettings.instance.removeListener(_refresh);
-    super.dispose();
-  }
-
-  void _refresh() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _loadWatchlist() async {
-    final list = await LocalStorageService.getList('user_watchlist');
-    if (!mounted) return;
-    setState(() {
-      _watchlist = list;
-      _loading = false;
-    });
-  }
-
-  Future<void> _toggleTheme() async {
-    AppSettings.instance.toggleTheme();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut().catchError((_) {});
-    AppSettings.instance.logout();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم تسجيل الخروج' : 'Signed out')),
-      );
-      setState(() {});
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-    final isAr = s.appLanguage == 'ar';
-
-    return Directionality(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: s.bg,
-        appBar: AppBar(
-          title: Text(isAr ? 'الحساب والمفضلة' : 'Account & Library'),
-          actions: [
-            IconButton(
-              tooltip: isAr ? 'تبديل المظهر' : 'Toggle theme',
-              icon: Icon(s.isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
-              onPressed: _toggleTheme,
-            ),
-          ],
-        ),
-        body: RefreshIndicator(
-          onRefresh: _loadWatchlist,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: s.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: s.border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 54,
-                      height: 54,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.14),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.person_rounded, color: AppColors.primary, size: 30),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.userName?.isNotEmpty == true ? s.userName! : (isAr ? 'مستخدم ONEBR TV' : 'ONEBR TV User'),
-                            style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            s.userEmail?.isNotEmpty == true ? s.userEmail! : (isAr ? 'لم يتم تسجيل بريد إلكتروني' : 'No email connected'),
-                            style: TextStyle(color: s.textSecondary, fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              _sectionTitle(isAr ? 'إعدادات سريعة' : 'Quick Settings', s),
-              Container(
-                decoration: BoxDecoration(
-                  color: s.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: s.border),
-                ),
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(s.isDarkMode ? Icons.dark_mode_rounded : Icons.light_mode_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'المظهر' : 'Appearance', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      subtitle: Text(s.isDarkMode ? (isAr ? 'الوضع الداكن' : 'Dark mode') : (isAr ? 'الوضع الفاتح' : 'Light mode'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                      trailing: CupertinoSwitch(value: s.isDarkMode, activeColor: AppColors.primary, onChanged: (_) => _toggleTheme()),
-                    ),
-                    Divider(color: s.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'اللغة' : 'Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      trailing: CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () => s.updateLanguage(isAr ? 'en' : 'ar'),
-                        child: Text(isAr ? 'العربية' : 'English', style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    Divider(color: s.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.subtitles_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'إعدادات الترجمة' : 'Subtitle Settings', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen())),
-                    ),
-                    Divider(color: s.border, height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.movie_filter_rounded, color: AppColors.primary),
-                      title: Text(isAr ? 'طلب فيلم أو مسلسل' : 'Request Movie or Series', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContentRequestScreen())),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              _sectionTitle(isAr ? 'المفضلة' : 'Watchlist', s),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                )
-              else if (_watchlist.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(28),
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: s.border),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(Icons.bookmark_border_rounded, color: s.textSecondary, size: 42),
-                      const SizedBox(height: 10),
-                      Text(isAr ? 'لا توجد أفلام أو مسلسلات محفوظة بعد' : 'Your watchlist is empty', style: TextStyle(color: s.textSecondary, fontSize: 13)),
-                    ],
-                  ),
-                )
-              else
-                ..._watchlist.map((media) {
-                  final title = (media['title_ar'] ?? media['title_en'] ?? media['name'] ?? media['title'] ?? 'ONEBR TV').toString();
-                  final poster = (media['poster'] ?? media['poster_path'] ?? media['image'] ?? '').toString();
-                  final id = (media['nb'] ?? media['id'] ?? title).toString();
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: s.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: s.border),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: poster.isNotEmpty
-                            ? Image.network(poster, width: 46, height: 64, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 64, child: Icon(Icons.movie_rounded)))
-                            : const SizedBox(width: 46, height: 64, child: Icon(Icons.movie_rounded)),
-                      ),
-                      title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                      subtitle: Text(isAr ? 'محفوظ في المفضلة' : 'Saved to watchlist', style: TextStyle(color: s.textSecondary, fontSize: 10)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
-                        onPressed: () async {
-                          await LocalStorageService.removeItem('user_watchlist', id);
-                          await _loadWatchlist();
-                        },
-                      ),
-                    ),
-                  );
-                }),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _logout,
-                icon: const Icon(Icons.logout_rounded),
-                label: Text(isAr ? 'تسجيل الخروج' : 'Sign out'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionTitle(String title, AppSettings s) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, right: 4, left: 4),
-      child: Text(title, style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -1392,8 +1032,8 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
                       label: isAr ? 'بحث' : 'Search',
                     ),
                     BottomNavigationBarItem(
-                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.person_rounded, size: 23)),
-                      label: isAr ? 'الحساب' : 'Profile',
+                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.video_library_rounded, size: 23)),
+                      label: isAr ? 'المكتبة' : 'Library',
                     ),
                   ],
                 ),
@@ -3595,6 +3235,90 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
+class VideoClipService {
+  static Future<String> _clipsDirectory() async {
+    Directory? base;
+    if (Platform.isAndroid) base = await getExternalStorageDirectory();
+    base ??= await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/ONEBR TV/Clips');
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    return dir.path;
+  }
+
+  static String _q(String value) => "'${value.replaceAll("'", "'\\''")}'";
+
+  static String _headerArgument() {
+    final headers = StreamService.stealthHeaders;
+    if (headers.isEmpty) return '';
+    return headers.entries.map((e) => '${e.key}: ${e.value}').join('\\r\\n') + '\\r\\n';
+  }
+
+  static Future<String?> createClip({
+    required String source,
+    required Duration start,
+    required Duration end,
+    required String title,
+    bool isLocal = false,
+  }) async {
+    if (source.trim().isEmpty || end <= start) return null;
+    final duration = end - start;
+    if (duration.inMilliseconds < 1000) return null;
+
+    final dir = await _clipsDirectory();
+    final safeTitle = title.replaceAll(RegExp(r'[^a-zA-Z0-9_\-\u0600-\u06FF ]'), '_').trim();
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final output = '$dir/${safeTitle.isEmpty ? 'ONEBR' : safeTitle}_clip_$stamp.mp4';
+    final args = <String>[
+      '-y',
+      '-ss',
+      (start.inMilliseconds / 1000).toStringAsFixed(3),
+      if (!isLocal && _headerArgument().isNotEmpty) ...['-headers', _headerArgument()],
+      '-i',
+      source,
+      '-t',
+      (duration.inMilliseconds / 1000).toStringAsFixed(3),
+      '-map',
+      '0:v:0?',
+      '-map',
+      '0:a:0?',
+      '-c:v',
+      'mpeg4',
+      '-q:v',
+      '3',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-movflags',
+      '+faststart',
+      output,
+    ];
+
+    final session = await FFmpegKit.executeWithArguments(args);
+    final code = await session.getReturnCode();
+    if (code == null || !ReturnCode.isSuccess(code)) {
+      try {
+        final logs = await session.getOutput();
+        debugPrint('ONEBR clip FFmpeg failed: $logs');
+      } catch (_) {}
+      return null;
+    }
+
+    final file = File(output);
+    if (!file.existsSync() || file.lengthSync() < 50 * 1024) return null;
+
+    await LocalStorageService.appendItem('video_clips', {
+      'path': output,
+      'title': title,
+      'start': start.inSeconds,
+      'end': end.inSeconds,
+      'duration': duration.inSeconds,
+      'date': stamp,
+    });
+    return output;
+  }
+}
+
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -3684,11 +3408,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   List<Map<String, int>> _sensitiveSegments = [];
   int _lastSkippedSecond = -1;
-  int _subtitleOffsetSeconds = 0;
-  String _externalSubtitlePath = '';
 
   double? _dragPositionMs;
   bool _isSeeking = false;
+  bool _isCreatingClip = false;
 
   bool get _showSmartSkip =>
       _controller != null &&
@@ -3775,11 +3498,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     final source = futures[0];
     final subInfo = futures[1];
-    Map<String, dynamic>? subtitleOverride;
-    try {
-      final overrideDoc = await FirebaseFirestore.instance.collection('subtitle_overrides').doc(id).get();
-      if (overrideDoc.exists) subtitleOverride = overrideDoc.data();
-    } catch (_) {}
 
     if (source != null && mounted) {
       final qualitiesList = List<Map<String, dynamic>>.from(source['qualities'] ?? []);
@@ -3802,13 +3520,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentStreamUrl = targetUrl;
       _initPlayer(targetUrl);
 
-      final subAr = subtitleOverride?['ar_url']?.toString().isNotEmpty == true
-          ? subtitleOverride!['ar_url'].toString()
-          : (subInfo?['arTranslationFilePath']?.toString() ?? '');
-      final subEn = subtitleOverride?['en_url']?.toString().isNotEmpty == true
-          ? subtitleOverride!['en_url'].toString()
-          : (subInfo?['enTranslationFilePath']?.toString() ?? '');
-      _subtitleOffsetSeconds = int.tryParse((subtitleOverride?['offset_seconds'] ?? 0).toString()) ?? 0;
+      final subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
+      final subEn = subInfo?['enTranslationFilePath']?.toString() ?? '';
       _loadSubtitlesPipeline(subAr, subEn);
     }
   }
@@ -3848,7 +3561,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadSubs(String url, {required bool isSecondary}) async {
+  void _loadSubs(String url, {required bool isSecondary}) async {
     List<Subtitle> parsed = [];
 
     if (!url.startsWith('http')) {
@@ -3857,7 +3570,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         try {
           final content = await file.readAsString();
           parsed = _parseSrt(content);
-          if (_subtitleOffsetSeconds != 0) parsed = _applySubtitleOffset(parsed, _subtitleOffsetSeconds);
         } catch (_) {}
       }
     } else {
@@ -3875,7 +3587,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               decodedText = latin1.decode(res.bodyBytes);
             }
             parsed = _parseSrt(decodedText);
-            if (_subtitleOffsetSeconds != 0) parsed = _applySubtitleOffset(parsed, _subtitleOffsetSeconds);
             SubtitleCache.set(url, parsed);
           }
         } catch (_) {}
@@ -3900,61 +3611,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
       }
     }
-  }
-
-  List<Subtitle> _applySubtitleOffset(List<Subtitle> source, int offsetSeconds) {
-    final delta = Duration(seconds: offsetSeconds);
-    return source.map((s) {
-      var start = s.start + delta;
-      var end = s.end + delta;
-      if (start < Duration.zero) start = Duration.zero;
-      if (end < Duration.zero) end = Duration.zero;
-      return Subtitle(index: s.index, start: start, end: end, text: s.text);
-    }).where((s) => s.end > s.start).toList();
-  }
-
-  Future<void> _pickExternalSubtitle(bool isAr) async {
-    if (!RemoteAdminConfig.instance.isFeatureEnabled('external_subtitles')) return;
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['srt'],
-        withData: false,
-      );
-      final path = result?.files.single.path;
-      if (path == null || path.isEmpty) return;
-      _externalSubtitlePath = path;
-      _subtitleOffsetSeconds = 0;
-      await _loadSubs(path, isSecondary: false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تم استيراد ملف الترجمة بنجاح' : 'Subtitle imported successfully')));
-      }
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تعذر استيراد ملف الترجمة' : 'Could not import subtitle')));
-    }
-  }
-
-  void _showSubtitleOffsetPicker(bool isAr) {
-    var value = _subtitleOffsetSeconds.clamp(-10, 10);
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => StatefulBuilder(builder: (ctx, setLocal) => CupertinoActionSheet(
-        title: Text(isAr ? 'مزامنة الترجمة (-10 إلى +10 ثوانٍ)' : 'Subtitle sync (-10 to +10 seconds)'),
-        message: Column(children: [
-          Text('${value >= 0 ? '+' : ''}$value s', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          CupertinoSlider(min: -10, max: 10, divisions: 20, value: value.toDouble(), onChanged: (v) => setLocal(() => value = v.round())),
-        ]),
-        actions: [
-          CupertinoActionSheetAction(child: Text(isAr ? 'تطبيق' : 'Apply'), onPressed: () {
-            Navigator.pop(ctx);
-            final delta = value - _subtitleOffsetSeconds;
-            setState(() => _subtitleOffsetSeconds = value);
-            if (_subtitles.isNotEmpty && delta != 0) setState(() => _subtitles = _applySubtitleOffset(_subtitles, delta));
-            if (_secondarySubtitles.isNotEmpty && delta != 0) setState(() => _secondarySubtitles = _applySubtitleOffset(_secondarySubtitles, delta));
-          }),
-        ],
-      )),
-    );
   }
 
   List<Subtitle> _parseSrt(String text) {
@@ -4575,21 +4231,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       Divider(color: settings.border, height: 1),
                     ],
-                    if (RemoteAdminConfig.instance.isFeatureEnabled('external_subtitles')) ...[
-                      Divider(color: settings.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.file_open_rounded, color: AppColors.primary),
-                        title: Text(AppLocalization.tr('external_subtitles', settings.appLanguage), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        onTap: () { Navigator.pop(context); _pickExternalSubtitle(isAr); },
-                      ),
-                      Divider(color: settings.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.sync_rounded, color: AppColors.primary),
-                        title: Text(AppLocalization.tr('subtitle_offset', settings.appLanguage), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: Text('${_subtitleOffsetSeconds >= 0 ? '+' : ''}${_subtitleOffsetSeconds}s', style: TextStyle(color: settings.textSecondary)),
-                        onTap: () { Navigator.pop(context); _showSubtitleOffsetPicker(isAr); },
-                      ),
-                    ],
                     ListTile(
                       leading: Icon(Icons.report_problem_rounded, color: Colors.amber),
                       title: Text(isAr ? 'الإبلاغ عن خلل في هذا العمل' : 'Report an issue with this media', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -4808,242 +4449,170 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  String _ffmpegQuote(String value) {
-    // FFmpegKit receives one command string, so quote paths/URLs safely.
-    return "'${value.replaceAll("'", "'\\''")}'";
+  Future<void> _showClipCreator(bool isAr) async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final value = _controller!.value;
+    final total = value.duration;
+    if (total.inSeconds < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'الفيديو قصير جداً لقص مقطع' : 'Video is too short to create a clip')));
+      return;
+    }
+
+    double start = value.position.inSeconds.toDouble().clamp(0, (total.inSeconds - 1).toDouble());
+    double end = (start + 15).clamp(1, total.inSeconds.toDouble());
+    if (end <= start) {
+      start = 0;
+      end = total.inSeconds.clamp(1, 15).toDouble();
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        final s = AppSettings.instance;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final max = total.inMilliseconds / 1000.0;
+            final safeStart = start.clamp(0.0, max - 0.1);
+            final safeEnd = end.clamp(safeStart + 0.1, max);
+            return Directionality(
+              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    border: Border.all(color: s.border),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 42, height: 4, decoration: BoxDecoration(color: s.border, borderRadius: BorderRadius.circular(8))),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            const Icon(Icons.content_cut_rounded, color: AppColors.primary),
+                            const SizedBox(width: 8),
+                            Text(isAr ? 'قص فيديو' : 'Video Clip', style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            Text('${_formatTime(Duration(seconds: safeStart.round()))} → ${_formatTime(Duration(seconds: safeEnd.round()))}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        RangeSlider(
+                          values: RangeValues(safeStart, safeEnd),
+                          min: 0,
+                          max: max,
+                          divisions: total.inSeconds > 0 ? total.inSeconds : 1,
+                          activeColor: AppColors.primary,
+                          inactiveColor: Colors.white24,
+                          labels: RangeLabels(_formatTime(Duration(seconds: safeStart.round())), _formatTime(Duration(seconds: safeEnd.round()))),
+                          onChanged: (r) {
+                            setSheetState(() {
+                              start = r.start;
+                              end = r.end;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 4),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [5, 10, 15, 30].map((seconds) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    setSheetState(() {
+                                      final center = start;
+                                      final newEnd = (center + seconds).clamp(0.1, max);
+                                      if (newEnd - center < 0.1) {
+                                        start = (max - seconds).clamp(0.0, max - 0.1);
+                                        end = max;
+                                      } else {
+                                        end = newEnd;
+                                      }
+                                    });
+                                  },
+                                  child: Text('${seconds}s'),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: CupertinoButton.filled(
+                            borderRadius: BorderRadius.circular(14),
+                            onPressed: _isCreatingClip
+                                ? null
+                                : () async {
+                                    Navigator.pop(ctx);
+                                    await _createClip(start, end, isAr);
+                                  },
+                            child: Text(isAr ? 'إنشاء المقطع ومشاركته' : 'Create & Share Clip'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(isAr ? 'يمكن قص أي جزء من الفيديو ضمن المدة المتاحة.' : 'Choose any portion of the available video.', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
-  Future<void> _takeSceneClip(bool isAr) async {
-    if (!RemoteAdminConfig.instance.isFeatureEnabled('clip_share')) return;
-
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-
-    final duration = controller.value.duration;
-    final durationSec = duration.inSeconds;
-    if (durationSec <= 0) return;
-
-    var clipLength = 10;
-    int start = (controller.value.position - const Duration(seconds: 5))
-        .inSeconds
-        .clamp(0, durationSec)
-        .toInt();
-
-    final result = await showDialog<Map<String, int>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          final int maxStart = (durationSec - clipLength).clamp(0, durationSec).toInt();
-          start = start.clamp(0, maxStart).toInt();
-          final sliderMax = maxStart > 0 ? maxStart.toDouble() : 1.0;
-
-          return AlertDialog(
-            backgroundColor: AppSettings.instance.surface,
-            title: Text(
-              AppLocalization.tr('clip_share', AppSettings.instance.appLanguage),
-              style: TextStyle(
-                color: AppSettings.instance.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  children: [5, 10, 15, 30]
-                      .where((v) => v <= durationSec)
-                      .map(
-                        (v) => ChoiceChip(
-                          label: Text('$v s'),
-                          selected: clipLength == v,
-                          onSelected: (_) => setLocal(() {
-                            clipLength = v;
-                            start = start
-                                .clamp(0, (durationSec - v).clamp(0, durationSec))
-                                .toInt();
-                          }),
-                        ),
-                      )
-                      .toList(),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  '${isAr ? 'البداية' : 'Start'}: ${_formatTime(Duration(seconds: start))}',
-                  style: TextStyle(color: AppSettings.instance.textSecondary),
-                ),
-                Slider(
-                  min: 0,
-                  max: sliderMax,
-                  value: start.toDouble().clamp(0, sliderMax),
-                  onChanged: maxStart == 0
-                      ? null
-                      : (v) => setLocal(() => start = v.round()),
-                ),
-                Text(
-                  '${isAr ? 'النهاية' : 'End'}: ${_formatTime(Duration(seconds: (start + clipLength).clamp(0, durationSec).toInt()))}',
-                  style: TextStyle(color: AppSettings.instance.textSecondary),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(isAr ? 'إلغاء' : 'Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, {
-                  'start': start,
-                  'end': (start + clipLength).clamp(0, durationSec).toInt(),
-                }),
-                child: Text(isAr ? 'قص ومشاركة' : 'Trim & Share'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (result == null || !mounted) return;
-
-    final startSec = result['start']!;
-    final endSec = result['end']!;
-    final clipSeconds = endSec - startSec;
-    if (clipSeconds <= 0) return;
-
-    // Do not attempt to export an empty/invalid stream.
-    final inputUrl = _currentStreamUrl.isNotEmpty
-        ? _currentStreamUrl
-        : (controller.dataSource.isNotEmpty ? controller.dataSource : widget.videoUrl);
-    if (inputUrl.isEmpty) return;
-
-    final dir = await getTemporaryDirectory();
-    final outputPath = '${dir.path}/onebr_short_${DateTime.now().millisecondsSinceEpoch}.mp4';
-
-    if (mounted) {
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => WillPopScope(
-          onWillPop: () async => false,
-          child: AlertDialog(
-            backgroundColor: AppSettings.instance.surface,
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: AppColors.primary),
-                const SizedBox(height: 18),
-                Text(
-                  isAr ? 'جارٍ قص الفيديو...' : 'Trimming video...',
-                  style: TextStyle(color: AppSettings.instance.textPrimary),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$clipSeconds ${isAr ? 'ثانية' : 'seconds'}',
-                  style: TextStyle(color: AppSettings.instance.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+  Future<void> _createClip(double startSeconds, double endSeconds, bool isAr) async {
+    if (_isCreatingClip || _controller == null) return;
+    final source = widget.isLocalFile ? widget.videoUrl : _currentStreamUrl;
+    if (source.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'مصدر الفيديو غير متاح للقص' : 'Video source is unavailable for clipping')));
+      return;
     }
-
+    setState(() => _isCreatingClip = true);
     try {
-      final input = _ffmpegQuote(inputUrl);
-      final output = _ffmpegQuote(outputPath);
-
-      // Copy the bundled transparent ONEBR TV watermark to a real file so
-      // FFmpegKit can use it as a second input.
-      final logoPath = '${dir.path}/onebr_watermark.png';
-      final logoData = await rootBundle.load('assets/onebr_watermark.png');
-      await File(logoPath).writeAsBytes(logoData.buffer.asUint8List(), flush: true);
-      final logo = _ffmpegQuote(logoPath);
-
-      final ffmpegHeaders = !widget.isLocalFile && StreamService.stealthHeaders.isNotEmpty
-          ? StreamService.stealthHeaders.entries
-              .map((e) => '${e.key}: ${e.value}\r\n')
-              .join()
-          : '';
-
-      // Re-encode to MP4 so this works even when the source is HLS/other
-      // streaming media. This is a real video file, not a screenshot.
-      final command = [
-        '-y',
-        '-ss',
-        startSec.toString(),
-        if (ffmpegHeaders.isNotEmpty) ...[
-          '-headers',
-          _ffmpegQuote(ffmpegHeaders),
-        ],
-        '-i',
-        input,
-        '-i',
-        logo,
-        '-t',
-        clipSeconds.toString(),
-        '-filter_complex',
-        '[1:v]scale=iw*0.16:-1[wm];[0:v][wm]overlay=W-w-24:24:format=auto[vout]',
-        '-map',
-        '[vout]',
-        '-map',
-        '0:a:0?',
-        '-c:v',
-        'mpeg4',
-        '-q:v',
-        '5',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '128k',
-        '-shortest',
-        '-movflags',
-        '+faststart',
-        output,
-      ].join(' ');
-
-      final session = await FFmpegKit.execute(command);
-      final returnCode = await session.getReturnCode();
-      try {
-        await File(logoPath).delete();
-      } catch (_) {}
-
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-
-      if (ReturnCode.isSuccess(returnCode) && await File(outputPath).exists()) {
-        final shareUrl = 'https://onebr.tv/short?media=${Uri.encodeComponent(_activeMediaId)}&start=$startSec&end=$endSec';
-        await Share.shareXFiles(
-          [XFile(outputPath, mimeType: 'video/mp4', name: 'ONEBR_Short.mp4')],
-          text: '${widget.title}\n${isAr ? 'مقطع' : 'Short'} $startSec-$endSec s\n$shareUrl',
-        );
-        HapticFeedback.mediumImpact();
-      } else {
-        final logs = await session.getOutput() ?? '';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isAr
-                    ? 'تعذر قص الفيديو. تأكد من أن رابط البث قابل للقراءة.'
-                    : 'Could not trim the video. Check that the stream URL is readable.',
-              ),
-            ),
-          );
-          debugPrint('FFmpeg clip failed: $logs');
-        }
+      final path = await VideoClipService.createClip(
+        source: source,
+        start: Duration(milliseconds: (startSeconds * 1000).round()),
+        end: Duration(milliseconds: (endSeconds * 1000).round()),
+        title: widget.title,
+        isLocal: widget.isLocalFile,
+      );
+      if (!mounted) return;
+      if (path == null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تعذر إنشاء المقطع. تحقق من مصدر الفيديو وحاول مرة أخرى.' : 'Could not create the clip. Check the video source and try again.')));
+        return;
       }
+      final box = context.findRenderObject() as RenderBox?;
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(path)],
+        title: widget.title,
+        sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+      ));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تم إنشاء المقطع وحفظه في المكتبة ✂️' : 'Clip created and saved to your library ✂️')));
     } catch (e) {
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'حدث خطأ أثناء قص الفيديو' : 'Video trimming failed'),
-          ),
-        );
-      }
-      debugPrint('Clip error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'حدث خطأ أثناء قص الفيديو' : 'Clip creation failed')));
+    } finally {
+      if (mounted) setState(() => _isCreatingClip = false);
     }
+  }
+
+  void _takeSceneClip(bool isAr) {
+    HapticFeedback.mediumImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(isAr ? 'تم حفظ لقطة الشاشة في استوديو الهاتف! 📸' : 'Snapshot saved to gallery! 📸')),
+    );
   }
 
   KeyEventResult _handleRemoteKey(FocusNode node, KeyEvent event) {
@@ -5103,24 +4672,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       width: _controller!.value.size.width,
                                       height: _controller!.value.size.height,
                                       child: VideoPlayer(_controller!),
-                                    ),
-                                  ),
-
-                                  // ONEBR TV watermark shown while watching.
-                                  Positioned(
-                                    top: 18,
-                                    right: 18,
-                                    child: IgnorePointer(
-                                      child: Opacity(
-                                        opacity: 0.78,
-                                        child: Image.asset(
-                                          'assets/onebr_watermark.png',
-                                          width: 72,
-                                          height: 52,
-                                          fit: BoxFit.contain,
-                                          filterQuality: FilterQuality.high,
-                                        ),
-                                      ),
                                     ),
                                   ),
 
@@ -5233,6 +4784,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
+                  if (_showSmartSkip && !_isLocked)
+                    Positioned(
+                      bottom: 85, left: 20,
+                      child: CupertinoButton(
+                        color: Colors.black.withOpacity(0.75),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        minSize: 0,
+                        borderRadius: BorderRadius.circular(12),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          final target = _controller!.value.position + const Duration(seconds: 85);
+                          _controller!.seekTo(target > _controller!.value.duration ? _controller!.value.duration : target);
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 16),
+                            const SizedBox(width: 4),
+                            Text(isAr ? 'تخطي المقدمة' : 'Skip Intro', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   if (_showAutoNext && hasNext && !_isLocked)
                     Positioned(
                       bottom: 85, right: 20,
@@ -5280,6 +4855,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                               onPressed: () => Navigator.pop(context),
                             ),
+                            IconButton(
+                              tooltip: isAr ? 'المكتبة' : 'Library',
+                              icon: const Icon(Icons.video_library_rounded, color: Colors.white),
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryScreen()));
+                              },
+                            ),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5299,7 +4881,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     onPressed: _showEpisodesDrawer,
                                   ),
                                 IconButton(
-                                  tooltip: isAr ? 'صانع اللقطات' : 'Snapshot',
+                                  tooltip: isAr ? 'قص الفيديو' : 'Create Clip',
+                                  icon: const Icon(Icons.content_cut_rounded, color: Colors.white),
+                                  onPressed: () => _showClipCreator(isAr),
+                                ),
+                                IconButton(
+                                  tooltip: isAr ? 'لقطة شاشة' : 'Snapshot',
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
                                   onPressed: () => _takeSceneClip(isAr),
                                 ),
@@ -5487,32 +5074,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   final _popupBodyCtrl = TextEditingController();
   final _popupUrlCtrl = TextEditingController();
 
-  final _socialTelegramCtrl = TextEditingController();
-  final _socialWhatsappCtrl = TextEditingController();
-  final _socialInstagramCtrl = TextEditingController();
-  final _socialFacebookCtrl = TextEditingController();
-  final _socialWebsiteCtrl = TextEditingController();
-  final _banValueCtrl = TextEditingController();
-  final _banReasonCtrl = TextEditingController();
-  final _requestFilterCtrl = TextEditingController();
-  final _subtitleAdminMediaCtrl = TextEditingController();
-  final _subtitleAdminArCtrl = TextEditingController();
-  final _subtitleAdminEnCtrl = TextEditingController();
-  final _subtitleAdminOffsetCtrl = TextEditingController();
-  final _iptvNameCtrl = TextEditingController();
-  final _iptvUrlCtrl = TextEditingController();
-  final _iptvCategoryCtrl = TextEditingController();
-
-  bool _flagClipShare = true;
-  bool _flagExternalSubtitles = true;
-  bool _flagSocialLinks = true;
-  bool _flagContentRequests = true;
-  bool _flagSubtitleManager = true;
-  bool _flagDeviceBan = true;
-  bool _flagIptvManager = true;
-  List<Map<String, dynamic>> _requests = [];
-  List<Map<String, dynamic>> _iptvAdminChannels = [];
-
   bool _maintenance = false;
   bool _censorActive = true;
   bool _allowDownloads = true;
@@ -5539,11 +5100,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     _loadCurrentConfig();
     _loadCloudStats();
     _testServerPings();
-    _loadAdvancedData();
   }
 
   void _loadCurrentConfig() async {
@@ -5563,20 +5123,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         _popupTitleCtrl.text = d['popup_title'] ?? '';
         _popupBodyCtrl.text = d['popup_body'] ?? '';
         _popupUrlCtrl.text = d['popup_action_url'] ?? '';
-        final flags = Map<String, dynamic>.from(d['feature_flags'] is Map ? d['feature_flags'] : {});
-        _flagClipShare = flags['clip_share'] ?? true;
-        _flagExternalSubtitles = flags['external_subtitles'] ?? true;
-        _flagSocialLinks = flags['social_links'] ?? true;
-        _flagContentRequests = flags['content_requests'] ?? true;
-        _flagSubtitleManager = flags['subtitle_manager'] ?? true;
-        _flagDeviceBan = flags['device_ban'] ?? true;
-        _flagIptvManager = flags['iptv_manager'] ?? true;
-        final socials = Map<String, dynamic>.from(d['social_links'] is Map ? d['social_links'] : {});
-        _socialTelegramCtrl.text = socials['telegram']?.toString() ?? '';
-        _socialWhatsappCtrl.text = socials['whatsapp']?.toString() ?? '';
-        _socialInstagramCtrl.text = socials['instagram']?.toString() ?? '';
-        _socialFacebookCtrl.text = socials['facebook']?.toString() ?? '';
-        _socialWebsiteCtrl.text = socials['website']?.toString() ?? '';
 
         if (d['pinned_hero_ids'] is List) {
           _pinnedHeroesCtrl.text = (d['pinned_hero_ids'] as List).join(',');
@@ -5666,22 +5212,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       'popup_title': _popupTitleCtrl.text.trim(),
       'popup_body': _popupBodyCtrl.text.trim(),
       'popup_action_url': _popupUrlCtrl.text.trim(),
-      'feature_flags': {
-        'clip_share': _flagClipShare,
-        'external_subtitles': _flagExternalSubtitles,
-        'social_links': _flagSocialLinks,
-        'content_requests': _flagContentRequests,
-        'subtitle_manager': _flagSubtitleManager,
-        'device_ban': _flagDeviceBan,
-        'iptv_manager': _flagIptvManager,
-      },
-      'social_links': {
-        'telegram': _socialTelegramCtrl.text.trim(),
-        'whatsapp': _socialWhatsappCtrl.text.trim(),
-        'instagram': _socialInstagramCtrl.text.trim(),
-        'facebook': _socialFacebookCtrl.text.trim(),
-        'website': _socialWebsiteCtrl.text.trim(),
-      },
       'last_admin_update': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -5755,133 +5285,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     }
   }
 
-
-  Future<void> _loadAdvancedData() async {
-    try {
-      final req = await FirebaseFirestore.instance.collection('content_requests').orderBy('created_at', descending: true).limit(50).get();
-      final iptv = await FirebaseFirestore.instance.collection('iptv_channels').orderBy('name').limit(100).get();
-      if (mounted) setState(() {
-        _requests = req.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-        _iptvAdminChannels = iptv.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _saveSubtitleOverride() async {
-    final id = _subtitleAdminMediaCtrl.text.trim();
-    if (id.isEmpty) return;
-    await FirebaseFirestore.instance.collection('subtitle_overrides').doc(id).set({
-      'ar_url': _subtitleAdminArCtrl.text.trim(),
-      'en_url': _subtitleAdminEnCtrl.text.trim(),
-      'offset_seconds': int.tryParse(_subtitleAdminOffsetCtrl.text.trim()) ?? 0,
-      'updated_at': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ إعداد الترجمة السحابية')));
-  }
-
-  Future<void> _banValue({required bool device}) async {
-    final value = _banValueCtrl.text.trim();
-    if (value.isEmpty) return;
-    final collection = device ? 'banned_devices' : 'banned_users';
-    await FirebaseFirestore.instance.collection(collection).doc(device ? value : value.toLowerCase()).set({
-      'active': true,
-      'reason': _banReasonCtrl.text.trim(),
-      'created_at': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    _banValueCtrl.clear();
-    _banReasonCtrl.clear();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(device ? 'تم حظر معرف الجهاز' : 'تم حظر البريد/المعرف')));
-  }
-
-  Future<void> _setRequestStatus(String id, String status) async {
-    await FirebaseFirestore.instance.collection('content_requests').doc(id).update({'status': status, 'reviewed_at': FieldValue.serverTimestamp()});
-    await _loadAdvancedData();
-  }
-
-  Future<void> _addIptvChannel() async {
-    final name = _iptvNameCtrl.text.trim();
-    final url = _iptvUrlCtrl.text.trim();
-    final category = _iptvCategoryCtrl.text.trim().isEmpty ? 'General' : _iptvCategoryCtrl.text.trim();
-    if (name.isEmpty || url.isEmpty) return;
-    await FirebaseFirestore.instance.collection('iptv_channels').add({'name': name, 'url': url, 'category': category, 'enabled': true, 'updated_at': FieldValue.serverTimestamp()});
-    _iptvNameCtrl.clear(); _iptvUrlCtrl.clear(); _iptvCategoryCtrl.clear();
-    await _loadAdvancedData();
-  }
-
-  Future<int> _pingUrl(String url) async {
-    final sw = Stopwatch()..start();
-    try { final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6)); sw.stop(); return r.statusCode >= 200 && r.statusCode < 500 ? sw.elapsedMilliseconds : 9999; } catch (_) { return 9999; }
-  }
-
-  Widget _advancedAdminTab(AppSettings s) {
-    final flags = [
-      ['مشاركة المقاطع', _flagClipShare, (bool v) => _flagClipShare = v],
-      ['الترجمات الخارجية', _flagExternalSubtitles, (bool v) => _flagExternalSubtitles = v],
-      ['حسابات التواصل', _flagSocialLinks, (bool v) => _flagSocialLinks = v],
-      ['طلبات المستخدمين', _flagContentRequests, (bool v) => _flagContentRequests = v],
-      ['مدير الترجمات السحابية', _flagSubtitleManager, (bool v) => _flagSubtitleManager = v],
-      ['حظر الجهاز / البريد', _flagDeviceBan, (bool v) => _flagDeviceBan = v],
-      ['مدير قنوات IPTV', _flagIptvManager, (bool v) => _flagIptvManager = v],
-    ];
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      _adminCard(s, 'مفاتيح الميزات السحابية', Column(children: flags.map((f) => SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(f[0] as String), value: f[1] as bool, activeColor: AppColors.primary, onChanged: (v) => setState(() => (f[2] as Function(bool))(v)))).toList())),
-      const SizedBox(height: 12),
-      _adminCard(s, 'حسابات التطبيق الرسمية', Column(children: [
-        _adminField(_socialTelegramCtrl, 'Telegram'), _adminField(_socialWhatsappCtrl, 'WhatsApp'), _adminField(_socialInstagramCtrl, 'Instagram'), _adminField(_socialFacebookCtrl, 'Facebook'), _adminField(_socialWebsiteCtrl, 'الموقع الرسمي'),
-      ])),
-      const SizedBox(height: 12),
-      _adminCard(s, 'فحص الروابط المباشر', Column(children: [
-        for (final entry in {'Telegram': _socialTelegramCtrl.text, 'WhatsApp': _socialWhatsappCtrl.text, 'Instagram': _socialInstagramCtrl.text, 'Facebook': _socialFacebookCtrl.text, 'Website': _socialWebsiteCtrl.text}.entries.where((e) => e.value.isNotEmpty))
-          ListTile(title: Text(entry.key), subtitle: Text(entry.value, maxLines: 1, overflow: TextOverflow.ellipsis), trailing: FutureBuilder<int>(future: _pingUrl(entry.value), builder: (_, snap) => Text(snap.connectionState == ConnectionState.done ? '${snap.data} ms' : '...'))),
-      ])),
-      const SizedBox(height: 12),
-      _adminCard(s, 'مدير الترجمات السحابية', Column(children: [
-        _adminField(_subtitleAdminMediaCtrl, 'Media ID'), _adminField(_subtitleAdminArCtrl, 'AR .srt URL'), _adminField(_subtitleAdminEnCtrl, 'EN .srt URL'), _adminField(_subtitleAdminOffsetCtrl, 'Offset seconds (-10..10)', number: true),
-        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: _saveSubtitleOverride, child: const Text('حفظ إعداد الترجمة'))),
-      ])),
-      const SizedBox(height: 12),
-      _adminCard(s, 'حظر البريد أو الجهاز', Column(children: [
-        _adminField(_banValueCtrl, 'Email أو Device ID'), _adminField(_banReasonCtrl, 'سبب الحظر'),
-        Row(children: [Expanded(child: ElevatedButton(onPressed: () => _banValue(device: false), child: const Text('حظر البريد/UID'))), const SizedBox(width: 8), Expanded(child: ElevatedButton(onPressed: () => _banValue(device: true), child: const Text('حظر الجهاز')))]),
-      ])),
-      const SizedBox(height: 12),
-      _adminCard(
-        s,
-        'طلبات المحتوى',
-        Column(
-          children: _requests.isEmpty
-              ? [const Text('لا توجد طلبات محملة')]
-              : _requests.map<Widget>((r) {
-                  return ListTile(
-                    title: Text('${r['title'] ?? ''}'),
-                    subtitle: Text('${r['type'] ?? 'media'} • ${r['status'] ?? 'pending'}'),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (v) => _setRequestStatus(r['id'].toString(), v),
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'approved', child: Text('موافقة')),
-                        PopupMenuItem(value: 'rejected', child: Text('رفض')),
-                        PopupMenuItem(value: 'completed', child: Text('تم التنفيذ')),
-                      ],
-                    ),
-                  );
-                }).toList(),
-        ),
-      ),
-      const SizedBox(height: 12),
-      _adminCard(s, 'إدارة قنوات IPTV', Column(children: [
-        _adminField(_iptvNameCtrl, 'اسم القناة'), _adminField(_iptvUrlCtrl, 'رابط البث'), _adminField(_iptvCategoryCtrl, 'التصنيف'),
-        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: _addIptvChannel, child: const Text('إضافة القناة'))),
-        ..._iptvAdminChannels.map((c) => ListTile(title: Text(c['name']?.toString() ?? ''), subtitle: Text('${c['category'] ?? ''} • ${c['url'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis), trailing: Icon(c['enabled'] == false ? Icons.pause_circle : Icons.play_circle, color: c['enabled'] == false ? Colors.orange : Colors.green))),
-      ])),
-      const SizedBox(height: 12),
-      SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () async { await _loadAdvancedData(); if (mounted) setState(() {}); }, icon: const Icon(Icons.refresh), label: const Text('تحديث لوحة الأمان'))),
-      SizedBox(width: double.infinity, child: ElevatedButton(onPressed: _saveGlobalSettings, child: const Text('حفظ كل الإعدادات السحابية'))),
-    ]);
-  }
-
-  Widget _adminCard(AppSettings s, String title, Widget child) => Container(padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 2), decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), const SizedBox(height: 10), child]));
-  Widget _adminField(TextEditingController c, String label, {bool number = false}) => Padding(padding: const EdgeInsets.only(bottom: 8), child: TextField(controller: c, keyboardType: number ? TextInputType.number : TextInputType.text, decoration: InputDecoration(labelText: label)));
-
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
@@ -5902,7 +5305,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               Tab(icon: Icon(Icons.speed_rounded, size: 20), text: 'السيرفرات والشبكة'),
               Tab(icon: Icon(Icons.shield_rounded, size: 20), text: 'إدارة الحجب'),
               Tab(icon: Icon(Icons.analytics_rounded, size: 20), text: 'الإحصائيات'),
-              Tab(icon: Icon(Icons.admin_panel_settings_rounded, size: 20), text: 'الأمان المتقدم'),
             ],
           ),
         ),
@@ -6253,7 +5655,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                       ),
                     ],
                   ),
-            _advancedAdminTab(s),
           ],
         ),
       ),
@@ -6430,78 +5831,838 @@ class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
   }
 }
 
+class LibraryScreen extends StatefulWidget {
+  const LibraryScreen({super.key});
 
-class ContentRequestScreen extends StatefulWidget {
-  const ContentRequestScreen({super.key});
-  @override State<ContentRequestScreen> createState() => _ContentRequestScreenState();
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
 }
-class _ContentRequestScreenState extends State<ContentRequestScreen> {
-  final title = TextEditingController(); final notes = TextEditingController(); String type = 'movie';
-  Future<void> _send() async {
-    if (title.text.trim().isEmpty) return;
-    await FirebaseFirestore.instance.collection('content_requests').add({'title': title.text.trim(), 'type': type, 'notes': notes.text.trim(), 'status': 'pending', 'uid': FirebaseAuth.instance.currentUser?.uid, 'email': FirebaseAuth.instance.currentUser?.email, 'created_at': FieldValue.serverTimestamp()});
-    if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إرسال الطلب إلى لوحة الأمان'))); }
+
+class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+  List<Map<String, dynamic>> _completed = [];
+  List<Map<String, dynamic>> _watchlist = [];
+  List<Map<String, dynamic>> _clips = [];
+  StreamSubscription? _dlSub;
+
+  int _statMinutes = 0;
+  int _statEpisodes = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 5, vsync: this);
+
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        _loadData();
+      }
+    });
+
+    _loadData();
+
+    _dlSub = BackgroundDownloadService.progressStream.stream.listen((data) async {
+      final String taskId = data[0];
+      final int status = data[1];
+      final int progress = data[2];
+
+      if (mounted) {
+        bool itemFound = false;
+        for (var item in _completed) {
+          if (item['taskId'] == taskId) {
+            item['status'] = status;
+            item['progress'] = progress;
+            if (status == 3) {
+              item['isCompleted'] = true;
+            }
+            itemFound = true;
+            break;
+          }
+        }
+
+        if (!itemFound) {
+          final list = await LocalStorageService.getList('downloaded_works_list');
+          setState(() {
+            _completed = list;
+          });
+        } else {
+          setState(() {});
+        }
+      }
+    });
   }
+
+  @override
+  void dispose() {
+    _dlSub?.cancel();
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  void _loadData() async {
+    final downloads = await LocalStorageService.getList('downloaded_works_list');
+    final wl = await LocalStorageService.getList('user_watchlist');
+    final clips = await LocalStorageService.getList('video_clips');
+    final prefs = await SharedPreferences.getInstance();
+    final curP = prefs.getString('current_active_profile') ?? 'default';
+
+    if (mounted) {
+      setState(() {
+        _completed = downloads;
+        _watchlist = wl;
+        _clips = clips;
+        _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
+        _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
+      });
+    }
+  }
+
+  void _cleanCache() async {
+    try {
+      final tempDir = Directory.systemTemp;
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم تفريغ الذاكرة المؤقتة بنجاح' : 'Cache cleared successfully')));
+    } catch (_) {}
+  }
+
+  void _showAddProfileDialog(bool isAr) {
+    final s = AppSettings.instance;
+    final ctrl = TextEditingController();
+    showCupertinoDialog(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: Text(isAr ? 'إضافة بروفايل جديد' : 'Add New Profile'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: CupertinoTextField(
+            controller: ctrl,
+            placeholder: isAr ? 'اسم الملف الشخصي' : 'Profile Name',
+            style: TextStyle(color: s.textPrimary),
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: Text(isAr ? 'إلغاء' : 'Cancel')),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              if (ctrl.text.isNotEmpty) {
+                AppSettings.instance.addProfile(ctrl.text.trim());
+                Navigator.pop(context);
+              }
+            },
+            child: Text(isAr ? 'إضافة' : 'Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleGoogleSignIn(bool isAr) async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        serverClientId: '598398160963-7qus9g8t7kaniqh5offjhbqe2snk9471.apps.googleusercontent.com',
+      );
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user != null) {
+        AppSettings.instance.login(
+          user.displayName ?? (isAr ? 'مستخدم' : 'User'),
+          user.email ?? '',
+        );
+        await _fetchWatchlistFromCloud(user.uid);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAr ? 'فشل تسجيل الدخول بـ Google: $e' : 'Google sign in failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleEmailAuth({
+    required bool isRegister,
+    required String email,
+    required String password,
+    required String name,
+    required bool isAr,
+  }) async {
+    try {
+      UserCredential userCredential;
+      if (isRegister) {
+        userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+        if (name.isNotEmpty) {
+          await userCredential.user?.updateDisplayName(name.trim());
+        }
+      } else {
+        userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+      }
+
+      final user = userCredential.user;
+      if (user != null) {
+        AppSettings.instance.login(
+          user.displayName ?? (name.isNotEmpty ? name : (isAr ? 'مستخدم' : 'User')),
+          user.email ?? email,
+        );
+        await _fetchWatchlistFromCloud(user.uid);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAr ? 'خطأ في المصادقة: $e' : 'Authentication error: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _fetchWatchlistFromCloud(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('profiles')
+          .doc(AppSettings.instance.activeProfile)
+          .get();
+      if (doc.exists && doc.data()?['watchlist'] != null) {
+        final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
+        await LocalStorageService.setList('user_watchlist', cloudList);
+        _loadData();
+      }
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  void _showAuthDialog(bool isAr) {
+    final s = AppSettings.instance;
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    bool isRegisterMode = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setMState) => Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: s.glassFill,
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isRegisterMode ? (isAr ? 'إنشاء حساب جديد' : 'Create New Account') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
+                            style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close_rounded, color: s.textPrimary),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      if (isRegisterMode) ...[
+                        CupertinoTextField(
+                          controller: nameCtrl,
+                          placeholder: isAr ? 'الاسم' : 'Name',
+                          style: TextStyle(color: s.textPrimary),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      CupertinoTextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        placeholder: isAr ? 'البريد الإلكتروني' : 'Email Address',
+                        style: TextStyle(color: s.textPrimary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                      ),
+                      const SizedBox(height: 10),
+
+                      CupertinoTextField(
+                        controller: passCtrl,
+                        obscureText: true,
+                        placeholder: isAr ? 'كلمة المرور' : 'Password',
+                        style: TextStyle(color: s.textPrimary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                      ),
+                      const SizedBox(height: 16),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoButton(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () async {
+                            if (emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) return;
+                            Navigator.pop(ctx);
+                            await _handleEmailAuth(
+                              isRegister: isRegisterMode,
+                              email: emailCtrl.text.trim(),
+                              password: passCtrl.text.trim(),
+                              name: nameCtrl.text.trim(),
+                              isAr: isAr,
+                            );
+                          },
+                          child: Text(
+                            isRegisterMode ? (isAr ? 'إنشاء حساب' : 'Register') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      TextButton(
+                        onPressed: () => setMState(() => isRegisterMode = !isRegisterMode),
+                        child: Text(
+                          isRegisterMode
+                              ? (isAr ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'Already have an account? Sign In')
+                              : (isAr ? 'ليس لديك حساب؟ إنشاء حساب جديد' : "Don't have an account? Register"),
+                          style: TextStyle(color: s.textSecondary, fontSize: 12),
+                        ),
+                      ),
+
+                      Divider(color: s.border, height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoButton(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _handleGoogleSignIn(isAr);
+                          },
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
+                              const SizedBox(width: 6),
+                              Text(
+                                isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: s.textPrimary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatClipDuration(dynamic seconds) {
+    final n = seconds is num ? seconds.toInt() : int.tryParse('$seconds') ?? 0;
+    final m = (n ~/ 60).toString().padLeft(2, '0');
+    final sec = (n % 60).toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
-    final ar = s.appLanguage == 'ar';
+    final isAr = s.appLanguage == 'ar';
+    final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
 
     return Directionality(
-      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text(ar ? 'طلب محتوى' : 'Content Request'),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: title,
-              decoration: InputDecoration(
-                labelText: ar ? 'اسم الفيلم أو المسلسل' : 'Title',
-              ),
+          title: Text(isAr ? 'الحساب والمكتبة' : 'Profile & Library', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
+          actions: [
+            IconButton(
+              tooltip: isAr ? 'تفريغ الكاش' : 'Clear Cache',
+              icon: Icon(Icons.delete_sweep_rounded, color: s.textSecondary),
+              onPressed: _cleanCache,
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: type,
-              items: const [
-                DropdownMenuItem(
-                  value: 'movie',
-                  child: Text('Movie / فيلم'),
-                ),
-                DropdownMenuItem(
-                  value: 'series',
-                  child: Text('Series / مسلسل'),
+          ],
+          bottom: TabBar(
+            controller: _tabCtrl,
+            indicatorColor: AppColors.primary,
+            labelColor: AppColors.primary,
+            unselectedLabelColor: s.textSecondary,
+            tabs: [
+              Tab(text: isAr ? 'التنزيلات' : 'Downloads'),
+              Tab(text: isAr ? 'المفضلة' : 'Watchlist'),
+              Tab(text: isAr ? 'المقاطع' : 'Clips'),
+              Tab(text: isAr ? 'الإحصائيات' : 'Stats'),
+              Tab(text: isAr ? 'الإعدادات' : 'Settings'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          controller: _tabCtrl,
+          children: [
+            _completed.isEmpty
+                ? Center(child: Text(isAr ? 'لا توجد تنزيلات حالياً' : 'No downloads yet', style: TextStyle(color: s.textSecondary)))
+                : ListView.builder(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _completed.length,
+                    itemBuilder: (ctx, i) {
+                      final it = _completed[i];
+                      final filePath = it['path'] ?? '';
+                      final file = File(filePath);
+                      final bool fileExists = file.existsSync() && file.lengthSync() > 1024 * 1024;
+                      final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
+                      final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
+
+                      final bool isCompleted = fileExists && (it['isCompleted'] == true || status == 3 || progress >= 100);
+                      final bool isFailed = (status == 4 || status == 5) || (status == 3 && !fileExists);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: s.border, width: 0.5),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: it['poster'].toString().isNotEmpty
+                                        ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
+                                        : Container(width: 50, height: 70, color: s.surfaceLight),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          isCompleted
+                                              ? (isAr ? 'جاهز للمشاهدة بدون إنترنت' : 'Ready to watch offline')
+                                              : (isFailed
+                                                  ? (isAr ? 'فشل التنزيل أو لم يكتمل' : 'Download failed')
+                                                  : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)')),
+                                          style: TextStyle(
+                                            color: isCompleted
+                                                ? Colors.greenAccent
+                                                : (isFailed ? Colors.redAccent : s.textSecondary),
+                                            fontSize: 11,
+                                            fontWeight: (isCompleted || isFailed) ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isCompleted)
+                                    IconButton(
+                                      icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
+                                      onPressed: () {
+                                        final subPath = it['subPath']?.toString() ?? '';
+                                        if (file.existsSync()) {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => PlayerScreen(
+                                                mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
+                                                title: it['title'] ?? '',
+                                                videoUrl: filePath,
+                                                subtitleUrl: subPath,
+                                                qualities: const [],
+                                                isLocalFile: true,
+                                                poster: it['poster'] ?? '',
+                                              ),
+                                            ),
+                                          );
+                                        } else {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
+                                    onPressed: () async {
+                                      final taskId = it['taskId']?.toString();
+                                      if (taskId != null) {
+                                        try {
+                                          await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+                                        } catch (_) {}
+                                      }
+                                      if (file.existsSync()) {
+                                        try {
+                                          file.deleteSync();
+                                        } catch (_) {}
+                                      }
+                                      final subFile = File(it['subPath']?.toString() ?? '');
+                                      if (subFile.existsSync()) {
+                                        try {
+                                          subFile.deleteSync();
+                                        } catch (_) {}
+                                      }
+                                      await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
+                                      _loadData();
+                                    },
+                                  ),
+                                ],
+                              ),
+                              if (!isCompleted && !isFailed) ...[
+                                const SizedBox(height: 10),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: (progress / 100.0).clamp(0.0, 1.0),
+                                    backgroundColor: Colors.white12,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                    minHeight: 4,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+            _watchlist.isEmpty
+                ? Center(child: Text(isAr ? 'لم تقم بحفظ أي عمل بعد' : 'Watchlist is empty', style: TextStyle(color: s.textSecondary)))
+                : GridView.builder(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.58, crossAxisSpacing: 10, mainAxisSpacing: 12),
+                    itemCount: _watchlist.length,
+                    itemBuilder: (ctx, i) {
+                      final item = _watchlist[i];
+                      final poster = StreamService.extractPoster(item);
+                      return FocusBuilder(
+                        builder: (context, hasFocus) => InkWell(
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              child: poster.isNotEmpty
+                                  ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
+                                  : Container(color: s.surface),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+
+            _clips.isEmpty
+                ? Center(child: Text(isAr ? 'لا توجد مقاطع بعد' : 'No clips yet', style: TextStyle(color: s.textSecondary)))
+                : ListView.builder(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _clips.length,
+                    itemBuilder: (ctx, i) {
+                      final clip = _clips[_clips.length - 1 - i];
+                      final path = clip['path']?.toString() ?? '';
+                      final file = File(path);
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
+                        child: ListTile(
+                          leading: const CircleAvatar(backgroundColor: AppColors.primary, child: Icon(Icons.content_cut_rounded, color: Colors.white)),
+                          title: Text(clip['title']?.toString() ?? 'ONEBR Clip', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                          subtitle: Text('${_formatClipDuration(clip['duration'])} • ${file.existsSync() ? (isAr ? 'جاهز للمشاركة' : 'Ready to share') : (isAr ? 'الملف غير موجود' : 'File missing')}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (file.existsSync())
+                                IconButton(
+                                  icon: const Icon(Icons.share_rounded, color: AppColors.primary),
+                                  onPressed: () => SharePlus.instance.share(ShareParams(files: [XFile(path)])),
+                                ),
+                              IconButton(
+                                icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
+                                onPressed: () async {
+                                  if (file.existsSync()) { try { await file.delete(); } catch (_) {} }
+                                  await LocalStorageService.removeItem('video_clips', path, idField: 'path');
+                                  _loadData();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: BorderRadius.circular(AppRadius.card),
+                    border: Border.all(color: s.border, width: 0.5),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 40),
+                      const SizedBox(height: 10),
+                      Text(isAr ? 'إحصائيات الملف: ${s.activeProfile}' : 'Stats for: ${s.activeProfile}', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                      Divider(color: s.border, height: 26),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          Column(
+                            children: [
+                              Text('$_statMinutes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 2),
+                              Text(isAr ? 'دقيقة مشاهدة' : 'Minutes Watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              Text('$_statEpisodes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 2),
+                              Text(isAr ? 'حلقة مكتملة' : 'Completed Eps', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
-              onChanged: (v) {
-                if (v != null) setState(() => type = v);
-              },
-              decoration: InputDecoration(
-                labelText: ar ? 'النوع' : 'Type',
-              ),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: notes,
-              maxLines: 4,
-              decoration: InputDecoration(
-                labelText: ar ? 'ملاحظات' : 'Notes',
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _send,
-              child: Text(ar ? 'إرسال الطلب' : 'Send Request'),
+
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
+                  child: Row(
+                    children: [
+                      const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(Icons.person_rounded, color: Colors.white)),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(s.userName ?? (isAr ? 'مستخدم زائر' : 'Guest User'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text(s.userEmail ?? (isAr ? 'المزامنة السحابية غير مفعّلة' : 'Sync disabled'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      CupertinoButton(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        minSize: 0,
+                        onPressed: s.userName == null ? () => _showAuthDialog(isAr) : () => setState(() => s.logout()),
+                        child: Text(s.userName == null ? (isAr ? 'تسجيل' : 'Login') : (isAr ? 'خروج' : 'Logout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                Text(isAr ? 'إدارة الملفات الشخصية' : 'Profile Management', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ...s.userProfiles.map<Widget>((p) => ChoiceChip(
+                      label: Text(p, style: TextStyle(color: s.activeProfile == p ? Colors.white : s.textPrimary)),
+                      selected: s.activeProfile == p,
+                      selectedColor: AppColors.primary,
+                      backgroundColor: s.surface,
+                      onSelected: (_) {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          s.switchProfile(p);
+                          _loadData();
+                        });
+                      },
+                    )).toList(),
+                    ActionChip(
+                      avatar: const Icon(Icons.add_rounded, size: 16),
+                      backgroundColor: s.surface,
+                      label: Text(isAr ? 'إضافة بروفايل' : 'Add Profile', style: TextStyle(color: s.textPrimary)),
+                      onPressed: () => _showAddProfileDialog(isAr),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: s.border, width: 0.5),
+                  ),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.notifications_active_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'التنبيه الذكي للمسلسلات' : 'Smart Series Alerts', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        subtitle: Text(isAr ? 'إرسال إشعارات لحظية عند نزول حلقات جديدة' : 'Push notifications when new episodes arrive', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        trailing: CupertinoSwitch(
+                          value: s.smartNotifications,
+                          activeColor: AppColors.primary,
+                          onChanged: (v) => setState(() => s.updateSmartNotifications(v)),
+                        ),
+                      ),
+                      Divider(color: s.border, height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'التنزيل الذكي للحلقات' : 'Smart Episode Downloads', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        subtitle: Text(isAr ? 'تنزيل الحلقة التالية ومسح المنتهية تلقائياً' : 'Auto download next episode & clean watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        trailing: CupertinoSwitch(
+                          value: s.autoSmartDownload,
+                          activeColor: AppColors.primary,
+                          onChanged: (v) => setState(() => s.updateSmartDownload(v)),
+                        ),
+                      ),
+                      Divider(color: s.border, height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        trailing: DropdownButton<String>(
+                          dropdownColor: s.surface,
+                          value: s.appLanguage,
+                          underline: const SizedBox(),
+                          items: [
+                            DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: s.textPrimary))),
+                            DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: s.textPrimary))),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => s.updateLanguage(v));
+                          },
+                        ),
+                      ),
+                      Divider(color: s.border, height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'خط التطبيق' : 'App Font', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        trailing: DropdownButton<String>(
+                          dropdownColor: s.surface,
+                          value: s.selectedFont,
+                          underline: const SizedBox(),
+                          items: [
+                            DropdownMenuItem(value: 'iPhone', child: Text('iPhone (Apple San Francisco)', style: TextStyle(color: s.textPrimary))),
+                            DropdownMenuItem(value: 'Cairo', child: Text('Cairo', style: TextStyle(color: s.textPrimary))),
+                            DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: s.textPrimary))),
+                            DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: s.textPrimary))),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => s.updateFont(v));
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+                Text(isAr ? 'وضع المحتوى' : 'Content Mode', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Container(
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    children: [
+                      RadioListTile<int>(
+                        title: Text(isAr ? 'الافتراضي (الكل)' : 'Default (All Content)', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
+                        value: 0,
+                        groupValue: s.appFilterMode,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) {
+                          if (v != null) setState(() => s.updateFilterMode(v));
+                        },
+                      ),
+                      Divider(color: s.border, height: 1),
+                      RadioListTile<int>(
+                        title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
+                        value: 1,
+                        groupValue: s.appFilterMode,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) {
+                          if (v != null) setState(() => s.updateFilterMode(v));
+                        },
+                      ),
+                      Divider(color: s.border, height: 1),
+                      RadioListTile<int>(
+                        title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
+                        value: 2,
+                        groupValue: s.appFilterMode,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) {
+                          if (v != null) setState(() => s.updateFilterMode(v));
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
-
 }
 
 class FocusBuilder extends StatelessWidget {
