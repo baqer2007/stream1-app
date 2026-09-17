@@ -16,7 +16,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -916,7 +915,7 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
       title: 'ONEBR TV',
       locale: Locale(s.appLanguage),
       supportedLocales: const [Locale('ar'), Locale('en')],
-      localizationsDelegates: [
+      localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
@@ -1383,24 +1382,6 @@ class HomeScreenContent extends StatefulWidget {
 }
 
 class _HomeScreenContentState extends State<HomeScreenContent> {
-  String _timeBasedShelfTitle(bool isAr) {
-    final hour = DateTime.now().hour;
-
-    if (hour >= 5 && hour < 12) {
-      return isAr ? 'صباحك السينمائي' : 'Your Morning Cinema';
-    }
-
-    if (hour >= 12 && hour < 17) {
-      return isAr ? 'اختيارات فترة الظهيرة' : 'Afternoon Picks';
-    }
-
-    if (hour >= 17 && hour < 22) {
-      return isAr ? 'سهرة الليلة' : 'Tonight’s Picks';
-    }
-
-    return isAr ? 'اختيارات منتصف الليل' : 'Midnight Picks';
-  }
-
   final ScrollController _scrollController = ScrollController();
   List<dynamic> _heroItems = [];
   List<dynamic> _marvelItems = [];
