@@ -911,7 +911,7 @@ class BanLockScreen extends StatelessWidget {
         const SizedBox(height: 10),
         Text(s.appLanguage == 'ar' ? 'تم تعطيل هذا الحساب أو الجهاز من استخدام التطبيق.' : 'This account or device has been restricted from using the app.', textAlign: TextAlign.center, style: TextStyle(color: s.textSecondary, height: 1.5)),
       ])),
-    );
+    ));
   }
 }
 
@@ -3707,7 +3707,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         title: Text(isAr ? 'مزامنة الترجمة (-10 إلى +10 ثوانٍ)' : 'Subtitle sync (-10 to +10 seconds)'),
         message: Column(children: [
           Text('${value >= 0 ? '+' : ''}$value s', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          CupertinoSlider(minimum: -10, maximum: 10, divisions: 20, value: value.toDouble(), onChanged: (v) => setLocal(() => value = v.round())),
+          CupertinoSlider(min: -10, max: 10, divisions: 20, value: value.toDouble(), onChanged: (v) => setLocal(() => value = v.round())),
         ]),
         actions: [
           CupertinoActionSheetAction(child: Text(isAr ? 'تطبيق' : 'Apply'), onPressed: () {
@@ -5610,7 +5610,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         Row(children: [Expanded(child: ElevatedButton(onPressed: () => _banValue(device: false), child: const Text('حظر البريد/UID'))), const SizedBox(width: 8), Expanded(child: ElevatedButton(onPressed: () => _banValue(device: true), child: const Text('حظر الجهاز')))]),
       ])),
       const SizedBox(height: 12),
-      _adminCard(s, 'طلبات المحتوى', Column(children: _requests.isEmpty ? [const Text('لا توجد طلبات محملة')] : _requests.map((r) => ListTile(title: Text('${r['title'] ?? ''}'), subtitle: Text('${r['type'] ?? 'media'} • ${r['status'] ?? 'pending'}'), trailing: PopupMenuButton<String>(onSelected: (v) => _setRequestStatus(r['id'].toString(), v), itemBuilder: (_) => const [PopupMenuItem(value: 'approved', child: Text('موافقة')), PopupMenuItem(value: 'rejected', child: Text('رفض')), PopupMenuItem(value: 'completed', child: Text('تم التنفيذ'))])).toList())),
+      _adminCard(
+        s,
+        'طلبات المحتوى',
+        Column(
+          children: _requests.isEmpty
+              ? [const Text('لا توجد طلبات محملة')]
+              : _requests.map<Widget>((r) {
+                  return ListTile(
+                    title: Text('${r['title'] ?? ''}'),
+                    subtitle: Text('${r['type'] ?? 'media'} • ${r['status'] ?? 'pending'}'),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (v) => _setRequestStatus(r['id'].toString(), v),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'approved', child: Text('موافقة')),
+                        PopupMenuItem(value: 'rejected', child: Text('رفض')),
+                        PopupMenuItem(value: 'completed', child: Text('تم التنفيذ')),
+                      ],
+                    ),
+                  );
+                }).toList(),
+        ),
+      ),
       const SizedBox(height: 12),
       _adminCard(s, 'إدارة قنوات IPTV', Column(children: [
         _adminField(_iptvNameCtrl, 'اسم القناة'), _adminField(_iptvUrlCtrl, 'رابط البث'), _adminField(_iptvCategoryCtrl, 'التصنيف'),
@@ -6186,799 +6207,66 @@ class _ContentRequestScreenState extends State<ContentRequestScreen> {
     await FirebaseFirestore.instance.collection('content_requests').add({'title': title.text.trim(), 'type': type, 'notes': notes.text.trim(), 'status': 'pending', 'uid': FirebaseAuth.instance.currentUser?.uid, 'email': FirebaseAuth.instance.currentUser?.email, 'created_at': FieldValue.serverTimestamp()});
     if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إرسال الطلب إلى لوحة الأمان'))); }
   }
-  @override Widget build(BuildContext context) { final s=AppSettings.instance; final ar=s.appLanguage=='ar'; return Directionality(textDirection: ar?TextDirection.rtl:TextDirection.ltr, child: Scaffold(backgroundColor:s.bg, appBar:AppBar(title:Text(ar?'طلب محتوى':'Content Request')), body:ListView(padding:const EdgeInsets.all(16), children:[TextField(controller:title, decoration:InputDecoration(labelText:ar?'اسم الفيلم أو المسلسل':'Title')), const SizedBox(height:10), DropdownButtonFormField<String>(value:type, items:const [DropdownMenuItem(value:'movie',child:Text('Movie / فيلم')),DropdownMenuItem(value:'series',child:Text('Series / مسلسل'))], onChanged:(v){if(v!=null)setState(()=>type=v);}, decoration:InputDecoration(labelText:ar?'النوع':'Type')), const SizedBox(height:10), TextField(controller:notes,maxLines:4,decoration:InputDecoration(labelText:ar?'ملاحظات':'Notes')), const SizedBox(height:16), ElevatedButton(onPressed:_send, child:Text(ar?'إرسال الطلب':'Send Request'))])); }
-}
-
-class SocialLinksScreen extends StatelessWidget {
-  const SocialLinksScreen({super.key});
-  @override Widget build(BuildContext context) { final s=AppSettings.instance; final ar=s.appLanguage=='ar'; final links=RemoteAdminConfig.instance.socialLinks.entries.where((e)=>e.value.isNotEmpty).toList(); return Directionality(textDirection:ar?TextDirection.rtl:TextDirection.ltr, child:Scaffold(backgroundColor:s.bg, appBar:AppBar(title:Text(AppLocalization.tr('social_accounts',s.appLanguage))), body:links.isEmpty ? Center(child:Text(ar?'لم تتم إضافة حسابات رسمية بعد':'No official accounts configured',style:TextStyle(color:s.textSecondary))) : ListView(padding:const EdgeInsets.all(16), children:links.map((e)=>Card(color:s.surface,child:ListTile(leading:Icon(_socialIcon(e.key),color:AppColors.primary),title:Text(e.key,style:TextStyle(color:s.textPrimary)),subtitle:Text(e.value, maxLines:1,overflow:TextOverflow.ellipsis,style:TextStyle(color:s.textSecondary)),onTap:()=>launchUrl(Uri.parse(e.value),mode:LaunchMode.externalApplication)))).toList()))); }
-  static IconData _socialIcon(String k) { switch(k){case 'telegram': return Icons.send_rounded; case 'whatsapp': return Icons.chat_rounded; case 'instagram': return Icons.camera_alt_rounded; case 'facebook': return Icons.facebook_rounded; default:return Icons.language_rounded;} }
-}
-
-class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
-
-  @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
-}
-
-class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabCtrl;
-  List<Map<String, dynamic>> _completed = [];
-  List<Map<String, dynamic>> _watchlist = [];
-  StreamSubscription? _dlSub;
-
-  int _statMinutes = 0;
-  int _statEpisodes = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
-
-    _tabCtrl.addListener(() {
-      if (!_tabCtrl.indexIsChanging) {
-        _loadData();
-      }
-    });
-
-    _loadData();
-
-    _dlSub = BackgroundDownloadService.progressStream.stream.listen((data) async {
-      final String taskId = data[0];
-      final int status = data[1];
-      final int progress = data[2];
-
-      if (mounted) {
-        bool itemFound = false;
-        for (var item in _completed) {
-          if (item['taskId'] == taskId) {
-            item['status'] = status;
-            item['progress'] = progress;
-            if (status == 3) {
-              item['isCompleted'] = true;
-            }
-            itemFound = true;
-            break;
-          }
-        }
-
-        if (!itemFound) {
-          final list = await LocalStorageService.getList('downloaded_works_list');
-          setState(() {
-            _completed = list;
-          });
-        } else {
-          setState(() {});
-        }
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _dlSub?.cancel();
-    _tabCtrl.dispose();
-    super.dispose();
-  }
-
-  void _loadData() async {
-    final downloads = await LocalStorageService.getList('downloaded_works_list');
-    final wl = await LocalStorageService.getList('user_watchlist');
-    final prefs = await SharedPreferences.getInstance();
-    final curP = prefs.getString('current_active_profile') ?? 'default';
-
-    if (mounted) {
-      setState(() {
-        _completed = downloads;
-        _watchlist = wl;
-        _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
-        _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
-      });
-    }
-  }
-
-  void _cleanCache() async {
-    try {
-      final tempDir = Directory.systemTemp;
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم تفريغ الذاكرة المؤقتة بنجاح' : 'Cache cleared successfully')));
-    } catch (_) {}
-  }
-
-  void _showAddProfileDialog(bool isAr) {
-    final s = AppSettings.instance;
-    final ctrl = TextEditingController();
-    showCupertinoDialog(
-      context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: Text(isAr ? 'إضافة بروفايل جديد' : 'Add New Profile'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: CupertinoTextField(
-            controller: ctrl,
-            placeholder: isAr ? 'اسم الملف الشخصي' : 'Profile Name',
-            style: TextStyle(color: s.textPrimary),
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: Text(isAr ? 'إلغاء' : 'Cancel')),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              if (ctrl.text.isNotEmpty) {
-                AppSettings.instance.addProfile(ctrl.text.trim());
-                Navigator.pop(context);
-              }
-            },
-            child: Text(isAr ? 'إضافة' : 'Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleGoogleSignIn(bool isAr) async {
-    try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        serverClientId: '598398160963-7qus9g8t7kaniqh5offjhbqe2snk9471.apps.googleusercontent.com',
-      );
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) return;
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-      final user = userCredential.user;
-
-      if (user != null) {
-        AppSettings.instance.login(
-          user.displayName ?? (isAr ? 'مستخدم' : 'User'),
-          user.email ?? '',
-        );
-        await _fetchWatchlistFromCloud(user.uid);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'فشل تسجيل الدخول بـ Google: $e' : 'Google sign in failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _handleEmailAuth({
-    required bool isRegister,
-    required String email,
-    required String password,
-    required String name,
-    required bool isAr,
-  }) async {
-    try {
-      UserCredential userCredential;
-      if (isRegister) {
-        userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password.trim(),
-        );
-        if (name.isNotEmpty) {
-          await userCredential.user?.updateDisplayName(name.trim());
-        }
-      } else {
-        userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email.trim(),
-          password: password.trim(),
-        );
-      }
-
-      final user = userCredential.user;
-      if (user != null) {
-        AppSettings.instance.login(
-          user.displayName ?? (name.isNotEmpty ? name : (isAr ? 'مستخدم' : 'User')),
-          user.email ?? email,
-        );
-        await _fetchWatchlistFromCloud(user.uid);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isAr ? 'خطأ في المصادقة: $e' : 'Authentication error: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _fetchWatchlistFromCloud(String uid) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('profiles')
-          .doc(AppSettings.instance.activeProfile)
-          .get();
-      if (doc.exists && doc.data()?['watchlist'] != null) {
-        final cloudList = List<Map<String, dynamic>>.from(doc.data()!['watchlist']);
-        await LocalStorageService.setList('user_watchlist', cloudList);
-        _loadData();
-      }
-    } catch (_) {}
-    if (mounted) setState(() {});
-  }
-
-  void _showAuthDialog(bool isAr) {
-    final s = AppSettings.instance;
-    final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    bool isRegisterMode = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setMState) => Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: s.glassFill,
-                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            isRegisterMode ? (isAr ? 'إنشاء حساب جديد' : 'Create New Account') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
-                            style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.close_rounded, color: s.textPrimary),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      if (isRegisterMode) ...[
-                        CupertinoTextField(
-                          controller: nameCtrl,
-                          placeholder: isAr ? 'الاسم' : 'Name',
-                          style: TextStyle(color: s.textPrimary),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-
-                      CupertinoTextField(
-                        controller: emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        placeholder: isAr ? 'البريد الإلكتروني' : 'Email Address',
-                        style: TextStyle(color: s.textPrimary),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                      ),
-                      const SizedBox(height: 10),
-
-                      CupertinoTextField(
-                        controller: passCtrl,
-                        obscureText: true,
-                        placeholder: isAr ? 'كلمة المرور' : 'Password',
-                        style: TextStyle(color: s.textPrimary),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
-                      ),
-                      const SizedBox(height: 16),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(12),
-                          onPressed: () async {
-                            if (emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) return;
-                            Navigator.pop(ctx);
-                            await _handleEmailAuth(
-                              isRegister: isRegisterMode,
-                              email: emailCtrl.text.trim(),
-                              password: passCtrl.text.trim(),
-                              name: nameCtrl.text.trim(),
-                              isAr: isAr,
-                            );
-                          },
-                          child: Text(
-                            isRegisterMode ? (isAr ? 'إنشاء حساب' : 'Register') : (isAr ? 'تسجيل الدخول' : 'Sign In'),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      TextButton(
-                        onPressed: () => setMState(() => isRegisterMode = !isRegisterMode),
-                        child: Text(
-                          isRegisterMode
-                              ? (isAr ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'Already have an account? Sign In')
-                              : (isAr ? 'ليس لديك حساب؟ إنشاء حساب جديد' : "Don't have an account? Register"),
-                          style: TextStyle(color: s.textSecondary, fontSize: 12),
-                        ),
-                      ),
-
-                      Divider(color: s.border, height: 24),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          color: s.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _handleGoogleSignIn(isAr);
-                          },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 28),
-                              const SizedBox(width: 6),
-                              Text(
-                                isAr ? 'متابعة باستخدام Google' : 'Continue with Google',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: s.textPrimary),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
-    final isAr = s.appLanguage == 'ar';
-    final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
+    final ar = s.appLanguage == 'ar';
 
     return Directionality(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text(isAr ? 'الحساب والمكتبة' : 'Profile & Library', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
-          actions: [
-            IconButton(
-              tooltip: isAr ? 'تفريغ الكاش' : 'Clear Cache',
-              icon: Icon(Icons.delete_sweep_rounded, color: s.textSecondary),
-              onPressed: _cleanCache,
-            ),
-          ],
-          bottom: TabBar(
-            controller: _tabCtrl,
-            indicatorColor: AppColors.primary,
-            labelColor: AppColors.primary,
-            unselectedLabelColor: s.textSecondary,
-            tabs: [
-              Tab(text: isAr ? 'التنزيلات' : 'Downloads'),
-              Tab(text: isAr ? 'المفضلة' : 'Watchlist'),
-              Tab(text: isAr ? 'الإحصائيات' : 'Stats'),
-              Tab(text: isAr ? 'الإعدادات' : 'Settings'),
-            ],
-          ),
+          title: Text(ar ? 'طلب محتوى' : 'Content Request'),
         ),
-        body: TabBarView(
-          controller: _tabCtrl,
+        body: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            _completed.isEmpty
-                ? Center(child: Text(isAr ? 'لا توجد تنزيلات حالياً' : 'No downloads yet', style: TextStyle(color: s.textSecondary)))
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _completed.length,
-                    itemBuilder: (ctx, i) {
-                      final it = _completed[i];
-                      final filePath = it['path'] ?? '';
-                      final file = File(filePath);
-                      final bool fileExists = file.existsSync() && file.lengthSync() > 1024 * 1024;
-                      final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
-                      final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
-
-                      final bool isCompleted = fileExists && (it['isCompleted'] == true || status == 3 || progress >= 100);
-                      final bool isFailed = (status == 4 || status == 5) || (status == 3 && !fileExists);
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(
-                          color: s.surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: s.border, width: 0.5),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: it['poster'].toString().isNotEmpty
-                                        ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
-                                        : Container(width: 50, height: 70, color: s.surfaceLight),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          isCompleted
-                                              ? (isAr ? 'جاهز للمشاهدة بدون إنترنت' : 'Ready to watch offline')
-                                              : (isFailed
-                                                  ? (isAr ? 'فشل التنزيل أو لم يكتمل' : 'Download failed')
-                                                  : (isAr ? 'جاري التحميل ($progress%)' : 'Downloading ($progress%)')),
-                                          style: TextStyle(
-                                            color: isCompleted
-                                                ? Colors.greenAccent
-                                                : (isFailed ? Colors.redAccent : s.textSecondary),
-                                            fontSize: 11,
-                                            fontWeight: (isCompleted || isFailed) ? FontWeight.bold : FontWeight.normal,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (isCompleted)
-                                    IconButton(
-                                      icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
-                                      onPressed: () {
-                                        final subPath = it['subPath']?.toString() ?? '';
-                                        if (file.existsSync()) {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => PlayerScreen(
-                                                mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
-                                                title: it['title'] ?? '',
-                                                videoUrl: filePath,
-                                                subtitleUrl: subPath,
-                                                qualities: const [],
-                                                isLocalFile: true,
-                                                poster: it['poster'] ?? '',
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text(isAr ? 'الملف غير موجود في الذاكرة' : 'File not found on device')),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
-                                    onPressed: () async {
-                                      final taskId = it['taskId']?.toString();
-                                      if (taskId != null) {
-                                        try {
-                                          await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
-                                        } catch (_) {}
-                                      }
-                                      if (file.existsSync()) {
-                                        try {
-                                          file.deleteSync();
-                                        } catch (_) {}
-                                      }
-                                      final subFile = File(it['subPath']?.toString() ?? '');
-                                      if (subFile.existsSync()) {
-                                        try {
-                                          subFile.deleteSync();
-                                        } catch (_) {}
-                                      }
-                                      await LocalStorageService.removeItem('downloaded_works_list', it['nb']?.toString() ?? '', idField: 'nb');
-                                      _loadData();
-                                    },
-                                  ),
-                                ],
-                              ),
-                              if (!isCompleted && !isFailed) ...[
-                                const SizedBox(height: 10),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: (progress / 100.0).clamp(0.0, 1.0),
-                                    backgroundColor: Colors.white12,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                    minHeight: 4,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-            _watchlist.isEmpty
-                ? Center(child: Text(isAr ? 'لم تقم بحفظ أي عمل بعد' : 'Watchlist is empty', style: TextStyle(color: s.textSecondary)))
-                : GridView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.58, crossAxisSpacing: 10, mainAxisSpacing: 12),
-                    itemCount: _watchlist.length,
-                    itemBuilder: (ctx, i) {
-                      final item = _watchlist[i];
-                      final poster = StreamService.extractPoster(item);
-                      return FocusBuilder(
-                        builder: (context, hasFocus) => InkWell(
-                          borderRadius: BorderRadius.circular(AppRadius.card),
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 2),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.card),
-                              child: poster.isNotEmpty
-                                  ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
-                                  : Container(color: s.surface),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-            ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    border: Border.all(color: s.border, width: 0.5),
-                  ),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 40),
-                      const SizedBox(height: 10),
-                      Text(isAr ? 'إحصائيات الملف: ${s.activeProfile}' : 'Stats for: ${s.activeProfile}', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                      Divider(color: s.border, height: 26),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              Text('$_statMinutes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 2),
-                              Text(isAr ? 'دقيقة مشاهدة' : 'Minutes Watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text('$_statEpisodes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 2),
-                              Text(isAr ? 'حلقة مكتملة' : 'Completed Eps', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            TextField(
+              controller: title,
+              decoration: InputDecoration(
+                labelText: ar ? 'اسم الفيلم أو المسلسل' : 'Title',
+              ),
             ),
-
-            ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                  child: Row(
-                    children: [
-                      const CircleAvatar(radius: 24, backgroundColor: AppColors.primary, child: Icon(Icons.person_rounded, color: Colors.white)),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.userName ?? (isAr ? 'مستخدم زائر' : 'Guest User'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(s.userEmail ?? (isAr ? 'المزامنة السحابية غير مفعّلة' : 'Sync disabled'), style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                      CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        minSize: 0,
-                        onPressed: s.userName == null ? () => _showAuthDialog(isAr) : () => setState(() => s.logout()),
-                        child: Text(s.userName == null ? (isAr ? 'تسجيل' : 'Login') : (isAr ? 'خروج' : 'Logout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                      ),
-                    ],
-                  ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: type,
+              items: const [
+                DropdownMenuItem(
+                  value: 'movie',
+                  child: Text('Movie / فيلم'),
                 ),
-                const SizedBox(height: 18),
-
-                Text(isAr ? 'إدارة الملفات الشخصية' : 'Profile Management', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ...s.userProfiles.map<Widget>((p) => ChoiceChip(
-                      label: Text(p, style: TextStyle(color: s.activeProfile == p ? Colors.white : s.textPrimary)),
-                      selected: s.activeProfile == p,
-                      selectedColor: AppColors.primary,
-                      backgroundColor: s.surface,
-                      onSelected: (_) {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          s.switchProfile(p);
-                          _loadData();
-                        });
-                      },
-                    )).toList(),
-                    ActionChip(
-                      avatar: const Icon(Icons.add_rounded, size: 16),
-                      backgroundColor: s.surface,
-                      label: Text(isAr ? 'إضافة بروفايل' : 'Add Profile', style: TextStyle(color: s.textPrimary)),
-                      onPressed: () => _showAddProfileDialog(isAr),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: s.border, width: 0.5),
-                  ),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.notifications_active_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'التنبيه الذكي للمسلسلات' : 'Smart Series Alerts', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        subtitle: Text(isAr ? 'إرسال إشعارات لحظية عند نزول حلقات جديدة' : 'Push notifications when new episodes arrive', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                        trailing: CupertinoSwitch(
-                          value: s.smartNotifications,
-                          activeColor: AppColors.primary,
-                          onChanged: (v) => setState(() => s.updateSmartNotifications(v)),
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'التنزيل الذكي للحلقات' : 'Smart Episode Downloads', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        subtitle: Text(isAr ? 'تنزيل الحلقة التالية ومسح المنتهية تلقائياً' : 'Auto download next episode & clean watched', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                        trailing: CupertinoSwitch(
-                          value: s.autoSmartDownload,
-                          activeColor: AppColors.primary,
-                          onChanged: (v) => setState(() => s.updateSmartDownload(v)),
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: DropdownButton<String>(
-                          dropdownColor: s.surface,
-                          value: s.appLanguage,
-                          underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: s.textPrimary))),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => s.updateLanguage(v));
-                          },
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'خط التطبيق' : 'App Font', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: DropdownButton<String>(
-                          dropdownColor: s.surface,
-                          value: s.selectedFont,
-                          underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem(value: 'iPhone', child: Text('iPhone (Apple San Francisco)', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Cairo', child: Text('Cairo', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'Almarai', child: Text('Almarai', style: TextStyle(color: s.textPrimary))),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => s.updateFont(v));
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-                if (RemoteAdminConfig.instance.isFeatureEnabled('social_links')) ListTile(leading: const Icon(Icons.share_rounded, color: AppColors.primary), title: Text(AppLocalization.tr('social_accounts', s.appLanguage), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialLinksScreen()))),
-                if (RemoteAdminConfig.instance.isFeatureEnabled('content_requests')) ListTile(leading: const Icon(Icons.add_comment_rounded, color: AppColors.primary), title: Text(AppLocalization.tr('content_request', s.appLanguage), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContentRequestScreen()))),
-                ListTile(leading: const Icon(Icons.dark_mode_rounded, color: AppColors.primary), title: Text('Instant Theme Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)), trailing: DropdownButton<String>(value: s.themeMode, dropdownColor: s.surface, underline: const SizedBox(), items: const [DropdownMenuItem(value:'dark',child:Text('Dark')),DropdownMenuItem(value:'light',child:Text('Light')),DropdownMenuItem(value:'system',child:Text('System'))], onChanged:(v){if(v!=null)setState(()=>s.updateThemeMode(v));})),
-                const SizedBox(height: 18),
-                Text(isAr ? 'وضع المحتوى' : 'Content Mode', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Container(
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    children: [
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'الافتراضي (الكل)' : 'Default (All Content)', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 0,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
-                      ),
-                      Divider(color: s.border, height: 1),
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'الوضع العائلي' : 'Family Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 1,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
-                      ),
-                      Divider(color: s.border, height: 1),
-                      RadioListTile<int>(
-                        title: Text(isAr ? 'وضع الأطفال' : 'Kids Mode', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w600)),
-                        value: 2,
-                        groupValue: s.appFilterMode,
-                        activeColor: AppColors.primary,
-                        onChanged: (v) {
-                          if (v != null) setState(() => s.updateFilterMode(v));
-                        },
-                      ),
-                    ],
-                  ),
+                DropdownMenuItem(
+                  value: 'series',
+                  child: Text('Series / مسلسل'),
                 ),
               ],
+              onChanged: (v) {
+                if (v != null) setState(() => type = v);
+              },
+              decoration: InputDecoration(
+                labelText: ar ? 'النوع' : 'Type',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: notes,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: ar ? 'ملاحظات' : 'Notes',
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _send,
+              child: Text(ar ? 'إرسال الطلب' : 'Send Request'),
             ),
           ],
         ),
       ),
     );
   }
+
 }
 
 class FocusBuilder extends StatelessWidget {
