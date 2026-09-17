@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'cloud_firestore/cloud_firestore.dart' if (dart.library.io) 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_intent_plus/android_intent.dart';
@@ -138,7 +138,7 @@ class SmartSearchUsageService {
   static const String _queriesKey = 'smart_search_queries';
 
   static Future<bool> canUse() async {
-    if (await PremiumService.instance.isPremium()) return true;
+    if (PremiumService.isPremium) return true;
     final prefs = await SharedPreferences.getInstance();
     final today = DateTime.now().toIso8601String().substring(0, 10);
     final savedDay = prefs.getString(_dayKey);
@@ -148,7 +148,7 @@ class SmartSearchUsageService {
   }
 
   static Future<bool> consume(String query) async {
-    if (await PremiumService.instance.isPremium()) return true;
+    if (PremiumService.isPremium) return true;
     final normalized = SearchEngineUtils.normalize(query);
     if (normalized.isEmpty) return false;
 
@@ -171,7 +171,7 @@ class SmartSearchUsageService {
   }
 
   static Future<int> remaining() async {
-    if (await PremiumService.instance.isPremium()) return -1;
+    if (PremiumService.isPremium) return -1;
     final prefs = await SharedPreferences.getInstance();
     final today = DateTime.now().toIso8601String().substring(0, 10);
     if (prefs.getString(_dayKey) != today) return freeDailyLimit;
@@ -8183,3 +8183,4 @@ class FocusBuilder extends StatelessWidget {
       ),
     );
   }
+}
