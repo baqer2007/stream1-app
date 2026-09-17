@@ -25,10 +25,10 @@ dependencies:
   firebase_auth: ^6.1.4
   google_sign_in: ^6.2.0
   android_intent_plus: ^5.0.2
-  cloud_firestore: ^5.0.0
-  firebase_messaging: ^15.0.0
+  cloud_firestore: ^6.1.2
+  firebase_messaging: ^16.1.1
   firebase_ai: ^3.8.0
-  firebase_app_check: ^0.4.1+4
+  firebase_app_check: ^0.4.7
   
   package_info_plus: ^8.1.0
   cached_network_image: ^3.3.1
