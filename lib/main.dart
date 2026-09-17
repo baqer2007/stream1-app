@@ -1,4 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_ai/firebase_ai.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'cloud_firestore/cloud_firestore.dart' if (dart.library.io) 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -57,7 +59,6 @@ class RemoteAdminConfig {
   int minAppVersion = 1;
   String updateDownloadUrl = '';
   String customBaseUrl = '';
-  String aiEndpoint = '';
   List<String> pinnedHeroIds = [];
   List<String> blacklistedMediaIds = [];
   String popupTitle = '';
@@ -89,7 +90,6 @@ class RemoteAdminConfig {
           minAppVersion = data['min_version'] ?? 1;
           updateDownloadUrl = data['update_url'] ?? '';
           customBaseUrl = data['custom_base_url'] ?? '';
-          aiEndpoint = data['ai_endpoint'] ?? '';
           popupTitle = data['popup_title'] ?? '';
           popupBody = data['popup_body'] ?? '';
           popupActionUrl = data['popup_action_url'] ?? '';
@@ -1651,6 +1651,16 @@ void main() async {
     await Firebase.initializeApp();
   } catch (e) {
     debugPrint("Firebase error: $e");
+  }
+
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: kDebugMode
+          ? AndroidProvider.debug
+          : AndroidProvider.playIntegrity,
+    );
+  } catch (e) {
+    debugPrint("App Check error: $e");
   }
 
   try {
@@ -7528,8 +7538,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
 
 
 // ========================= ONEBR SMART AI SEARCH =========================
-// Local semantic AI-style search: understands Arabic/English, genre, year,
-// content type, approximate titles and natural-language requests.
+// Gemini-powered conversational search:
+// 1) Gemini understands natural language and conversation context.
+// 2) ONEBR searches the real catalog; Gemini never invents catalog availability.
+// 3) Gemini receives verified candidate metadata and writes the final answer.
 
 class OnebrAiIntent {
   final String original;
@@ -7594,8 +7606,10 @@ class OnebrAiQueryParser {
       }
     }
 
-    final continueWatching = n.contains('اكمل') || n.contains('تابع') ||
-        n.contains('اكمل المشاهده') || n.contains('continue');
+    final continueWatching = n.contains('اكمل') ||
+        n.contains('تابع') ||
+        n.contains('اكمل المشاهده') ||
+        n.contains('continue');
 
     final tokens = n
         .split(RegExp(r'[^a-z0-9\u0600-\u06ff]+'))
@@ -7641,48 +7655,157 @@ class OnebrAiPlan {
     List<String> strings(dynamic v) => v is List
         ? v.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
         : const [];
+
+    final type = json['mediaType']?.toString().trim();
+    final rawYear = json['year'];
     return OnebrAiPlan(
       reply: (json['reply'] ?? '').toString().trim(),
       queries: strings(json['queries']),
       genres: strings(json['genres']),
       keywords: strings(json['keywords']),
-      mediaType: json['mediaType']?.toString(),
-      year: int.tryParse('${json['year'] ?? ''}'),
+      mediaType: (type == 'movie' || type == 'series') ? type : null,
+      year: rawYear is num ? rawYear.toInt() : int.tryParse('$rawYear'),
     );
   }
 }
 
 class OnebrAiBackend {
+  static final GenerativeModel _model = FirebaseAI.googleAI().generativeModel(
+    model: 'gemini-3.8-flash',
+    generationConfig: GenerationConfig(
+      responseMimeType: 'application/json',
+      responseSchema: Schema.object(
+        properties: {
+          'reply': Schema.string(
+            description: 'A short natural-language acknowledgement in the user language.',
+          ),
+          'queries': Schema.array(
+            items: Schema.string(),
+            maxItems: 8,
+            description: 'Search phrases that can retrieve relevant ONEBR catalog items.',
+          ),
+          'genres': Schema.array(
+            items: Schema.string(),
+            maxItems: 5,
+            description: 'Canonical genres such as action, horror, comedy, romance, drama, thriller, crime, animation, fantasy, sci-fi.',
+          ),
+          'keywords': Schema.array(
+            items: Schema.string(),
+            maxItems: 10,
+            description: 'Useful semantic concepts, title variants, actors, directors, themes or tone terms.',
+          ),
+          'mediaType': Schema.enumString(
+            enumValues: ['movie', 'series'],
+            nullable: true,
+          ),
+          'year': Schema.integer(nullable: true),
+        },
+        optionalProperties: ['queries', 'genres', 'keywords', 'mediaType', 'year'],
+      ),
+    ),
+  );
+
   static Future<OnebrAiPlan?> analyze({
     required String input,
     required bool arabic,
     List<Map<String, String>> history = const [],
   }) async {
-    final endpoint = RemoteAdminConfig.instance.aiEndpoint.trim();
-    if (endpoint.isEmpty) return null;
-
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      final token = await user?.getIdToken();
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: headers,
-        body: jsonEncode({
-          'message': input,
-          'language': arabic ? 'ar' : 'en',
-          'history': history.take(10).toList(),
-        }),
-      ).timeout(const Duration(seconds: 25));
+      final historyText = history
+          .take(12)
+          .map((m) => '${m['role']}: ${m['text']}')
+          .join('\n');
 
-      if (response.statusCode < 200 || response.statusCode >= 300) return null;
-      final decoded = jsonDecode(response.body);
+      final prompt = '''
+You are ONEBR AI, the conversational movie and TV assistant inside the ONEBR TV app.
+
+Understand the user's meaning, not just keywords. The user may write Iraqi/Gulf/Modern Arabic, English, transliteration, typos, slang, incomplete sentences, or follow-up questions.
+
+Conversation history:
+${historyText.isEmpty ? '(none)' : historyText}
+
+Current user message:
+$input
+
+Your job is to produce a search plan for the ONEBR catalog.
+
+Rules:
+- Resolve follow-ups using conversation history. If the user says "مو هذا", "الثاني", "مثلها", "أهدأ", "أحدث", etc., infer what they mean from prior turns.
+- Understand similarity requests such as "مثل John Wick", "شي يشبهه", "نفس الجو", "قريب من هذا الفيلم". Convert them into useful semantic search phrases, themes, genres, tone, and title variants.
+- Understand actors, directors, plot descriptions, mood, themes, country/language, movie vs series, and years when stated.
+- Do not invent a title, rating, cast member, availability, link, or source.
+- Do not claim that a title exists in ONEBR. The app will verify availability by searching its actual catalog.
+- Keep queries useful for catalog search; do not write conversational sentences as queries.
+- Reply briefly and naturally in ${arabic ? 'Arabic' : 'English'}.
+- Return valid JSON matching the schema.
+''';
+
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final raw = response.text?.trim();
+      if (raw == null || raw.isEmpty) return null;
+
+      final decoded = jsonDecode(raw);
       if (decoded is! Map) return null;
       return OnebrAiPlan.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> finalReply({
+    required String input,
+    required bool arabic,
+    required List<Map<String, dynamic>> candidates,
+    required List<Map<String, String>> history,
+  }) async {
+    try {
+      final candidateText = candidates.take(18).toList().asMap().entries.map((entry) {
+        final i = entry.key + 1;
+        final item = entry.value;
+        final title = '${item['ar_title'] ?? item['title'] ?? item['en_title'] ?? item['name'] ?? ''}'.trim();
+        final en = '${item['en_title'] ?? item['original_title'] ?? item['original_name'] ?? ''}'.trim();
+        final year = '${item['year'] ?? item['release_year'] ?? ''}'.trim();
+        final type = '${item['type'] ?? item['media_type'] ?? item['content_type'] ?? ''}'.trim();
+        final genres = '${item['genre'] ?? item['genres'] ?? item['category'] ?? ''}'.trim();
+        final overview = '${item['overview'] ?? item['description'] ?? item['plot'] ?? ''}'.trim();
+        final actors = '${item['actors'] ?? item['cast'] ?? item['actor'] ?? ''}'.trim();
+        return '$i) title=$title | english=$en | year=$year | type=$type | genres=$genres | actors=$actors | overview=$overview';
+      }).join('\n');
+
+      final historyText = history
+          .take(10)
+          .map((m) => '${m['role']}: ${m['text']}')
+          .join('\n');
+
+      final prompt = '''
+You are the final conversational response writer for ONEBR AI.
+
+User language: ${arabic ? 'Arabic' : 'English'}
+Conversation:
+${historyText.isEmpty ? '(none)' : historyText}
+
+Current request:
+$input
+
+Verified ONEBR catalog candidates:
+${candidateText.isEmpty ? '(no candidates found)' : candidateText}
+
+Write a concise, natural response that actually addresses the user's request.
+
+Important:
+- Only discuss titles present in the verified candidate list.
+- Never say a title is available unless it is in that list.
+- Never invent ratings, actors, directors, plot details, links or availability.
+- If the request asks for something similar, explain briefly what similarity you used based only on the supplied metadata.
+- If there are no candidates, say that the ONEBR catalog did not return a suitable match and suggest how the user can rephrase the request.
+- Do not use the repetitive template "فهمت طلبك ووجدت X نتيجة".
+- Do not dump the whole candidate list. The UI displays the cards.
+- For a follow-up such as "مو هذا" or "الثاني", respond as a continuation of the conversation, not as a new generic search.
+''';
+
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final result = response.text?.trim();
+      return result == null || result.isEmpty ? null : result;
     } catch (_) {
       return null;
     }
@@ -7701,9 +7824,19 @@ class OnebrAiSearchEngine {
     if (intent.continueWatching) {
       final resume = await LocalStorageService.getList('resume_playback_list');
       final items = resume.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+
+      final reply = await OnebrAiBackend.finalReply(
+        input: input,
+        arabic: arabic,
+        candidates: items,
+        history: history,
+      );
+
       return OnebrAiSearchResult(
         items.take(20).toList(),
-        arabic ? 'عرضت لك ما بدأت بمشاهدته مؤخراً 🎬' : 'Here is what you started watching recently 🎬',
+        reply ?? (arabic
+            ? 'عرضت لك الأعمال التي بدأت بمشاهدتها مؤخراً 🎬'
+            : 'Here are the titles you recently started watching 🎬'),
       );
     }
 
@@ -7724,6 +7857,7 @@ class OnebrAiSearchEngine {
       queries.add(intent.genre!);
       queries.addAll(OnebrAiQueryParser.genres[intent.genre!] ?? const []);
     }
+
     if (ai != null) {
       for (final g in ai.genres) {
         queries.add(g);
@@ -7732,13 +7866,15 @@ class OnebrAiSearchEngine {
     }
 
     final merged = <String, Map<String, dynamic>>{};
-    for (final q in queries.where((q) => q.trim().isNotEmpty).toSet().take(12)) {
+
+    for (final q in queries.where((q) => q.trim().isNotEmpty).toSet().take(14)) {
       try {
         final found = await SmartSearchEngine.search(
           q,
           level: level,
           enforceFreeLimit: false,
         );
+
         for (final raw in found) {
           if (raw is! Map) continue;
           final item = Map<String, dynamic>.from(raw);
@@ -7759,10 +7895,10 @@ class OnebrAiSearchEngine {
       var value = 0.0;
       final hay = SearchEngineUtils.normalize([
         item['title'], item['name'], item['ar_title'], item['en_title'],
-        item['original_title'], item['overview'], item['description'],
-        item['genre'], item['genres'], item['category'], item['categories'],
-        item['actor'], item['actors'], item['cast'], item['director'],
-        item['keywords'],
+        item['original_title'], item['original_name'], item['overview'],
+        item['description'], item['plot'], item['story'], item['genre'],
+        item['genres'], item['category'], item['categories'], item['actor'],
+        item['actors'], item['cast'], item['director'], item['keywords'],
       ].map((e) => e?.toString() ?? '').join(' '));
 
       final normalizedInput = SearchEngineUtils.normalize(input);
@@ -7787,19 +7923,31 @@ class OnebrAiSearchEngine {
         final itemYear = int.tryParse(
           '${item['year'] ?? item['release_year'] ?? (item['release_date']?.toString().split('-').first ?? '')}',
         );
-        if (itemYear == wantedYear) value += 35;
-        else if (itemYear != null) value -= 5;
+        if (itemYear == wantedYear) {
+          value += 35;
+        } else if (itemYear != null) {
+          value -= 5;
+        }
       }
 
       if (wantedType != null) {
         final type = SearchEngineUtils.normalize(
           '${item['type'] ?? item['media_type'] ?? item['content_type'] ?? item['is_series'] ?? ''}',
         );
-        if (wantedType == 'series' && (type.contains('series') || type.contains('مسلسل') || type == 'true')) value += 22;
-        if (wantedType == 'movie' && (type.contains('movie') || type.contains('فيلم') || type == 'false')) value += 22;
+        if (wantedType == 'series' &&
+            (type.contains('series') || type.contains('مسلسل') || type == 'true')) {
+          value += 22;
+        }
+        if (wantedType == 'movie' &&
+            (type.contains('movie') || type.contains('فيلم') || type == 'false')) {
+          value += 22;
+        }
       }
 
-      final rating = double.tryParse('${item['stars'] ?? item['rating'] ?? item['vote_average'] ?? 0}') ?? 0;
+      final rating = double.tryParse(
+            '${item['stars'] ?? item['rating'] ?? item['vote_average'] ?? 0}',
+          ) ??
+          0;
       value += rating.clamp(0, 10) * 0.7;
       return value;
     }
@@ -7813,25 +7961,22 @@ class OnebrAiSearchEngine {
       return id != null && !blacklisted.contains(id);
     }).take(24).toList();
 
-    final understood = <String>[];
-    if (wantedType == 'movie') understood.add(arabic ? 'فيلم' : 'movie');
-    if (wantedType == 'series') understood.add(arabic ? 'مسلسل' : 'series');
-    understood.addAll(wantedGenres.take(3));
-    if (wantedYear != null) understood.add('$wantedYear');
+    final finalReply = await OnebrAiBackend.finalReply(
+      input: input,
+      arabic: arabic,
+      candidates: items,
+      history: history,
+    );
 
     final fallback = items.isEmpty
         ? (arabic
-            ? 'لم أجد أعمالاً مناسبة داخل مكتبة ONEBR لهذا الطلب. جرّب وصفاً مختلفاً أو اذكر اسماً قريباً من العمل الذي تبحث عنه.'
-            : 'I could not find a good match in the ONEBR library. Try another description or mention a title you like.')
+            ? 'لم أجد عملاً مناسباً داخل مكتبة ONEBR لهذا الطلب. جرّب وصفاً مختلفاً أو اذكر عملاً قريباً مما تبحث عنه.'
+            : 'I could not find a suitable match in the ONEBR catalog. Try another description or mention a similar title.')
         : (arabic
-            ? 'فهمت طلبك${understood.isEmpty ? '' : ' كـ ${understood.join(' • ')}'} ووجدت ${items.length} نتيجة. هذه النتائج مرتبة حسب مدى ملاءمتها لطلبك 👇'
-            : 'I understood your request${understood.isEmpty ? '' : ' as ${understood.join(' • ')}'} and found ${items.length} matches ranked by relevance 👇');
+            ? 'وجدت لك نتائج من مكتبة ONEBR. اختر منها ما يناسبك 👇'
+            : 'I found matching results in the ONEBR catalog. Pick the one you like 👇');
 
-    final reply = ai?.reply.trim().isNotEmpty == true
-        ? '${ai!.reply.trim()}${items.isNotEmpty ? '\n\nعرضت لك النتائج المطابقة من مكتبة ONEBR 👇' : ''}'
-        : fallback;
-
-    return OnebrAiSearchResult(items, reply);
+    return OnebrAiSearchResult(items, finalReply ?? fallback);
   }
 }
 
