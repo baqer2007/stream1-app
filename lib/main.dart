@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -127,6 +128,331 @@ class SearchEngineUtils {
     return parts.any((p) => t.contains(p));
   }
 }
+
+
+// ========================= ONEBR SMART SEARCH ENGINE =========================
+
+class SmartSearchUsageService {
+  static const int freeDailyLimit = 3;
+  static const String _dayKey = 'smart_search_day';
+  static const String _queriesKey = 'smart_search_queries';
+
+  static Future<bool> canUse() async {
+    if (await PremiumService.instance.isPremium()) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final savedDay = prefs.getString(_dayKey);
+    if (savedDay != today) return true;
+    final queries = prefs.getStringList(_queriesKey) ?? <String>[];
+    return queries.length < freeDailyLimit;
+  }
+
+  static Future<bool> consume(String query) async {
+    if (await PremiumService.instance.isPremium()) return true;
+    final normalized = SearchEngineUtils.normalize(query);
+    if (normalized.isEmpty) return false;
+
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    var queries = prefs.getStringList(_queriesKey) ?? <String>[];
+
+    if (prefs.getString(_dayKey) != today) {
+      queries = <String>[];
+      await prefs.setString(_dayKey, today);
+    }
+
+    // A repeated query on the same day does not consume another search.
+    if (queries.contains(normalized)) return true;
+    if (queries.length >= freeDailyLimit) return false;
+
+    queries.add(normalized);
+    await prefs.setStringList(_queriesKey, queries);
+    return true;
+  }
+
+  static Future<int> remaining() async {
+    if (await PremiumService.instance.isPremium()) return -1;
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    if (prefs.getString(_dayKey) != today) return freeDailyLimit;
+    final used = (prefs.getStringList(_queriesKey) ?? <String>[]).length;
+    return (freeDailyLimit - used).clamp(0, freeDailyLimit);
+  }
+}
+
+class SmartSearchEngine {
+  static const Set<String> _stopWords = {
+    'اريد', 'ابي', 'ابغى', 'ابغي', 'اريدلي', 'هات', 'جيب', 'اعطني',
+    'شوف', 'شاهد', 'شاهدلي', 'فلم', 'فيلم', 'افلام', 'مسلسل', 'مسلسلات',
+    'انمي', 'شيء', 'شي', 'شيئا', 'شيءا', 'عن', 'في', 'من', 'الى', 'على',
+    'مع', 'هذا', 'هذه', 'ذلك', 'الذي', 'التي', 'و', 'او', 'لي', 'لو',
+    'like', 'the', 'a', 'an', 'movie', 'film', 'series', 'show', 'please',
+    'want', 'give', 'me', 'something', 'with', 'about', 'and', 'or',
+  };
+
+  static const Map<String, List<String>> _aliases = {
+    'سبايدرمان': ['spiderman', 'spider man', 'spider-man'],
+    'سبايدر مان': ['spiderman', 'spider man', 'spider-man'],
+    'الرجل العنكبوت': ['spiderman', 'spider man', 'spider-man'],
+    'باتمان': ['batman'],
+    'جوكر': ['joker'],
+    'الجوكر': ['joker'],
+    'سوبرمان': ['superman'],
+    'ايرون مان': ['iron man', 'ironman'],
+    'ايرونمان': ['iron man', 'ironman'],
+    'ثور': ['thor'],
+    'كابتن امريكا': ['captain america'],
+    'كابتن أمريكا': ['captain america'],
+    'افنجرز': ['avengers', 'the avengers'],
+    'المنتقمون': ['avengers', 'the avengers'],
+    'هاري بوتر': ['harry potter'],
+    'سيد الخواتم': ['lord of the rings'],
+    'حرب النجوم': ['star wars'],
+    'فاست اند فيوريوس': ['fast and furious'],
+    'سريع وغاضب': ['fast and furious'],
+  };
+
+  static const Map<String, List<String>> _genreAliases = {
+    'action': ['اكشن', 'أكشن', 'حركة', 'قتال', 'مطاردات', 'action'],
+    'horror': ['رعب', 'مرعب', 'مخيف', 'horror'],
+    'comedy': ['كوميديا', 'كوميدي', 'مضحك', 'ضحك', 'comedy'],
+    'romance': ['رومانسي', 'رومانسية', 'حب', 'عاطفي', 'romance'],
+    'drama': ['دراما', 'درامي', 'drama'],
+    'thriller': ['اثارة', 'إثارة', 'تشويق', 'thriller'],
+    'crime': ['جريمة', 'مجرم', 'عصابات', 'crime'],
+    'animation': ['انيميشن', 'رسوم', 'كرتون', 'animation'],
+    'fantasy': ['فانتازيا', 'خيال', 'سحر', 'fantasy'],
+    'sci-fi': ['خيال علمي', 'فضاء', 'مستقبل', 'science fiction', 'sci-fi'],
+  };
+
+  static String _cleanArabic(String text) {
+    return SearchEngineUtils.normalize(text)
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
+        .replaceAll('گ', 'ك')
+        .replaceAll('چ', 'ج')
+        .replaceAll('پ', 'ب')
+        .replaceAll('ڤ', 'ف');
+  }
+
+  static List<String> _tokens(String query) {
+    final normalized = _cleanArabic(query);
+    return normalized
+        .split(RegExp(r'[^a-z0-9\u0600-\u06ff]+'))
+        .map((x) => x.trim())
+        .where((x) => x.length >= 2 && !_stopWords.contains(x))
+        .toSet()
+        .toList();
+  }
+
+  static int? _year(String query) {
+    final match = RegExp(r'\b(19\d{2}|20\d{2})\b').firstMatch(query);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  static bool _containsAny(String text, List<String> values) {
+    final n = _cleanArabic(text);
+    return values.any((v) => n.contains(_cleanArabic(v)));
+  }
+
+  static List<String> _buildQueries(String query) {
+    final n = _cleanArabic(query);
+    final tokens = _tokens(query);
+    final variants = <String>[query.trim(), n];
+
+    // Alias expansion lets Arabic colloquial/transliterated names reach
+    // backends that primarily index English/original titles.
+    for (final entry in _aliases.entries) {
+      if (_containsAny(n, [entry.key])) {
+        variants.addAll(entry.value);
+      }
+    }
+
+    for (final genre in _genreAliases.entries) {
+      if (_containsAny(n, genre.value)) {
+        variants.add(genre.key);
+        variants.addAll(genre.value.take(2));
+      }
+    }
+
+    if (tokens.length >= 2) {
+      variants.add(tokens.join(' '));
+    }
+
+    return variants
+        .map((x) => x.trim())
+        .where((x) => x.isNotEmpty)
+        .toSet()
+        .take(8)
+        .toList();
+  }
+
+  static String _haystack(Map<String, dynamic> item) {
+    final fields = [
+      'title', 'name', 'ar_title', 'en_title', 'original_title',
+      'title_ar', 'title_en', 'original_name', 'overview', 'description',
+      'plot', 'story', 'genre', 'genres', 'category', 'categories',
+      'actor', 'actors', 'cast', 'director', 'year', 'release_year',
+      'release_date', 'imdb_id', 'tmdb_id',
+    ];
+    return fields
+        .map((f) => item[f]?.toString() ?? '')
+        .where((x) => x.isNotEmpty)
+        .join(' ');
+  }
+
+  static double _tokenScore(String query, String target) {
+    final qTokens = _tokens(query);
+    if (qTokens.isEmpty) return 0;
+    final t = _cleanArabic(target);
+    var matched = 0.0;
+
+    for (final token in qTokens) {
+      if (t.contains(token)) {
+        matched += token.length >= 5 ? 1.0 : 0.75;
+        continue;
+      }
+
+      // Small typo tolerance for Arabic/English title searches.
+      if (token.length >= 4) {
+        final words = t.split(RegExp(r'[^a-z0-9\u0600-\u06ff]+'));
+        var close = false;
+        for (final word in words) {
+          if (word.length < 4) continue;
+          final maxLen = token.length > word.length ? token.length : word.length;
+          var distance = _levenshtein(token, word);
+          if (distance <= (maxLen >= 7 ? 2 : 1)) {
+            close = true;
+            break;
+          }
+        }
+        if (close) matched += 0.65;
+      }
+    }
+
+    return matched / qTokens.length;
+  }
+
+  static int _levenshtein(String a, String b) {
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+    final prev = List<int>.generate(b.length + 1, (i) => i);
+
+    for (var i = 0; i < a.length; i++) {
+      final curr = List<int>.filled(b.length + 1, 0);
+      curr[0] = i + 1;
+      for (var j = 0; j < b.length; j++) {
+        final cost = a.codeUnitAt(i) == b.codeUnitAt(j) ? 0 : 1;
+        curr[j + 1] = [
+          curr[j] + 1,
+          prev[j + 1] + 1,
+          prev[j] + cost,
+        ].reduce((x, y) => x < y ? x : y);
+      }
+      for (var j = 0; j <= b.length; j++) {
+        prev[j] = curr[j];
+      }
+    }
+    return prev[b.length];
+  }
+
+  static double _score(String query, Map<String, dynamic> item) {
+    final hay = _cleanArabic(_haystack(item));
+    final arTitle = _cleanArabic('${item['ar_title'] ?? item['title_ar'] ?? ''}');
+    final enTitle = _cleanArabic('${item['en_title'] ?? item['title_en'] ?? ''}');
+    final original = _cleanArabic('${item['original_title'] ?? item['original_name'] ?? ''}');
+    final year = _year(query);
+
+    var score = 0.0;
+    final q = _cleanArabic(query);
+
+    if (q.isNotEmpty && arTitle.isNotEmpty && arTitle == q) score += 120;
+    if (q.isNotEmpty && enTitle.isNotEmpty && enTitle == q) score += 120;
+    if (q.isNotEmpty && original.isNotEmpty && original == q) score += 115;
+    if (arTitle.contains(q) && q.length >= 3) score += 70;
+    if (enTitle.contains(q) && q.length >= 3) score += 70;
+    if (original.contains(q) && q.length >= 3) score += 65;
+
+    score += _tokenScore(query, hay) * 45;
+
+    for (final genre in _genreAliases.entries) {
+      if (_containsAny(q, genre.value) && _containsAny(hay, genre.value)) {
+        score += 18;
+      }
+    }
+
+    if (year != null) {
+      final itemYear = int.tryParse(
+        '${item['year'] ?? item['release_year'] ?? (item['release_date']?.toString().split('-').first ?? '')}',
+      );
+      if (itemYear == year) {
+        score += 45;
+      } else if (itemYear != null) {
+        score -= 8;
+      }
+    }
+
+    final rating = double.tryParse('${item['stars'] ?? item['rating'] ?? item['vote_average'] ?? 0}') ?? 0;
+    score += rating.clamp(0, 10) * 0.8;
+    return score;
+  }
+
+  static Future<List<dynamic>> search(
+    String query, {
+    int level = 0,
+    bool enforceFreeLimit = true,
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+
+    if (enforceFreeLimit) {
+      final allowed = await SmartSearchUsageService.consume(q);
+      if (!allowed) {
+        throw const SmartSearchLimitException();
+      }
+    }
+
+    final variants = _buildQueries(q);
+    final Map<String, dynamic> merged = {};
+
+    for (final variant in variants) {
+      try {
+        final results = await StreamService.searchContent(variant, level: level);
+        for (final item in results) {
+          if (item is! Map) continue;
+          final map = Map<String, dynamic>.from(item);
+          final id = '${map['nb'] ?? map['id'] ?? map['tmdb_id'] ?? map['imdb_id'] ?? ''}';
+          if (id.isEmpty) continue;
+          merged[id] = map;
+        }
+      } catch (_) {
+        // One failed variant should not cancel the entire smart search.
+      }
+    }
+
+    final scored = merged.values
+        .map((item) => MapEntry(item, _score(q, Map<String, dynamic>.from(item))))
+        .where((entry) => entry.key != null)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final blacklisted = RemoteAdminConfig.instance.blacklistedMediaIds.toSet();
+    return scored
+        .map((e) => e.key)
+        .where((item) {
+          final id = (item['nb'] ?? item['id'])?.toString();
+          return id != null && !blacklisted.contains(id);
+        })
+        .take(40)
+        .toList();
+  }
+}
+
+class SmartSearchLimitException implements Exception {
+  const SmartSearchLimitException();
+}
+
+// ========================= END ONEBR SMART SEARCH =========================
 
 class ChromaVisionEngine {
   static bool analyzeFramePixels(Uint8List rgbaBytes) {
@@ -658,6 +984,444 @@ class BackgroundDownloadService {
     return taskId;
   }
 }
+
+
+/// ===================== ONEBR PREMIUM CORE =====================
+/// Subscription/payment provider is intentionally not connected yet.
+/// The entitlement source is Firebase Firestore so a future payment
+/// provider can update the user's subscription without changing the UI.
+
+enum PremiumFeature {
+  smartSearchPro,
+  aiMovieFinder,
+  aiRecommendations,
+  clipStudioPro,
+  smartSceneSkip,
+  dualSubtitlesPro,
+  smartDownloads,
+}
+
+class PremiumService {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  static bool _isPremium = false;
+  static DateTime? _expiresAt;
+  static bool _loaded = false;
+
+  static bool get isPremium => _isPremium && (_expiresAt == null || _expiresAt!.isAfter(DateTime.now()));
+  static DateTime? get expiresAt => _expiresAt;
+
+  static Future<bool> refresh() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      _isPremium = false;
+      _expiresAt = null;
+      _loaded = true;
+      return false;
+    }
+
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final data = doc.data();
+      final sub = data?['subscription'];
+
+      if (sub is Map<String, dynamic>) {
+        final status = (sub['status'] ?? '').toString().toLowerCase();
+        final expiresRaw = sub['expiresAt'];
+
+        DateTime? expires;
+        if (expiresRaw is Timestamp) {
+          expires = expiresRaw.toDate();
+        } else if (expiresRaw is String) {
+          expires = DateTime.tryParse(expiresRaw);
+        }
+
+        _expiresAt = expires;
+        _isPremium = status == 'active' &&
+            (expires == null || expires.isAfter(DateTime.now()));
+      } else {
+        _isPremium = false;
+        _expiresAt = null;
+      }
+    } catch (_) {
+      // Fail closed: an unreadable entitlement never grants Premium.
+      _isPremium = false;
+      _expiresAt = null;
+    }
+
+    _loaded = true;
+    return isPremium;
+  }
+
+  static Future<bool> hasAccess(PremiumFeature feature) async {
+    if (!_loaded) {
+      await refresh();
+    }
+    return isPremium;
+  }
+
+  static Future<void> clear() async {
+    _isPremium = false;
+    _expiresAt = null;
+    _loaded = false;
+  }
+
+  static String featureName(PremiumFeature feature, bool isAr) {
+    switch (feature) {
+      case PremiumFeature.smartSearchPro:
+        return isAr ? 'Smart Search Pro' : 'Smart Search Pro';
+      case PremiumFeature.aiMovieFinder:
+        return isAr ? 'AI Movie Finder' : 'AI Movie Finder';
+      case PremiumFeature.aiRecommendations:
+        return isAr ? 'التوصيات الذكية المتقدمة' : 'Advanced AI Recommendations';
+      case PremiumFeature.clipStudioPro:
+        return isAr ? 'Clip Studio Pro' : 'Clip Studio Pro';
+      case PremiumFeature.smartSceneSkip:
+        return isAr ? 'تجاوز المشاهد الذكي' : 'Smart Scene Skip';
+      case PremiumFeature.dualSubtitlesPro:
+        return isAr ? 'الترجمة المزدوجة Pro' : 'Dual Subtitles Pro';
+      case PremiumFeature.smartDownloads:
+        return isAr ? 'التنزيل الذكي' : 'Smart Downloads';
+    }
+  }
+}
+
+class PremiumGuard {
+  static Future<bool> require(
+    BuildContext context,
+    PremiumFeature feature,
+  ) async {
+    final allowed = await PremiumService.hasAccess(feature);
+    if (allowed) return true;
+
+    if (context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const OnebrPremiumScreen()),
+      );
+    }
+    return false;
+  }
+}
+
+/// ===================== ONEBR PREMIUM SCREEN =====================
+
+class OnebrPremiumScreen extends StatefulWidget {
+  const OnebrPremiumScreen({super.key});
+
+  @override
+  State<OnebrPremiumScreen> createState() => _OnebrPremiumScreenState();
+}
+
+class _OnebrPremiumScreenState extends State<OnebrPremiumScreen> {
+  bool _loading = true;
+
+  final List<PremiumFeature> _features = const [
+    PremiumFeature.smartSearchPro,
+    PremiumFeature.aiMovieFinder,
+    PremiumFeature.aiRecommendations,
+    PremiumFeature.clipStudioPro,
+    PremiumFeature.smartSceneSkip,
+    PremiumFeature.dualSubtitlesPro,
+    PremiumFeature.smartDownloads,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    await PremiumService.refresh();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  String _expiryText(bool isAr) {
+    final d = PremiumService.expiresAt;
+    if (d == null) return isAr ? 'اشتراك فعال' : 'Active subscription';
+    final date = '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+    return isAr ? 'ينتهي في $date' : 'Expires $date';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final isAr = s.appLanguage == 'ar';
+    final active = PremiumService.isPremium;
+
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(
+          title: Text(
+            'ONEBR PREMIUM',
+            style: TextStyle(
+              color: s.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          leading: IconButton(
+            icon: Icon(
+              isAr ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
+              color: s.textPrimary,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+            : ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 30),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: s.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppColors.primary.withOpacity(0.35)),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.14),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.workspace_premium_rounded,
+                            color: AppColors.primary,
+                            size: 34,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'ONEBR PREMIUM',
+                          style: TextStyle(
+                            color: s.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isAr
+                              ? 'تجربة مشاهدة أكثر ذكاءً، بدون حدود.'
+                              : 'A smarter ONEBR experience, without limits.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: s.textSecondary, fontSize: 13),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: active
+                                ? Colors.green.withOpacity(0.14)
+                                : s.surfaceLight,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            active
+                                ? '✓ ${_expiryText(isAr)}'
+                                : (isAr ? 'الحساب الحالي: مجاني' : 'Current plan: Free'),
+                            style: TextStyle(
+                              color: active ? Colors.greenAccent : s.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    isAr ? 'مزايا Premium' : 'Premium Features',
+                    style: TextStyle(
+                      color: s.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ..._features.map((feature) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                        decoration: BoxDecoration(
+                          color: s.surface,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: s.border, width: 0.6),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: Icon(
+                                feature == PremiumFeature.smartSearchPro
+                                    ? Icons.manage_search_rounded
+                                    : feature == PremiumFeature.aiMovieFinder
+                                        ? Icons.auto_awesome_rounded
+                                        : feature == PremiumFeature.aiRecommendations
+                                            ? Icons.recommend_rounded
+                                            : feature == PremiumFeature.clipStudioPro
+                                                ? Icons.content_cut_rounded
+                                                : feature == PremiumFeature.smartSceneSkip
+                                                    ? Icons.fast_forward_rounded
+                                                    : feature == PremiumFeature.dualSubtitlesPro
+                                                        ? Icons.subtitles_rounded
+                                                        : Icons.download_for_offline_rounded,
+                                color: AppColors.primary,
+                                size: 21,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                PremiumService.featureName(feature, isAr),
+                                style: TextStyle(
+                                  color: s.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: Colors.greenAccent,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      )),
+                  const SizedBox(height: 12),
+                  Text(
+                    isAr ? 'اختر خطتك' : 'Choose your plan',
+                    style: TextStyle(
+                      color: s.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _planCard(
+                          context,
+                          title: isAr ? 'شهري' : 'Monthly',
+                          price: isAr ? 'قريبًا' : 'Coming soon',
+                          accent: false,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _planCard(
+                          context,
+                          title: isAr ? 'سنوي ⭐' : 'Yearly ⭐',
+                          price: isAr ? 'قريبًا' : 'Coming soon',
+                          accent: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  CupertinoButton(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(22),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isAr
+                                ? 'الدفع سيُضاف في المرحلة التالية.'
+                                : 'Payment will be connected in the next stage.',
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      active
+                          ? (isAr ? 'إدارة الاشتراك' : 'Manage Subscription')
+                          : (isAr ? 'اشترك الآن' : 'Subscribe Now'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  CupertinoButton(
+                    onPressed: _refresh,
+                    child: Text(
+                      isAr ? 'تحديث حالة الاشتراك' : 'Refresh Subscription',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _planCard(
+    BuildContext context, {
+    required String title,
+    required String price,
+    required bool accent,
+  }) {
+    final s = AppSettings.instance;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: accent ? AppColors.primary.withOpacity(0.10) : s.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: accent ? AppColors.primary.withOpacity(0.55) : s.border,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: s.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            price,
+            style: TextStyle(
+              color: accent ? AppColors.primary : s.textSecondary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// =================== END ONEBR PREMIUM CORE ===================
+
 
 class AppSettings extends ChangeNotifier {
   static final AppSettings instance = AppSettings._();
@@ -1382,6 +2146,24 @@ class HomeScreenContent extends StatefulWidget {
 }
 
 class _HomeScreenContentState extends State<HomeScreenContent> {
+  String _timeBasedShelfTitle(bool isAr) {
+    final hour = DateTime.now().hour;
+
+    if (hour >= 5 && hour < 12) {
+      return isAr ? 'صباحك السينمائي' : 'Your Morning Cinema';
+    }
+
+    if (hour >= 12 && hour < 17) {
+      return isAr ? 'اختيارات فترة الظهيرة' : 'Afternoon Picks';
+    }
+
+    if (hour >= 17 && hour < 22) {
+      return isAr ? 'سهرة الليلة' : 'Tonight’s Picks';
+    }
+
+    return isAr ? 'اختيارات منتصف الليل' : 'Midnight Picks';
+  }
+
   final ScrollController _scrollController = ScrollController();
   List<dynamic> _heroItems = [];
   List<dynamic> _marvelItems = [];
@@ -2287,6 +3069,7 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
   bool _isSearching = false;
   Timer? _debounce;
   String _filterType = 'all';
+  bool _smartMode = true;
 
   @override
   void initState() {
@@ -2330,7 +3113,9 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
     final level = AppSettings.instance.appFilterMode;
 
     try {
-      final results = await StreamService.searchContent(q, level: level);
+      final results = _smartMode
+          ? await SmartSearchEngine.search(q, level: level)
+          : await StreamService.searchContent(q, level: level);
 
       final List<dynamic> movies = [];
       final List<dynamic> series = [];
@@ -2351,6 +3136,25 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
           _seriesResults = series;
           _isSearching = false;
         });
+      }
+    } on SmartSearchLimitException {
+      if (mounted) {
+        setState(() => _isSearching = false);
+        final ar = AppSettings.instance.appLanguage == 'ar';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ar
+                ? 'انتهت عمليات البحث الذكي المجانية اليوم (3). يمكنك استخدامه بلا حدود مع Premium.'
+                : 'Your 3 free Smart Searches for today are used. Premium gives unlimited Smart Search.'),
+            action: SnackBarAction(
+              label: ar ? 'Premium' : 'Premium',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const OnebrPremiumScreen()),
+              ),
+            ),
+          ),
+        );
       }
     } catch (_) {
       if (mounted) setState(() => _isSearching = false);
@@ -2411,6 +3215,12 @@ class _AdvancedSearchScreenState extends State<AdvancedSearchScreen> {
                       _buildFilterChip(isAr ? 'أفلام' : 'Movies', _filterType == 'movie', () => setState(() => _filterType = 'movie')),
                       const SizedBox(width: 8),
                       _buildFilterChip(isAr ? 'مسلسلات' : 'Series', _filterType == 'series', () => setState(() => _filterType = 'series')),
+                      const SizedBox(width: 8),
+                      _buildFilterChip(
+                        isAr ? '✨ ذكي' : '✨ Smart',
+                        _smartMode,
+                        () => setState(() => _smartMode = !_smartMode),
+                      ),
                     ],
                   ),
                 ),
@@ -6048,6 +6858,20 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           title: Text(isAr ? 'الحساب والمكتبة' : 'Profile & Library', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
           actions: [
             IconButton(
+              tooltip: isAr ? 'ONEBR Premium' : 'ONEBR Premium',
+              icon: Icon(
+                Icons.workspace_premium_rounded,
+                color: PremiumService.isPremium ? Colors.amber : AppColors.primary,
+              ),
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const OnebrPremiumScreen()),
+                );
+              },
+            ),
+            IconButton(
               tooltip: isAr ? 'تفريغ الكاش' : 'Clear Cache',
               icon: Icon(Icons.delete_sweep_rounded, color: s.textSecondary),
               onPressed: _cleanCache,
@@ -6540,7 +7364,11 @@ class _OnebrAssistantScreenState extends State<OnebrAssistantScreen> {
         final resume = await LocalStorageService.getList('resume_playback_list');
         results = resume;
       } else {
-        results = await StreamService.searchContent(q, level: AppSettings.instance.appFilterMode);
+        results = await SmartSearchEngine.search(
+          q,
+          level: AppSettings.instance.appFilterMode,
+          enforceFreeLimit: false,
+        );
       }
 
       results = results.where((x) {
@@ -7355,4 +8183,3 @@ class FocusBuilder extends StatelessWidget {
       ),
     );
   }
-}
