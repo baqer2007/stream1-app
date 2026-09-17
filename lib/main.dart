@@ -24,11 +24,9 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:ffmpeg_kit_flutter_new_https/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_https/return_code.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'stream_service.dart';
 
 class SecureHttpOverrides extends HttpOverrides {
@@ -402,8 +400,26 @@ class LocalStorageService {
     final currentProfile = prefs.getString('current_active_profile') ?? 'default';
     await prefs.setInt('pos_${currentProfile}_$id', positionMs);
 
-    int totalMinutes = prefs.getInt('stats_minutes_$currentProfile') ?? 0;
-    await prefs.setInt('stats_minutes_$currentProfile', totalMinutes + (positionMs > 60000 ? 1 : 0));
+    // Accurate watch-time accounting: count only the positive position delta
+    // since the previous checkpoint for this media/profile.
+    final watchKey = 'watch_last_${currentProfile}_$id';
+    final lastMs = prefs.getInt(watchKey) ?? positionMs;
+    final deltaMs = positionMs - lastMs;
+    if (deltaMs > 0 && deltaMs <= 120000) {
+      final totalSeconds = prefs.getInt('stats_seconds_$currentProfile') ?? 0;
+      final updatedSeconds = totalSeconds + (deltaMs ~/ 1000);
+      await prefs.setInt('stats_seconds_$currentProfile', updatedSeconds);
+      await prefs.setInt('stats_minutes_$currentProfile', updatedSeconds ~/ 60);
+    }
+    await prefs.setInt(watchKey, positionMs);
+
+    // Daily activity for streaks/weekly charts.
+    final dayKey = DateTime.now().toIso8601String().substring(0, 10);
+    final activityKey = 'stats_day_seconds_${currentProfile}_$dayKey';
+    final daySeconds = prefs.getInt(activityKey) ?? 0;
+    if (deltaMs > 0 && deltaMs <= 120000) {
+      await prefs.setInt(activityKey, daySeconds + (deltaMs ~/ 1000));
+    }
 
     final resumeList = await getList('resume_playback_list');
     resumeList.removeWhere((x) => x['id'] == id);
@@ -461,6 +477,77 @@ class LocalStorageService {
       list.insert(0, media);
     }
     await setList('user_watchlist', list);
+  }
+
+
+  static Future<int> getWatchSeconds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final seconds = prefs.getInt('stats_seconds_$profile');
+    if (seconds != null) return seconds;
+    return (prefs.getInt('stats_minutes_$profile') ?? 0) * 60;
+  }
+
+  static Future<Map<String, int>> getDailyWatchSeconds({int days = 7}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final result = <String, int>{};
+    final now = DateTime.now();
+    for (int i = days - 1; i >= 0; i--) {
+      final d = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
+      final key = d.toIso8601String().substring(0, 10);
+      result[key] = prefs.getInt('stats_day_seconds_${profile}_$key') ?? 0;
+    }
+    return result;
+  }
+
+  static Future<int> getCurrentStreak() async {
+    final daily = await getDailyWatchSeconds(days: 60);
+    final keys = daily.keys.toList()..sort((a, b) => b.compareTo(a));
+    int streak = 0;
+    for (final key in keys) {
+      if ((daily[key] ?? 0) >= 60) {
+        streak++;
+      } else if (streak > 0) {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  static Future<Set<String>> getWatchedMediaIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final list = prefs.getStringList('watched_media_${profile}_list') ?? [];
+    return list.toSet();
+  }
+
+  static Future<void> markMediaWatched(String mediaId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final list = prefs.getStringList('watched_media_${profile}_list') ?? [];
+    if (!list.contains(mediaId)) {
+      list.add(mediaId);
+      await prefs.setStringList('watched_media_${profile}_list', list);
+    }
+  }
+
+  static Future<Map<String, dynamic>> getAchievementState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final raw = prefs.getString('achievements_$profile');
+    if (raw == null) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveAchievementState(Map<String, dynamic> state) async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    await prefs.setString('achievements_$profile', jsonEncode(state));
   }
 
   static Future<bool> isSubscribed(String id) async {
@@ -826,6 +913,13 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ONEBR TV',
+      locale: Locale(s.appLanguage),
+      supportedLocales: const [Locale('ar'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: (s.isDarkMode ? ThemeData.dark() : ThemeData.light()).copyWith(
         scaffoldBackgroundColor: s.bg,
         primaryColor: AppColors.primary,
@@ -897,7 +991,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   final List<Widget> _screens = [
     const HomeScreenContent(),
     CategoriesScreen(),
-    const AdvancedSearchScreen(),
+    const OnebrAssistantScreen(),
     const LibraryScreen(),
   ];
 
@@ -1028,12 +1122,12 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
                       label: isAr ? 'الأقسام' : 'Categories',
                     ),
                     BottomNavigationBarItem(
-                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.search_rounded, size: 23)),
-                      label: isAr ? 'بحث' : 'Search',
+                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.auto_awesome_rounded, size: 23)),
+                      label: isAr ? 'ONEBR AI' : 'ONEBR AI',
                     ),
                     BottomNavigationBarItem(
-                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.video_library_rounded, size: 23)),
-                      label: isAr ? 'المكتبة' : 'Library',
+                      icon: const Padding(padding: EdgeInsets.only(bottom: 2), child: Icon(Icons.person_rounded, size: 23)),
+                      label: isAr ? 'الحساب' : 'Profile',
                     ),
                   ],
                 ),
@@ -1676,7 +1770,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       if (_resumeList.isNotEmpty) _buildResumeSection(isAr),
 
                       _buildMediaShelf(
-                        isAr ? 'أفلام الحركة والأكشن' : 'Action Movies',
+                        _timeBasedShelfTitle(isAr),
                         _marvelItems,
                         () => Navigator.push(
                           context,
@@ -2666,6 +2760,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     final imdbId = widget.media['imdb_id']?.toString() ?? widget.media['imdb']?.toString();
 
     LocalStorageService.markEpisodeWatched(targetId);
+    LocalStorageService.markMediaWatched((widget.media['nb'] ?? widget.media['id']).toString());
     _loadState();
 
     Navigator.push(
@@ -2693,6 +2788,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
 
   void _playMovie(bool isAr) {
     final targetId = (widget.media['nb'] ?? widget.media['id']).toString();
+    LocalStorageService.markMediaWatched(targetId);
     final title = isAr ? (widget.media['ar_title'] ?? widget.media['en_title'] ?? '') : (widget.media['en_title'] ?? widget.media['ar_title'] ?? '');
     final poster = StreamService.extractPoster(widget.media);
     final titleEn = widget.media['en_title']?.toString() ?? '';
@@ -2816,12 +2912,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     HapticFeedback.selectionClick();
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => FullCategoryView(
-          title: actorName,
-          searchQuery: actorName,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => ActorScreen(actorName: actorName)),
     );
   }
 
@@ -2858,6 +2949,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
               ),
               actions: [
                 IconButton(icon: const Icon(Icons.share_rounded, color: Colors.white), onPressed: () => _shareMedia(isAr)),
+                IconButton(
+                  tooltip: isAr ? 'QR' : 'QR',
+                  icon: const Icon(Icons.qr_code_rounded, color: Colors.white),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ShareQrScreen(media: widget.media))),
+                ),
                 if (_isSeries)
                   IconButton(
                     icon: Icon(_isSubscribed ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: _isSubscribed ? AppColors.primary : Colors.white),
@@ -3235,90 +3331,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-class VideoClipService {
-  static Future<String> _clipsDirectory() async {
-    Directory? base;
-    if (Platform.isAndroid) base = await getExternalStorageDirectory();
-    base ??= await getApplicationDocumentsDirectory();
-    final dir = Directory('${base.path}/ONEBR TV/Clips');
-    if (!dir.existsSync()) await dir.create(recursive: true);
-    return dir.path;
-  }
-
-  static String _q(String value) => "'${value.replaceAll("'", "'\\''")}'";
-
-  static String _headerArgument() {
-    final headers = StreamService.stealthHeaders;
-    if (headers.isEmpty) return '';
-    return headers.entries.map((e) => '${e.key}: ${e.value}').join('\\r\\n') + '\\r\\n';
-  }
-
-  static Future<String?> createClip({
-    required String source,
-    required Duration start,
-    required Duration end,
-    required String title,
-    bool isLocal = false,
-  }) async {
-    if (source.trim().isEmpty || end <= start) return null;
-    final duration = end - start;
-    if (duration.inMilliseconds < 1000) return null;
-
-    final dir = await _clipsDirectory();
-    final safeTitle = title.replaceAll(RegExp(r'[^a-zA-Z0-9_\-\u0600-\u06FF ]'), '_').trim();
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final output = '$dir/${safeTitle.isEmpty ? 'ONEBR' : safeTitle}_clip_$stamp.mp4';
-    final args = <String>[
-      '-y',
-      '-ss',
-      (start.inMilliseconds / 1000).toStringAsFixed(3),
-      if (!isLocal && _headerArgument().isNotEmpty) ...['-headers', _headerArgument()],
-      '-i',
-      source,
-      '-t',
-      (duration.inMilliseconds / 1000).toStringAsFixed(3),
-      '-map',
-      '0:v:0?',
-      '-map',
-      '0:a:0?',
-      '-c:v',
-      'mpeg4',
-      '-q:v',
-      '3',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      output,
-    ];
-
-    final session = await FFmpegKit.executeWithArguments(args);
-    final code = await session.getReturnCode();
-    if (code == null || !ReturnCode.isSuccess(code)) {
-      try {
-        final logs = await session.getOutput();
-        debugPrint('ONEBR clip FFmpeg failed: $logs');
-      } catch (_) {}
-      return null;
-    }
-
-    final file = File(output);
-    if (!file.existsSync() || file.lengthSync() < 50 * 1024) return null;
-
-    await LocalStorageService.appendItem('video_clips', {
-      'path': output,
-      'title': title,
-      'start': start.inSeconds,
-      'end': end.inSeconds,
-      'duration': duration.inSeconds,
-      'date': stamp,
-    });
-    return output;
-  }
-}
-
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -3411,7 +3423,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   double? _dragPositionMs;
   bool _isSeeking = false;
-  bool _isCreatingClip = false;
 
   bool get _showSmartSkip =>
       _controller != null &&
@@ -4449,165 +4460,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  Future<void> _showClipCreator(bool isAr) async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    final value = _controller!.value;
-    final total = value.duration;
-    if (total.inSeconds < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'الفيديو قصير جداً لقص مقطع' : 'Video is too short to create a clip')));
-      return;
-    }
-
-    double start = value.position.inSeconds.toDouble().clamp(0, (total.inSeconds - 1).toDouble());
-    double end = (start + 15).clamp(1, total.inSeconds.toDouble());
-    if (end <= start) {
-      start = 0;
-      end = total.inSeconds.clamp(1, 15).toDouble();
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) {
-        final s = AppSettings.instance;
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final max = total.inMilliseconds / 1000.0;
-            final safeStart = start.clamp(0.0, max - 0.1);
-            final safeEnd = end.clamp(safeStart + 0.1, max);
-            return Directionality(
-              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-              child: Padding(
-                padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: s.surface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                    border: Border.all(color: s.border),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(width: 42, height: 4, decoration: BoxDecoration(color: s.border, borderRadius: BorderRadius.circular(8))),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            const Icon(Icons.content_cut_rounded, color: AppColors.primary),
-                            const SizedBox(width: 8),
-                            Text(isAr ? 'قص فيديو' : 'Video Clip', style: TextStyle(color: s.textPrimary, fontSize: 17, fontWeight: FontWeight.bold)),
-                            const Spacer(),
-                            Text('${_formatTime(Duration(seconds: safeStart.round()))} → ${_formatTime(Duration(seconds: safeEnd.round()))}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        RangeSlider(
-                          values: RangeValues(safeStart, safeEnd),
-                          min: 0,
-                          max: max,
-                          divisions: total.inSeconds > 0 ? total.inSeconds : 1,
-                          activeColor: AppColors.primary,
-                          inactiveColor: Colors.white24,
-                          labels: RangeLabels(_formatTime(Duration(seconds: safeStart.round())), _formatTime(Duration(seconds: safeEnd.round()))),
-                          onChanged: (r) {
-                            setSheetState(() {
-                              start = r.start;
-                              end = r.end;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 4),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [5, 10, 15, 30].map((seconds) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                child: OutlinedButton(
-                                  onPressed: () {
-                                    setSheetState(() {
-                                      final center = start;
-                                      final newEnd = (center + seconds).clamp(0.1, max);
-                                      if (newEnd - center < 0.1) {
-                                        start = (max - seconds).clamp(0.0, max - 0.1);
-                                        end = max;
-                                      } else {
-                                        end = newEnd;
-                                      }
-                                    });
-                                  },
-                                  child: Text('${seconds}s'),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: CupertinoButton.filled(
-                            borderRadius: BorderRadius.circular(14),
-                            onPressed: _isCreatingClip
-                                ? null
-                                : () async {
-                                    Navigator.pop(ctx);
-                                    await _createClip(start, end, isAr);
-                                  },
-                            child: Text(isAr ? 'إنشاء المقطع ومشاركته' : 'Create & Share Clip'),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(isAr ? 'يمكن قص أي جزء من الفيديو ضمن المدة المتاحة.' : 'Choose any portion of the available video.', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _createClip(double startSeconds, double endSeconds, bool isAr) async {
-    if (_isCreatingClip || _controller == null) return;
-    final source = widget.isLocalFile ? widget.videoUrl : _currentStreamUrl;
-    if (source.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'مصدر الفيديو غير متاح للقص' : 'Video source is unavailable for clipping')));
-      return;
-    }
-    setState(() => _isCreatingClip = true);
-    try {
-      final path = await VideoClipService.createClip(
-        source: source,
-        start: Duration(milliseconds: (startSeconds * 1000).round()),
-        end: Duration(milliseconds: (endSeconds * 1000).round()),
-        title: widget.title,
-        isLocal: widget.isLocalFile,
-      );
-      if (!mounted) return;
-      if (path == null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تعذر إنشاء المقطع. تحقق من مصدر الفيديو وحاول مرة أخرى.' : 'Could not create the clip. Check the video source and try again.')));
-        return;
-      }
-      final box = context.findRenderObject() as RenderBox?;
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(path)],
-        title: widget.title,
-        sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
-      ));
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'تم إنشاء المقطع وحفظه في المكتبة ✂️' : 'Clip created and saved to your library ✂️')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'حدث خطأ أثناء قص الفيديو' : 'Clip creation failed')));
-    } finally {
-      if (mounted) setState(() => _isCreatingClip = false);
-    }
-  }
-
   void _takeSceneClip(bool isAr) {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -4855,13 +4707,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            IconButton(
-                              tooltip: isAr ? 'المكتبة' : 'Library',
-                              icon: const Icon(Icons.video_library_rounded, color: Colors.white),
-                              onPressed: () {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryScreen()));
-                              },
-                            ),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4881,12 +4726,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     onPressed: _showEpisodesDrawer,
                                   ),
                                 IconButton(
-                                  tooltip: isAr ? 'قص الفيديو' : 'Create Clip',
-                                  icon: const Icon(Icons.content_cut_rounded, color: Colors.white),
-                                  onPressed: () => _showClipCreator(isAr),
-                                ),
-                                IconButton(
-                                  tooltip: isAr ? 'لقطة شاشة' : 'Snapshot',
+                                  tooltip: isAr ? 'صانع اللقطات' : 'Snapshot',
                                   icon: const Icon(Icons.camera_alt_rounded, color: Colors.white),
                                   onPressed: () => _takeSceneClip(isAr),
                                 ),
@@ -5842,7 +5682,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _completed = [];
   List<Map<String, dynamic>> _watchlist = [];
-  List<Map<String, dynamic>> _clips = [];
   StreamSubscription? _dlSub;
 
   int _statMinutes = 0;
@@ -5851,7 +5690,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
 
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
@@ -5902,7 +5741,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void _loadData() async {
     final downloads = await LocalStorageService.getList('downloaded_works_list');
     final wl = await LocalStorageService.getList('user_watchlist');
-    final clips = await LocalStorageService.getList('video_clips');
     final prefs = await SharedPreferences.getInstance();
     final curP = prefs.getString('current_active_profile') ?? 'default';
 
@@ -5910,7 +5748,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
       setState(() {
         _completed = downloads;
         _watchlist = wl;
-        _clips = clips;
         _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
         _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
       });
@@ -6197,13 +6034,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 
-  String _formatClipDuration(dynamic seconds) {
-    final n = seconds is num ? seconds.toInt() : int.tryParse('$seconds') ?? 0;
-    final m = (n ~/ 60).toString().padLeft(2, '0');
-    final sec = (n % 60).toString().padLeft(2, '0');
-    return '$m:$sec';
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
@@ -6231,7 +6061,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             tabs: [
               Tab(text: isAr ? 'التنزيلات' : 'Downloads'),
               Tab(text: isAr ? 'المفضلة' : 'Watchlist'),
-              Tab(text: isAr ? 'المقاطع' : 'Clips'),
               Tab(text: isAr ? 'الإحصائيات' : 'Stats'),
               Tab(text: isAr ? 'الإعدادات' : 'Settings'),
             ],
@@ -6404,47 +6233,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     },
                   ),
 
-
-            _clips.isEmpty
-                ? Center(child: Text(isAr ? 'لا توجد مقاطع بعد' : 'No clips yet', style: TextStyle(color: s.textSecondary)))
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _clips.length,
-                    itemBuilder: (ctx, i) {
-                      final clip = _clips[_clips.length - 1 - i];
-                      final path = clip['path']?.toString() ?? '';
-                      final file = File(path);
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                        child: ListTile(
-                          leading: const CircleAvatar(backgroundColor: AppColors.primary, child: Icon(Icons.content_cut_rounded, color: Colors.white)),
-                          title: Text(clip['title']?.toString() ?? 'ONEBR Clip', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          subtitle: Text('${_formatClipDuration(clip['duration'])} • ${file.existsSync() ? (isAr ? 'جاهز للمشاركة' : 'Ready to share') : (isAr ? 'الملف غير موجود' : 'File missing')}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (file.existsSync())
-                                IconButton(
-                                  icon: const Icon(Icons.share_rounded, color: AppColors.primary),
-                                  onPressed: () => SharePlus.instance.share(ShareParams(files: [XFile(path)])),
-                                ),
-                              IconButton(
-                                icon: Icon(Icons.delete_outline_rounded, color: s.textSecondary),
-                                onPressed: () async {
-                                  if (file.existsSync()) { try { await file.delete(); } catch (_) {} }
-                                  await LocalStorageService.removeItem('video_clips', path, idField: 'path');
-                                  _loadData();
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -6580,19 +6368,27 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       Divider(color: s.border, height: 1),
                       ListTile(
                         leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                        title: Text(isAr ? 'لغة التطبيق' : 'App Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: DropdownButton<String>(
-                          dropdownColor: s.surface,
-                          value: s.appLanguage,
-                          underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem(value: 'ar', child: Text('العربية', style: TextStyle(color: s.textPrimary))),
-                            DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(color: s.textPrimary))),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => s.updateLanguage(v));
+                        title: Text(isAr ? 'اللغة' : 'Language', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        subtitle: Text(isAr ? 'ضغطة واحدة للتبديل بين العربية والإنجليزية' : 'One tap to switch Arabic / English', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        trailing: CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(12),
+                          minSize: 0,
+                          onPressed: () {
+                            HapticFeedback.selectionClick();
+                            s.updateLanguage(s.appLanguage == 'ar' ? 'en' : 'ar');
                           },
+                          child: Text(s.appLanguage == 'ar' ? 'EN' : 'عربي', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                         ),
+                      ),
+                      Divider(color: s.border, height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
+                        title: Text(isAr ? 'مركز ONEBR الذكي' : 'ONEBR Smart Center', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        subtitle: Text(isAr ? 'المساعد، الإحصائيات، الإنجازات، QR، العائلة وWatch Party' : 'Assistant, stats, achievements, QR, family & Watch Party', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                        trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SmartCenterScreen())),
                       ),
                       Divider(color: s.border, height: 1),
                       ListTile(
@@ -6617,6 +6413,20 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   ),
                 ),
 
+                const SizedBox(height: 18),
+                CupertinoButton(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SmartCenterScreen())),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 19),
+                      const SizedBox(width: 8),
+                      Text(isAr ? 'فتح مركز ONEBR الذكي' : 'Open ONEBR Smart Center', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 18),
                 Text(isAr ? 'وضع المحتوى' : 'Content Mode', style: TextStyle(color: s.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
@@ -6657,6 +6467,871 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// ========================= ONEBR SMART FEATURES =========================
+
+class OnebrAssistantScreen extends StatefulWidget {
+  const OnebrAssistantScreen({super.key});
+
+  @override
+  State<OnebrAssistantScreen> createState() => _OnebrAssistantScreenState();
+}
+
+class _OnebrAssistantScreenState extends State<OnebrAssistantScreen> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  final List<Map<String, dynamic>> _messages = [];
+  List<dynamic> _recommendations = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _messages.add({
+      'from': 'ai',
+      'text': AppSettings.instance.appLanguage == 'ar'
+          ? 'مرحباً 👋 أنا ONEBR AI. أخبرني ماذا تريد أن تشاهد وسأبحث لك داخل مكتبة ONEBR.'
+          : 'Hi 👋 I’m ONEBR AI. Tell me what you want to watch and I’ll search the ONEBR library for you.',
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  String _title(dynamic item, bool ar) =>
+      (ar ? (item['ar_title'] ?? item['en_title']) : (item['en_title'] ?? item['ar_title']))?.toString() ?? '';
+
+  Future<void> _ask(String raw) async {
+    final q = raw.trim();
+    if (q.isEmpty) return;
+    final ar = AppSettings.instance.appLanguage == 'ar';
+    _controller.clear();
+    setState(() {
+      _messages.add({'from': 'user', 'text': q});
+      _loading = true;
+    });
+
+    final normalized = SearchEngineUtils.normalize(q);
+    try {
+      List<dynamic> results;
+      if (normalized.contains('اكشن') || normalized.contains('action')) {
+        results = await StreamService.fetchByCategoryName('action', page: 0, level: AppSettings.instance.appFilterMode);
+      } else if (normalized.contains('رعب') || normalized.contains('horror')) {
+        results = await StreamService.fetchByCategoryName('horror', page: 0, level: AppSettings.instance.appFilterMode);
+      } else if (normalized.contains('كوميديا') || normalized.contains('comedy')) {
+        results = await StreamService.fetchByCategoryName('comedy', page: 0, level: AppSettings.instance.appFilterMode);
+      } else if (normalized.contains('مسلسل') || normalized.contains('series')) {
+        results = await StreamService.fetchFeed(isSeries: true, page: 0, perPage: 20, level: AppSettings.instance.appFilterMode);
+      } else if (normalized.contains('فيلم') || normalized.contains('movie')) {
+        results = await StreamService.fetchFeed(isSeries: false, page: 0, perPage: 20, level: AppSettings.instance.appFilterMode);
+      } else if (normalized.contains('اكمل') || normalized.contains('تابع') || normalized.contains('continue')) {
+        final resume = await LocalStorageService.getList('resume_playback_list');
+        results = resume;
+      } else {
+        results = await StreamService.searchContent(q, level: AppSettings.instance.appFilterMode);
+      }
+
+      results = results.where((x) {
+        final id = (x['nb'] ?? x['id'])?.toString();
+        return id != null && !RemoteAdminConfig.instance.blacklistedMediaIds.contains(id);
+      }).take(12).toList();
+
+      if (mounted) {
+        setState(() {
+          _recommendations = results;
+          _loading = false;
+          _messages.add({
+            'from': 'ai',
+            'text': results.isEmpty
+                ? (ar ? 'لم أجد نتائج مناسبة. جرّب اسم فيلم، ممثل، أو نوع مثل أكشن/رعب/كوميديا.' : 'I couldn’t find a match. Try a title, actor, or genre such as action/horror/comedy.')
+                : (ar ? 'وجدت لك ${results.length} اقتراحاً 👇' : 'I found ${results.length} suggestions for you 👇'),
+          });
+        });
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scroll.hasClients) _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _messages.add({'from': 'ai', 'text': ar ? 'حدث خطأ أثناء البحث. حاول مرة أخرى.' : 'Something went wrong. Please try again.'});
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    final suggestions = ar
+        ? ['أريد فيلم أكشن', 'شيء رعب', 'أريد مسلسل', 'أكمل ما بدأت']
+        : ['Action movie', 'Something scary', 'I want a series', 'Continue watching'];
+
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(
+          title: Text('ONEBR AI', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+          actions: [
+            IconButton(
+              tooltip: ar ? 'مركز ONEBR' : 'ONEBR Center',
+              icon: const Icon(Icons.dashboard_customize_rounded, color: AppColors.primary),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SmartCenterScreen())),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                controller: _scroll,
+                padding: const EdgeInsets.all(16),
+                itemCount: _messages.length + (_loading ? 1 : 0),
+                itemBuilder: (_, i) {
+                  if (_loading && i == _messages.length) {
+                    return Align(alignment: ar ? Alignment.centerRight : Alignment.centerLeft, child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14)),
+                      child: const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
+                    ));
+                  }
+                  final m = _messages[i];
+                  final user = m['from'] == 'user';
+                  return Align(
+                    alignment: user ? (ar ? Alignment.centerLeft : Alignment.centerRight) : (ar ? Alignment.centerRight : Alignment.centerLeft),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                      constraints: const BoxConstraints(maxWidth: 340),
+                      decoration: BoxDecoration(
+                        color: user ? AppColors.primary : s.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: user ? Colors.transparent : s.border),
+                      ),
+                      child: Text(m['text'].toString(), style: TextStyle(color: user ? Colors.white : s.textPrimary, fontSize: 13, height: 1.45)),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (_recommendations.isNotEmpty)
+              SizedBox(
+                height: 185,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _recommendations.length,
+                  itemBuilder: (_, i) {
+                    final it = _recommendations[i];
+                    final poster = StreamService.extractPoster(it);
+                    return GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: Map<String, dynamic>.from(it)))),
+                      child: Container(
+                        width: 105,
+                        margin: const EdgeInsets.only(left: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.card),
+                              child: poster.isEmpty ? Container(color: s.surface) : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover, width: double.infinity),
+                            )),
+                            const SizedBox(height: 5),
+                            Text(_title(it, ar), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            SizedBox(
+              height: 100,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                children: suggestions.map((x) => Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.auto_awesome_rounded, size: 16, color: AppColors.primary),
+                    label: Text(x),
+                    onPressed: () => _ask(x),
+                  ),
+                )).toList(),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        onSubmitted: _ask,
+                        style: TextStyle(color: s.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: ar ? 'اسأل ONEBR AI...' : 'Ask ONEBR AI...',
+                          filled: true,
+                          fillColor: s.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: s.border)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FloatingActionButton(
+                      mini: true,
+                      backgroundColor: AppColors.primary,
+                      onPressed: () => _ask(_controller.text),
+                      child: const Icon(Icons.send_rounded, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SmartCenterScreen extends StatelessWidget {
+  const SmartCenterScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    final items = [
+      [Icons.bar_chart_rounded, ar ? 'إحصائيات المشاهدة' : 'Viewing Statistics', const ViewingStatsScreen()],
+      [Icons.emoji_events_rounded, ar ? 'الإنجازات' : 'Achievements', const AchievementsScreen()],
+      [Icons.qr_code_rounded, ar ? 'مشاركة QR' : 'QR Sharing', const ShareQrScreen()],
+      [Icons.family_restroom_rounded, ar ? 'ملف العائلة المشترك' : 'Shared Family Profile', const FamilySharedProfileScreen()],
+      [Icons.groups_rounded, ar ? 'ONEBR Watch Party' : 'ONEBR Watch Party', const WatchPartyScreen()],
+    ];
+
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(ar ? 'مركز ONEBR الذكي' : 'ONEBR Smart Center', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (_, i) {
+            final item = items[i];
+            return ListTile(
+              tileColor: s.surface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: s.border)),
+              leading: Icon(item[0] as IconData, color: AppColors.primary),
+              title: Text(item[1].toString(), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.w700)),
+              trailing: Icon(ar ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: s.textSecondary),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => item[2] as Widget)),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class ViewingStatsScreen extends StatefulWidget {
+  const ViewingStatsScreen({super.key});
+
+  @override
+  State<ViewingStatsScreen> createState() => _ViewingStatsScreenState();
+}
+
+class _ViewingStatsScreenState extends State<ViewingStatsScreen> {
+  int _seconds = 0;
+  int _episodes = 0;
+  int _streak = 0;
+  Map<String, int> _daily = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final seconds = await LocalStorageService.getWatchSeconds();
+    final daily = await LocalStorageService.getDailyWatchSeconds();
+    final streak = await LocalStorageService.getCurrentStreak();
+    final prefs = await SharedPreferences.getInstance();
+    final profile = prefs.getString('current_active_profile') ?? 'default';
+    final episodes = prefs.getInt('stats_episodes_$profile') ?? 0;
+    if (mounted) setState(() {
+      _seconds = seconds;
+      _daily = daily;
+      _streak = streak;
+      _episodes = episodes;
+    });
+  }
+
+  String _duration(int sec) {
+    final h = sec ~/ 3600;
+    final m = (sec % 3600) ~/ 60;
+    return h > 0 ? '$hس ${m}د' : '$m د';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    final maxDay = _daily.values.fold<int>(1, (a, b) => a > b ? a : b);
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(ar ? 'إحصائيات المشاهدة' : 'Viewing Statistics', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Row(
+                children: [
+                  Expanded(child: _statCard(ar ? 'وقت المشاهدة' : 'Watch Time', _duration(_seconds), Icons.timer_rounded)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _statCard(ar ? 'الحلقات' : 'Episodes', '$_episodes', Icons.live_tv_rounded)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _statCard(ar ? 'سلسلة الأيام' : 'Viewing Streak', ar ? '$_streak يوم' : '$_streak days', Icons.local_fire_department_rounded),
+              const SizedBox(height: 20),
+              Text(ar ? 'نشاط آخر 7 أيام' : 'Last 7 Days', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 12),
+              Container(
+                height: 210,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border)),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: _daily.entries.map((e) {
+                    final value = e.value;
+                    final h = 20 + 145 * (value / maxDay);
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(value >= 60 ? '${value ~/ 60}د' : '${value}ث', style: TextStyle(color: s.textSecondary, fontSize: 9)),
+                        const SizedBox(height: 4),
+                        Container(width: 24, height: h.clamp(20, 145).toDouble(), decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8))),
+                        const SizedBox(height: 6),
+                        Text(e.key.substring(5), style: TextStyle(color: s.textSecondary, fontSize: 9)),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statCard(String title, String value, IconData icon) {
+    final s = AppSettings.instance;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primary),
+          const SizedBox(height: 12),
+          Text(value, style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(title, style: TextStyle(color: s.textSecondary, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class AchievementsScreen extends StatefulWidget {
+  const AchievementsScreen({super.key});
+
+  @override
+  State<AchievementsScreen> createState() => _AchievementsScreenState();
+}
+
+class _AchievementsScreenState extends State<AchievementsScreen> {
+  Set<String> _unlocked = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final seconds = await LocalStorageService.getWatchSeconds();
+    final watched = await LocalStorageService.getWatchedEpisodes();
+    final streak = await LocalStorageService.getCurrentStreak();
+    final state = await LocalStorageService.getAchievementState();
+    final ids = <String>{...state.keys};
+    if (seconds >= 60) ids.add('first_hour'); // legacy-compatible threshold naming
+    if (seconds >= 3600) ids.add('hour');
+    if (watched.length >= 10) ids.add('ten_eps');
+    if (streak >= 7) ids.add('streak7');
+    if (DateTime.now().hour >= 22 || DateTime.now().hour < 4) ids.add('night');
+    await LocalStorageService.saveAchievementState({for (final id in ids) id: DateTime.now().toIso8601String()});
+    if (mounted) setState(() => _unlocked = ids);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    final defs = [
+      ['first', ar ? 'أول مشاهدة' : 'First Watch', ar ? 'شاهد أول دقيقة داخل ONEBR.' : 'Watch your first minute on ONEBR.', Icons.play_circle_fill_rounded],
+      ['hour', ar ? 'ساعة سينمائية' : 'Cinema Hour', ar ? 'أكمل ساعة مشاهدة.' : 'Reach one hour of watch time.', Icons.movie_filter_rounded],
+      ['ten_eps', ar ? 'عاشق المسلسلات' : 'Series Fan', ar ? 'شاهد 10 حلقات.' : 'Watch 10 episodes.', Icons.live_tv_rounded],
+      ['streak7', ar ? 'أسبوع متواصل' : 'Seven-Day Streak', ar ? 'شاهد لمدة 7 أيام متتالية.' : 'Watch on seven consecutive days.', Icons.local_fire_department_rounded],
+      ['night', ar ? 'بومة الليل' : 'Night Owl', ar ? 'شاهد في وقت متأخر من الليل.' : 'Watch late at night.', Icons.nightlight_round],
+    ];
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(ar ? 'نظام الإنجازات' : 'Achievements', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: defs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (_, i) {
+            final d = defs[i];
+            final id = d[0].toString();
+            final unlocked = _unlocked.contains(id) || (id == 'first' && _unlocked.contains('first_hour'));
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: unlocked ? AppColors.primary : s.border)),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 27,
+                    backgroundColor: unlocked ? AppColors.primary.withOpacity(0.18) : s.surfaceLight,
+                    child: Icon(d[3] as IconData, color: unlocked ? AppColors.primary : s.textSecondary),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d[1].toString(), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text(d[2].toString(), style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                    ],
+                  )),
+                  Icon(unlocked ? Icons.check_circle_rounded : Icons.lock_outline_rounded, color: unlocked ? Colors.greenAccent : s.textSecondary),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class ActorScreen extends StatefulWidget {
+  final String actorName;
+  const ActorScreen({super.key, required this.actorName});
+
+  @override
+  State<ActorScreen> createState() => _ActorScreenState();
+}
+
+class _ActorScreenState extends State<ActorScreen> {
+  List<dynamic> _works = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final result = await StreamService.searchContent(widget.actorName, level: AppSettings.instance.appFilterMode);
+      if (mounted) setState(() {
+        _works = result.take(30).toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(widget.actorName, style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+            : GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, crossAxisSpacing: 10, mainAxisSpacing: 12, childAspectRatio: .58),
+                itemCount: _works.length,
+                itemBuilder: (_, i) {
+                  final it = _works[i];
+                  final poster = StreamService.extractPoster(it);
+                  final title = ar ? (it['ar_title'] ?? it['en_title'] ?? '') : (it['en_title'] ?? it['ar_title'] ?? '');
+                  return InkWell(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: Map<String, dynamic>.from(it)))),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(AppRadius.card), child: poster.isEmpty ? Container(color: s.surface) : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover, width: double.infinity))),
+                        const SizedBox(height: 5),
+                        Text(title.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
+
+class ShareQrScreen extends StatefulWidget {
+  final Map<String, dynamic>? media;
+  const ShareQrScreen({super.key, this.media});
+
+  @override
+  State<ShareQrScreen> createState() => _ShareQrScreenState();
+}
+
+class _ShareQrScreenState extends State<ShareQrScreen> {
+  final _id = TextEditingController();
+  final _title = TextEditingController();
+
+  String get _payload {
+    final id = _id.text.trim();
+    final title = _title.text.trim();
+    if (id.isEmpty) return 'ONEBR TV';
+    return jsonEncode({
+      'app': 'ONEBR TV',
+      'type': 'media',
+      'id': id,
+      'title': title,
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.media != null) {
+      _id.text = (widget.media!['nb'] ?? widget.media!['id'] ?? '').toString();
+      _title.text = (widget.media!['en_title'] ?? widget.media!['ar_title'] ?? '').toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _id.dispose();
+    _title.dispose();
+    super.dispose();
+  }
+
+  Future<void> _share() async {
+    final text = _payload;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppSettings.instance.appLanguage == 'ar' ? 'تم نسخ بيانات المشاركة.' : 'Share data copied.')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(ar ? 'مشاركة عبر QR' : 'QR Sharing', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            TextField(controller: _id, style: TextStyle(color: s.textPrimary), decoration: InputDecoration(labelText: ar ? 'معرف العمل' : 'Media ID')),
+            const SizedBox(height: 10),
+            TextField(controller: _title, style: TextStyle(color: s.textPrimary), decoration: InputDecoration(labelText: ar ? 'اسم العمل' : 'Title')),
+            const SizedBox(height: 20),
+            Center(
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _id,
+                builder: (_, __, ___) => Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                  child: QrImageView(data: _payload, size: 250, backgroundColor: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(_payload, textAlign: TextAlign.center, style: TextStyle(color: s.textSecondary, fontSize: 10)),
+            const SizedBox(height: 12),
+            CupertinoButton(color: AppColors.primary, borderRadius: BorderRadius.circular(14), onPressed: _share, child: Text(ar ? 'نسخ ومشاركة البيانات' : 'Copy & Share Data')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FamilySharedProfileScreen extends StatefulWidget {
+  const FamilySharedProfileScreen({super.key});
+
+  @override
+  State<FamilySharedProfileScreen> createState() => _FamilySharedProfileScreenState();
+}
+
+class _FamilySharedProfileScreenState extends State<FamilySharedProfileScreen> {
+  bool _loading = true;
+  bool _enabled = false;
+  List<Map<String, dynamic>> _watchlist = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).collection('family').doc('shared').get();
+      final d = doc.data();
+      final raw = d?['watchlist'];
+      if (mounted) setState(() {
+        _enabled = d?['enabled'] == true;
+        _watchlist = raw is List ? List<Map<String, dynamic>>.from(raw) : [];
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sync() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final ar = AppSettings.instance.appLanguage == 'ar';
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ar ? 'سجّل الدخول أولاً لتفعيل الملف العائلي.' : 'Sign in first to enable the family profile.')));
+      return;
+    }
+    final list = await LocalStorageService.getList('user_watchlist');
+    await FirebaseFirestore.instance.collection('users').doc(uid).collection('family').doc('shared').set({
+      'enabled': true,
+      'watchlist': list,
+      'owner_uid': uid,
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (mounted) setState(() {
+      _enabled = true;
+      _watchlist = list;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text(ar ? 'ملف المشاهدة العائلي' : 'Family Shared Profile', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border)),
+              child: Column(
+                children: [
+                  Icon(Icons.family_restroom_rounded, color: AppColors.primary, size: 48),
+                  const SizedBox(height: 12),
+                  Text(ar ? 'ملف مشترك لمكتبة العائلة' : 'A shared family library profile', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Text(
+                    ar ? 'يحفظ قائمة المشاهدة المشتركة في Firestore تحت حسابك.' : 'Stores the shared watchlist in Firestore under your account.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: s.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  CupertinoButton(color: AppColors.primary, borderRadius: BorderRadius.circular(14), onPressed: _sync, child: Text(_enabled ? (ar ? 'مزامنة الآن' : 'Sync Now') : (ar ? 'تفعيل الملف العائلي' : 'Enable Family Profile'))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(ar ? 'عناصر الملف: ${_watchlist.length}' : 'Shared items: ${_watchlist.length}', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WatchPartyScreen extends StatefulWidget {
+  const WatchPartyScreen({super.key});
+
+  @override
+  State<WatchPartyScreen> createState() => _WatchPartyScreenState();
+}
+
+class _WatchPartyScreenState extends State<WatchPartyScreen> {
+  final _room = TextEditingController();
+  final _media = TextEditingController();
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+  String? _roomCode;
+  Map<String, dynamic> _state = {};
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _room.dispose();
+    _media.dispose();
+    super.dispose();
+  }
+
+  String _generateCode() {
+    final seed = DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
+    return seed.substring(seed.length - 6);
+  }
+
+  Future<void> _create() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final ar = AppSettings.instance.appLanguage == 'ar';
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ar ? 'سجّل الدخول أولاً.' : 'Sign in first.')));
+      return;
+    }
+    final code = _generateCode();
+    final ref = FirebaseFirestore.instance.collection('watch_parties').doc(code);
+    await ref.set({
+      'host_uid': uid,
+      'media_id': _media.text.trim(),
+      'position_ms': 0,
+      'is_playing': false,
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+    _join(code);
+  }
+
+  void _join(String code) {
+    final clean = code.trim().toUpperCase();
+    if (clean.isEmpty) return;
+    _sub?.cancel();
+    final ref = FirebaseFirestore.instance.collection('watch_parties').doc(clean);
+    _sub = ref.snapshots().listen((doc) {
+      if (doc.exists && mounted) setState(() => _state = doc.data() ?? {});
+    });
+    setState(() => _roomCode = clean);
+  }
+
+  Future<void> _setPlayback({bool? playing, int? positionMs}) async {
+    if (_roomCode == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final data = <String, dynamic>{
+      'updated_at': FieldValue.serverTimestamp(),
+      'last_writer': uid,
+    };
+    if (playing != null) data['is_playing'] = playing;
+    if (positionMs != null) data['position_ms'] = positionMs;
+    await FirebaseFirestore.instance.collection('watch_parties').doc(_roomCode).set(data, SetOptions(merge: true));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final ar = s.appLanguage == 'ar';
+    return Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: s.bg,
+        appBar: AppBar(title: Text('ONEBR Watch Party', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold))),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextField(controller: _media, style: TextStyle(color: s.textPrimary), decoration: InputDecoration(labelText: ar ? 'Media ID (للمضيف)' : 'Media ID (host)')),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(child: CupertinoButton(color: AppColors.primary, borderRadius: BorderRadius.circular(14), onPressed: _busy ? null : _create, child: Text(ar ? 'إنشاء غرفة' : 'Create Room'))),
+                const SizedBox(width: 10),
+                Expanded(child: CupertinoButton(color: s.surface, borderRadius: BorderRadius.circular(14), onPressed: () => _join(_room.text), child: Text(ar ? 'انضمام' : 'Join', style: TextStyle(color: s.textPrimary)))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(controller: _room, textCapitalization: TextCapitalization.characters, style: TextStyle(color: s.textPrimary), decoration: InputDecoration(labelText: ar ? 'رمز الغرفة' : 'Room Code')),
+            if (_roomCode != null) ...[
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.primary)),
+                child: Column(
+                  children: [
+                    Text(_roomCode!, style: const TextStyle(color: AppColors.primary, fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 4)),
+                    const SizedBox(height: 8),
+                    Text(ar ? 'شاركه مع أصدقائك' : 'Share this code with your friends', style: TextStyle(color: s.textSecondary)),
+                    const Divider(height: 28),
+                    Text(ar ? 'الحالة: ${_state['is_playing'] == true ? 'تشغيل' : 'متوقف'}' : 'Status: ${_state['is_playing'] == true ? 'Playing' : 'Paused'}', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Text(ar ? 'المعرف: ${_state['media_id'] ?? '—'}' : 'Media: ${_state['media_id'] ?? '—'}', style: TextStyle(color: s.textSecondary)),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(onPressed: () => _setPlayback(playing: true), icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 40)),
+                        IconButton(onPressed: () => _setPlayback(playing: false), icon: Icon(Icons.pause_circle_filled_rounded, color: s.textPrimary, size: 40)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              ar
+                  ? 'ملاحظة: Watch Party هنا يزامن حالة الغرفة (تشغيل/إيقاف/موضع) عبر Firestore. لربطه مباشرة بمشغل الفيديو، مرّر roomCode إلى PlayerScreen وأطبق position_ms/is_playing على VideoPlayerController.'
+                  : 'Note: this Watch Party syncs room state (play/pause/position) through Firestore. To bind it directly to the video player, pass the room code into PlayerScreen and apply position_ms/is_playing to the VideoPlayerController.',
+              style: TextStyle(color: s.textSecondary, fontSize: 11, height: 1.5),
             ),
           ],
         ),
