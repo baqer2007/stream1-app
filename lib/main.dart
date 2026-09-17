@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'cloud_firestore/cloud_firestore.dart' if (dart.library.io) 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_intent_plus/android_intent.dart';
@@ -1587,6 +1587,20 @@ class AppSettings extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.setString('auth_user_name', name);
     await p.setString('auth_user_email', email);
+
+    // Keep a small Firestore user index so the Admin Dashboard can
+    // grant/revoke Premium by email without exposing Firebase Auth admin APIs.
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && email.trim().isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).set({
+          'uid': currentUser.uid,
+          'email': email.trim().toLowerCase(),
+          'displayName': name.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+    }
   }
 
   void logout() async {
@@ -5723,6 +5737,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   final _popupTitleCtrl = TextEditingController();
   final _popupBodyCtrl = TextEditingController();
   final _popupUrlCtrl = TextEditingController();
+  final _premiumEmailCtrl = TextEditingController();
+  final _premiumDaysCtrl = TextEditingController(text: '30');
+  bool _premiumLoading = false;
+  Map<String, dynamic>? _premiumUserPreview;
 
   bool _maintenance = false;
   bool _censorActive = true;
@@ -5750,7 +5768,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 5, vsync: this);
     _loadCurrentConfig();
     _loadCloudStats();
     _testServerPings();
@@ -5935,6 +5953,101 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     }
   }
 
+  Future<void> _findPremiumUser() async {
+    final email = _premiumEmailCtrl.text.trim().toLowerCase();
+    if (email.isEmpty || !email.contains('@')) return;
+    setState(() => _premiumLoading = true);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (mounted) {
+        setState(() {
+          _premiumUserPreview = snap.docs.isEmpty
+              ? null
+              : {'uid': snap.docs.first.id, ...snap.docs.first.data()};
+          _premiumLoading = false;
+        });
+      }
+      if (snap.docs.isEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لم يتم العثور على المستخدم. يجب أن يكون قد سجل الدخول إلى التطبيق مرة واحدة.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _premiumLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر البحث عن المستخدم: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _setPremiumForEmail(bool active) async {
+    final email = _premiumEmailCtrl.text.trim().toLowerCase();
+    if (email.isEmpty) return;
+    setState(() => _premiumLoading = true);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) {
+        throw Exception('المستخدم غير موجود في فهرس المستخدمين. اجعله يسجل الدخول أولاً.');
+      }
+
+      final ref = snap.docs.first.reference;
+      if (active) {
+        final days = int.tryParse(_premiumDaysCtrl.text.trim()) ?? 30;
+        final safeDays = days.clamp(1, 3650);
+        final expiry = DateTime.now().add(Duration(days: safeDays));
+        await ref.set({
+          'subscription': {
+            'plan': 'premium',
+            'status': 'active',
+            'expiresAt': Timestamp.fromDate(expiry),
+            'activatedBy': FirebaseAuth.instance.currentUser?.email,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else {
+        await ref.set({
+          'subscription': {
+            'plan': 'free',
+            'status': 'inactive',
+            'expiresAt': Timestamp.fromDate(DateTime.now()),
+            'deactivatedBy': FirebaseAuth.instance.currentUser?.email,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (FirebaseAuth.instance.currentUser?.uid == snap.docs.first.id) {
+        await PremiumService.refresh();
+      }
+      if (mounted) {
+        setState(() => _premiumLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(active ? 'تم تفعيل ONEBR PREMIUM لهذا البريد بكل المميزات ✅' : 'تم إلغاء Premium لهذا البريد')),
+        );
+        await _findPremiumUser();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _premiumLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل تحديث الاشتراك: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
@@ -5955,6 +6068,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               Tab(icon: Icon(Icons.speed_rounded, size: 20), text: 'السيرفرات والشبكة'),
               Tab(icon: Icon(Icons.shield_rounded, size: 20), text: 'إدارة الحجب'),
               Tab(icon: Icon(Icons.analytics_rounded, size: 20), text: 'الإحصائيات'),
+              Tab(icon: Icon(Icons.workspace_premium_rounded, size: 20), text: 'Premium'),
             ],
           ),
         ),
@@ -6305,6 +6419,117 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                       ),
                     ],
                   ),
+
+            // ===================== PREMIUM USER MANAGEMENT =====================
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: s.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.amber.withOpacity(0.45)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 28),
+                          SizedBox(width: 10),
+                          Text('إدارة ONEBR PREMIUM', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'أدخل بريد المستخدم ثم فعّل Premium. عند التفعيل يحصل الحساب على جميع مميزات Premium تلقائياً.',
+                        style: TextStyle(color: s.textSecondary, fontSize: 12),
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _premiumEmailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'بريد المستخدم',
+                          prefixIcon: Icon(Icons.email_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _premiumDaysCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'مدة Premium بالأيام',
+                          prefixIcon: Icon(Icons.calendar_month_rounded),
+                          helperText: 'من 1 إلى 3650 يوم — الافتراضي 30',
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _premiumLoading ? null : _findPremiumUser,
+                          icon: _premiumLoading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.search_rounded),
+                          label: const Text('بحث عن المستخدم'),
+                        ),
+                      ),
+                      if (_premiumUserPreview != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: s.surfaceLight, borderRadius: BorderRadius.circular(12)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('المستخدم: ${_premiumUserPreview!['email'] ?? _premiumEmailCtrl.text}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Text('UID: ${_premiumUserPreview!['uid']}', style: TextStyle(color: s.textSecondary, fontSize: 10)),
+                              const SizedBox(height: 4),
+                              Text(
+                                ((_premiumUserPreview!['subscription'] is Map) && ((_premiumUserPreview!['subscription'] as Map)['status'] ?? '') == 'active') ? 'الحالة: Premium فعال' : 'الحالة: Free',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[700], foregroundColor: Colors.black),
+                              onPressed: _premiumLoading ? null : () => _setPremiumForEmail(true),
+                              icon: const Icon(Icons.workspace_premium_rounded),
+                              label: const Text('تفعيل Premium'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _premiumLoading ? null : () => _setPremiumForEmail(false),
+                              icon: const Icon(Icons.remove_circle_outline),
+                              label: const Text('إلغاء Premium'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
+                  child: const Text(
+                    'ملاحظة: البحث يعتمد على فهرس users. المستخدم الجديد يُضاف إلى الفهرس عند تسجيل دخوله بالتطبيق. لا يتم استخدام Firebase Auth Admin SDK داخل التطبيق.',
+                    style: TextStyle(fontSize: 11, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -8183,4 +8408,3 @@ class FocusBuilder extends StatelessWidget {
       ),
     );
   }
-}
