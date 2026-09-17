@@ -3,10 +3,10 @@ import 'package:http/http.dart' as http;
 import 'main.dart';
 
 class SecureVault {
+  // مفاتيح فك التعمية في الذاكرة الحية فقط
   static const int _k1 = 0x5C;
   static const int _k2 = 0x3A;
 
-  // فك التشفير في الذاكرة الحية (RAM) فقط أثناء تشغيل الدالة
   static String resolve(List<int> bytes) {
     final decoded = bytes.map((b) => (b ^ _k1) ^ _k2).toList();
     return utf8.decode(decoded);
@@ -14,35 +14,27 @@ class SecureVault {
 }
 
 class StreamService {
-  // شفرة: "https://cee.buzz/api/android"
+  // مفكوكها: https://cee.buzz/api/android
   static final List<int> _rawBase = [
     54, 38, 38, 34, 37, 104, 121, 121, 49, 51, 51, 120, 52, 39, 48, 48, 121, 47, 34, 59, 121, 47, 56, 50, 36, 57, 50
   ];
 
-  // شفرة: "https://cnth2.cee.buzz/vascin-poster-images/"
-  static final List<int> _rawCdn = [
-    54, 38, 38, 34, 37, 104, 121, 121, 49, 56, 38, 50, 100, 120, 49, 51, 51, 120, 52, 39, 48, 48, 121, 36, 47, 37, 49, 59, 56, 123, 34, 57, 37, 38, 51, 36, 123, 59, 55, 47, 53, 51, 37, 121
-  ];
-
-  // شفرة: "https://cee.buzz/"
+  // مفكوكها: https://cee.buzz/
   static final List<int> _rawRef = [
     54, 38, 38, 34, 37, 104, 121, 121, 49, 51, 51, 120, 52, 39, 48, 48, 121
   ];
 
-  // إمكانية السحب الديناميكي من لوحة التحكم السحابية أو الرجوع للمشفر المحلي
   static String get _baseUrl {
     final custom = RemoteAdminConfig.instance.customBaseUrl.trim();
     if (custom.isNotEmpty) return custom;
-    return SecureVault.resolve(_rawBase);
+    return 'https://cee.buzz/api/android';
   }
-
-  static String get _cdnImages => SecureVault.resolve(_rawCdn);
 
   static Map<String, String> get stealthHeaders => {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Connection': 'keep-alive',
-    'Referer': SecureVault.resolve(_rawRef),
+    'Referer': 'https://cee.buzz/',
   };
 
   static Future<List<dynamic>> fetchFeed({
@@ -297,7 +289,7 @@ class StreamService {
     }
     if (item['img'] != null && item['img'].toString().isNotEmpty) {
       final img = item['img'].toString();
-      return img.startsWith('http') ? img : '$_cdnImages$img';
+      return img.startsWith('http') ? img : 'https://cnth2.cee.buzz/vascin-poster-images/$img';
     }
     return '';
   }
