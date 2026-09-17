@@ -94,12 +94,12 @@ class Tr {
     'fit_screen': {'ar': 'ملء الشاشة', 'en': 'Fit Screen'},
     'original': {'ar': 'طبيعي', 'en': 'Original'},
     'clip_reel': {'ar': 'قص ومشاركة ريلز (Reel/Short)', 'en': 'Clip & Share (Reel/Short)'},
-    'clip_desc': {'ar': 'اختر مدة المقطع لمشاركته فورياً مع أصدقائك:', 'en': 'Select clip length to share:'},
+    'clip_desc': {'ar': 'حدد طول المقطع لمشاركته مع أصدقائك:', 'en': 'Select clip length to share:'},
     'share_clip_btn': {'ar': 'مشاركة المقطع الآن 🚀', 'en': 'Share Clip Now 🚀'},
     'custom_subs': {'ar': 'إضافة ترجمة خارجية مخصصة', 'en': 'Add Custom Subtitles'},
-    'sub_offset': {'ar': 'مزامنة توقيت الترجمة (ثوانٍ)', 'en': 'Subtitle Sync Offset (seconds)'},
-    'request_media': {'ar': 'طلب عمل سينمائي', 'en': 'Request Movie / Series'},
-    'request_desc': {'ar': 'أدخل اسم العمل وسنقوم بإضافته للمنصة:', 'en': 'Enter title to be added:'},
+    'sub_offset': {'ar': 'مزامنة توقيت الترجمة (ثوانٍ)', 'en': 'Subtitle Sync Offset'},
+    'request_media': {'ar': 'طلب فيلم أو مسلسل', 'en': 'Request Movie/Series'},
+    'request_desc': {'ar': 'أرسل اسم العمل الذي ترغب في إضافته وسنوفره لك:', 'en': 'Request title to be added:'},
     'send_request': {'ar': 'إرسال الطلب', 'en': 'Submit Request'},
     'social_accounts': {'ar': 'حسابات وتواصل التطبيق الرسمية', 'en': 'Official Community & Support'},
     'open_external': {'ar': 'مشغل خارجي (VLC / MX)', 'en': 'External Player (VLC / MX)'},
@@ -129,9 +129,6 @@ class SecureHttpOverrides extends HttpOverrides {
   }
 }
 
-// ==========================================
-// إدارة الإعدادات السحابية والروابط للأدمن
-// ==========================================
 class RemoteAdminConfig {
   static final RemoteAdminConfig instance = RemoteAdminConfig._();
   RemoteAdminConfig._();
@@ -140,7 +137,7 @@ class RemoteAdminConfig {
   String maintenanceMsg = 'التطبيق في وضع الصيانة المجدولة حالياً، يرجى المحاولة لاحقاً 🛠️';
   String globalAlert = '';
   bool globalCensorEnabled = true;
-  allowDownloads = true;
+  bool allowDownloads = true;
   String defaultGlobalQuality = '360p';
   int minAppVersion = 1;
   String updateDownloadUrl = '';
@@ -153,7 +150,7 @@ class RemoteAdminConfig {
   String popupBody = '';
   String popupActionUrl = '';
 
-  // حسابات التواصل والدعم
+  // حسابات التواصل والمجتمع
   String telegramUrl = 'https://t.me/onebr_tv';
   String whatsappUrl = 'https://wa.me/9647700000000';
   String facebookUrl = 'https://facebook.com/onebrtv';
@@ -161,7 +158,7 @@ class RemoteAdminConfig {
   String websiteUrl = 'https://onebr.tv';
   String supportEmail = 'support@onebr.tv';
 
-  // مفاتيح التحكم السحابية بالميزات (Feature Flags)
+  // مفاتيح الميزات السحابية (Feature Flags)
   bool featureExternalPlayer = true;
   bool featureDownloads = true;
   bool featureClips = true;
@@ -169,7 +166,7 @@ class RemoteAdminConfig {
   bool featureRoulette = true;
   bool featureUserRequests = true;
 
-  // مسارات الترجمة السحابية المخصصة
+  // تجاوزات الترجمة السحابية
   Map<String, dynamic> subtitleOverrides = {};
 
   static const List<String> authorizedAdminEmails = [
@@ -860,6 +857,12 @@ class AppSettings extends ChangeNotifier {
     (await SharedPreferences.getInstance()).setBool('player_dual_sub', val);
   }
 
+  void updateSkipScenes(bool val) async {
+    skipSensitiveScenes = val;
+    notifyListeners();
+    (await SharedPreferences.getInstance()).setBool('player_skip_sens', val);
+  }
+
   void updateSmartNotifications(bool val) async {
     smartNotifications = val;
     notifyListeners();
@@ -951,7 +954,7 @@ void main() async {
 }
 
 // ==========================================
-// التطبيق مع الربط التفاعلي للثيم
+// التطبيق مع التبديل اللحظي للثيم وفحص الحظر
 // ==========================================
 class OnebrTvApp extends StatefulWidget {
   const OnebrTvApp({super.key});
@@ -976,6 +979,9 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
       builder: (context, _) {
         final s = AppSettings.instance;
         final r = RemoteAdminConfig.instance;
+
+        // التحقق من الحظر التلقائي (Anti-Fraud)
+        final isBanned = r.bannedDeviceIds.contains(s.userEmail) || r.bannedDeviceIds.contains(s.userName);
 
         return MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -1013,11 +1019,40 @@ class _OnebrTvAppState extends State<OnebrTvApp> {
               surface: AppColors.darkSurface,
             ),
           ),
-          home: r.isMaintenance && !RemoteAdminConfig.isEmailAdmin(s.userEmail)
-              ? const MaintenanceLockScreen()
-              : const MainNavigationHolder(),
+          home: isBanned
+              ? const BannedUserLockScreen()
+              : (r.isMaintenance && !RemoteAdminConfig.isEmailAdmin(s.userEmail)
+                  ? const MaintenanceLockScreen()
+                  : const MainNavigationHolder()),
         );
       },
+    );
+  }
+}
+
+class BannedUserLockScreen extends StatelessWidget {
+  const BannedUserLockScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    return Scaffold(
+      backgroundColor: s.bg,
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.gavel_rounded, color: Colors.redAccent, size: 80),
+              SizedBox(height: 20),
+              Text('تم حظر الوصول إلى الخدمة', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+              SizedBox(height: 10),
+              Text('تم تقييد حسابك أو جهازك لمخالفة سياسة الاستخدام.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2793,7 +2828,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isAr ? 'الإعلان الترويجي الرسمي غير متوفر لهذا العمل' : 'Official trailer not available')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(Tr.text('watch_trailer'))));
     }
   }
 
@@ -2813,7 +2848,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
         builder: (_) => PlayerScreen(
           mediaId: targetId,
           title: title,
-          subtitleTextHeader: isAr ? '${Tr.text('season')} $_selectedSeason - ${Tr.text('episode')} $idx' : 'Season $_selectedSeason - Episode $idx',
+          subtitleTextHeader: '${Tr.text('season')} $_selectedSeason - ${Tr.text('episode')} $idx',
           videoUrl: '',
           qualities: const [],
           episodes: _seasonsMap[_selectedSeason] ?? [],
@@ -3366,9 +3401,6 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
   }
 }
 
-// ==========================================
-// مشغل الفيديو مع أدوات الريلز والترجمة
-// ==========================================
 class PlayerScreen extends StatefulWidget {
   final String mediaId;
   final String title;
@@ -3569,7 +3601,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _currentStreamUrl = targetUrl;
       _initPlayer(targetUrl);
 
-      // فحص إذا كان هناك رابط ترجمة مخصص ومسجل في الأدمن للعمل
+      // تطبيق الترجمة السحابية المخصصة للأدمن
       final overrideSub = RemoteAdminConfig.instance.subtitleOverrides[id];
       String subAr = subInfo?['arTranslationFilePath']?.toString() ?? '';
       if (overrideSub != null && overrideSub['url'] != null) {
@@ -3849,7 +3881,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
-    // الحجب التلقائي يعمل في الخلفية بهدوء وبدون أي زر على الشاشة
+    // الحجب التلقائي الصامت (تم حذف الزر اليدوي من الواجهة)
     if (AppSettings.instance.skipSensitiveScenes && _sensitiveSegments.isNotEmpty && !_isSeekingNow) {
       final currentSec = pos.inSeconds;
       for (var seg in _sensitiveSegments) {
@@ -3865,7 +3897,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    // توقيت الترجمة مع مراعاة الإزاحة المخصصة
+    // توقيت الترجمة مع مراعاة الإزاحة (Offset)
     final offsetMs = (AppSettings.instance.subOffsetSeconds * 1000).toInt();
     final adjustedPos = Duration(milliseconds: (pos.inMilliseconds + offsetMs).clamp(0, dur.inMilliseconds));
 
@@ -4041,179 +4073,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  // أداة إنشاء ومشاركة الريلز
-  void _openReelsClipperDialog() {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    final curSec = _controller!.value.position.inSeconds;
-    int clipLength = 15;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDState) => Directionality(
-          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: AppSettings.instance.glassFill,
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.movie_creation_rounded, color: AppColors.primary, size: 24),
-                        const SizedBox(width: 8),
-                        Text(Tr.text('clip_reel'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(Tr.text('clip_desc'), style: TextStyle(color: AppSettings.instance.textSecondary, fontSize: 12)),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [5, 10, 15, 30].map((sec) {
-                        final isSel = clipLength == sec;
-                        return ChoiceChip(
-                          label: Text('$sec ثوانٍ', style: TextStyle(color: isSel ? Colors.white : AppSettings.instance.textPrimary)),
-                          selected: isSel,
-                          selectedColor: AppColors.primary,
-                          backgroundColor: AppSettings.instance.surface,
-                          onSelected: (_) => setDState(() => clipLength = sec),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: AppSettings.instance.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppSettings.instance.border, width: 0.5)),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('من توقيت ${_formatTime(Duration(seconds: curSec))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
-                          const Icon(Icons.arrow_forward_rounded, size: 16, color: AppColors.primary),
-                          Text('إلى ${_formatTime(Duration(seconds: curSec + clipLength))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          final shareText = '🎬 شاهد هذه اللقطة من "${widget.title}" بدقة 4K عبر تطبيق ONEBR TV!\n'
-                              '⏱️ التوقيت: ${_formatTime(Duration(seconds: curSec))} - ${_formatTime(Duration(seconds: curSec + clipLength))}\n'
-                              '📥 حمل التطبيق مجاناً: https://onebr.tv/watch/${widget.mediaId}?t=$curSec';
-                          Clipboard.setData(ClipboardData(text: shareText));
-                          final uri = Uri.parse('sms:?body=${Uri.encodeComponent(shareText)}');
-                          launchUrl(uri).catchError((_) => false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('تم نسخ وتجهيز كليب الريلز للمشاركة بنجاح! 🚀')),
-                          );
-                        },
-                        child: Text(Tr.text('share_clip_btn'), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // أداة استيراد الترجمات الخارجية وتعديل التوقيت
-  void _openCustomSubtitlesDialog() {
-    final subUrlCtrl = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDState) => Directionality(
-          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: AppSettings.instance.glassFill,
-                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(Tr.text('custom_subs'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 12),
-                    CupertinoTextField(
-                      controller: subUrlCtrl,
-                      placeholder: 'https://example.com/arabic_sub.srt',
-                      style: TextStyle(color: AppSettings.instance.textPrimary),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(12),
-                        onPressed: () {
-                          if (subUrlCtrl.text.trim().isNotEmpty) {
-                            Navigator.pop(ctx);
-                            _loadSubs(subUrlCtrl.text.trim(), isSecondary: false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('تم تحميل ملف الترجمة الخارجي وتطبيقه! 📝')),
-                            );
-                          }
-                        },
-                        child: const Text('تحميل وتطبيق الترجمة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
-                      ),
-                    ),
-                    Divider(color: AppSettings.instance.border, height: 28),
-                    Text(Tr.text('sub_offset'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline_rounded, color: AppColors.primary, size: 28),
-                          onPressed: () {
-                            setDState(() {
-                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds - 0.5);
-                            });
-                          },
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text('${AppSettings.instance.subOffsetSeconds.toStringAsFixed(1)}s', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 28),
-                          onPressed: () {
-                            setDState(() {
-                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds + 0.5);
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showEpisodesDrawer() {
     HapticFeedback.selectionClick();
     final isAr = AppSettings.instance.appLanguage == 'ar';
@@ -4382,17 +4241,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       Divider(color: settings.border, height: 1),
                     ],
-                    if (r.featureCustomSubtitles) ...[
-                      ListTile(
-                        leading: const Icon(Icons.subtitles_outlined, color: Colors.cyanAccent),
-                        title: Text(Tr.text('custom_subs'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _openCustomSubtitlesDialog();
-                        },
-                      ),
-                      Divider(color: settings.border, height: 1),
-                    ],
                     ListTile(
                       leading: const Icon(Icons.report_problem_rounded, color: Colors.amber),
                       title: Text(Tr.text('report_issue'), style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -4411,6 +4259,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         _showSpeedPicker(isAr);
                       },
                     ),
+                    if (!widget.isLocalFile && _currentQualities.isNotEmpty) ...[
+                      Divider(color: settings.border, height: 1),
+                      ListTile(
+                        leading: Icon(Icons.hd_rounded, color: settings.textSecondary),
+                        title: Text(isAr ? 'دقة وجودة الفيديو' : 'Video Quality', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        trailing: Text(_isAutoQuality ? (isAr ? 'تلقائي (Auto)' : 'Auto') : _activeQuality, style: TextStyle(color: _isAutoQuality ? AppColors.primary : settings.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showQualityPicker(isAr);
+                        },
+                      ),
+                    ],
                     Divider(color: settings.border, height: 1),
                     ListTile(
                       leading: Icon(Icons.timer_outlined, color: settings.textSecondary),
@@ -4430,6 +4290,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         activeColor: AppColors.primary,
                         onChanged: (v) => setState(() => settings.updateDualSubtitles(v)),
                       ),
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.shield_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'إزالة اللقطات الحساسة تلقائياً' : 'Auto Skip Sensitive Scenes', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: CupertinoSwitch(
+                        value: settings.skipSensitiveScenes,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) => setState(() => settings.updateSkipScenes(v)),
+                      ),
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.fast_forward_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'فترة تمرير الفيديو' : 'Seek Duration', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Text(isAr ? '${settings.seekDuration} ثوانٍ' : '${settings.seekDuration}s', style: TextStyle(color: settings.textSecondary, fontSize: 12)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSeekPicker(isAr);
+                      },
+                    ),
+                    Divider(color: settings.border, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.closed_caption_rounded, color: settings.textSecondary),
+                      title: Text(isAr ? 'إعدادات ومكان الترجمة' : 'Subtitle Settings & Position', style: TextStyle(color: settings.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: settings.textSecondary, size: 20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const SubtitleSettingsScreen()));
+                      },
                     ),
                     Divider(color: settings.border, height: 1),
                     ListTile(
@@ -4544,6 +4434,179 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  // أداة قص ومشاركة الريلز والمقاطع
+  void _openReelsClipperDialog() {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final curSec = _controller!.value.position.inSeconds;
+    int clipLength = 15;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => Directionality(
+          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: AppSettings.instance.glassFill,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.movie_creation_rounded, color: AppColors.primary, size: 24),
+                        const SizedBox(width: 8),
+                        Text(Tr.text('clip_reel'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(Tr.text('clip_desc'), style: TextStyle(color: AppSettings.instance.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [5, 10, 15, 30].map((sec) {
+                        final isSel = clipLength == sec;
+                        return ChoiceChip(
+                          label: Text('$sec s', style: TextStyle(color: isSel ? Colors.white : AppSettings.instance.textPrimary)),
+                          selected: isSel,
+                          selectedColor: AppColors.primary,
+                          backgroundColor: AppSettings.instance.surface,
+                          onSelected: (_) => setDState(() => clipLength = sec),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: AppSettings.instance.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppSettings.instance.border, width: 0.5)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('${_formatTime(Duration(seconds: curSec))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
+                          const Icon(Icons.arrow_forward_rounded, size: 16, color: AppColors.primary),
+                          Text('${_formatTime(Duration(seconds: curSec + clipLength))}', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          final shareText = '🎬 شاهد هذه اللقطة من "${widget.title}" بدقة 4K عبر ONEBR TV!\n'
+                              '⏱️ التوقيت: ${_formatTime(Duration(seconds: curSec))} - ${_formatTime(Duration(seconds: curSec + clipLength))}\n'
+                              '📥 حمل التطبيق مجاناً: https://onebr.tv/watch/${widget.mediaId}?t=$curSec';
+                          Clipboard.setData(ClipboardData(text: shareText));
+                          final uri = Uri.parse('sms:?body=${Uri.encodeComponent(shareText)}');
+                          launchUrl(uri).catchError((_) => false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم تجهيز كليب الريلز للمشاركة بنجاح! 🚀')),
+                          );
+                        },
+                        child: Text(Tr.text('share_clip_btn'), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // أداة استيراد الترجمات الخارجية وضبط الإزاحة
+  void _openCustomSubtitlesDialog() {
+    final subUrlCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => Directionality(
+          textDirection: AppSettings.instance.appLanguage == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                color: AppSettings.instance.glassFill,
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(Tr.text('custom_subs'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 12),
+                    CupertinoTextField(
+                      controller: subUrlCtrl,
+                      placeholder: 'رابط مباشر لملف .srt',
+                      style: TextStyle(color: AppSettings.instance.textPrimary),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(12),
+                        onPressed: () {
+                          if (subUrlCtrl.text.trim().isNotEmpty) {
+                            Navigator.pop(ctx);
+                            _loadSubs(subUrlCtrl.text.trim(), isSecondary: false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('تم استيراد الترجمة وتطبيقها! 📝')),
+                            );
+                          }
+                        },
+                        child: const Text('تطبيق الترجمة الخارجية', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+                      ),
+                    ),
+                    Divider(color: AppSettings.instance.border, height: 28),
+                    Text(Tr.text('sub_offset'), style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline_rounded, color: AppColors.primary, size: 28),
+                          onPressed: () {
+                            setDState(() {
+                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds - 0.5);
+                            });
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('${AppSettings.instance.subOffsetSeconds.toStringAsFixed(1)}s', style: TextStyle(color: AppSettings.instance.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 28),
+                          onPressed: () {
+                            setDState(() {
+                              AppSettings.instance.updateSubOffset(AppSettings.instance.subOffsetSeconds + 0.5);
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   KeyEventResult _handleRemoteKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
@@ -4571,6 +4634,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = AppSettings.instance;
+    final r = RemoteAdminConfig.instance;
     final isAr = settings.appLanguage == 'ar';
     final hasPrev = widget.episodes.isNotEmpty && _activeEpIndex > 1;
     final hasNext = widget.episodes.isNotEmpty && _activeEpIndex < widget.episodes.length;
@@ -4701,6 +4765,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
+                  if (settings.enableDualSubtitlesFlag && _currentSecondarySubText.isNotEmpty)
+                    Positioned(
+                      top: 70, left: 20, right: 20,
+                      child: Center(
+                        child: Text(
+                          _currentSecondarySubText,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.yellowAccent, fontSize: 16, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 8, color: Colors.black)]),
+                        ),
+                      ),
+                    ),
+
                   if (_showSmartSkip && !_isLocked)
                     Positioned(
                       bottom: 85, left: 20,
@@ -4784,11 +4860,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             Row(
                               children: [
-                                if (RemoteAdminConfig.instance.featureClips)
+                                if (r.featureClips)
                                   IconButton(
                                     tooltip: Tr.text('clip_reel'),
                                     icon: const Icon(Icons.movie_creation_rounded, color: Colors.amber, size: 22),
                                     onPressed: _openReelsClipperDialog,
+                                  ),
+                                if (r.featureCustomSubtitles)
+                                  IconButton(
+                                    tooltip: Tr.text('custom_subs'),
+                                    icon: const Icon(Icons.subtitles_outlined, color: Colors.cyanAccent, size: 22),
+                                    onPressed: _openCustomSubtitlesDialog,
                                   ),
                                 if (widget.episodes.isNotEmpty)
                                   IconButton(
@@ -4988,6 +5070,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   final _blacklistCtrl = TextEditingController();
   final _bannedDevicesCtrl = TextEditingController();
 
+  // المشاهد الحساسة
+  final _mediaIdCtrl = TextEditingController();
+  final _startSecCtrl = TextEditingController();
+  final _endSecCtrl = TextEditingController();
+  List<Map<String, dynamic>> _loadedScenesForMedia = [];
+  bool _isSearchingScenes = false;
+
+  // الإحصائيات
+  int _totalUsersCount = 0;
+  int _totalCensoredDocsCount = 0;
+  int _totalReportsCount = 0;
+  bool _isLoadingStats = true;
+
   // الترجمة السحابية
   final _subMediaIdCtrl = TextEditingController();
   final _subUrlCtrl = TextEditingController();
@@ -5001,6 +5096,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   bool _maintenance = false;
   bool _censorActive = true;
   bool _allowDownloads = true;
+  String _selectedDefaultQuality = '360p';
   bool _featExternal = true;
   bool _featClips = true;
   bool _featCustomSubs = true;
@@ -5016,8 +5112,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 6, vsync: this);
     _loadCurrentConfig();
+    _loadCloudStats();
     _testServerPings();
   }
 
@@ -5029,6 +5126,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         _maintenance = d['is_maintenance'] ?? false;
         _censorActive = d['censor_enabled'] ?? true;
         _allowDownloads = d['allow_downloads'] ?? true;
+        _selectedDefaultQuality = d['default_quality'] ?? '360p';
         _featExternal = d['feat_external_player'] ?? true;
         _featClips = d['feat_clips'] ?? true;
         _featCustomSubs = d['feat_custom_subs'] ?? true;
@@ -5057,6 +5155,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
           _bannedDevicesCtrl.text = (d['banned_device_ids'] as List).join(',');
         }
       });
+    }
+  }
+
+  void _loadCloudStats() async {
+    setState(() => _isLoadingStats = true);
+    try {
+      final usersSnap = await FirebaseFirestore.instance.collection('users').count().get();
+      final censorSnap = await FirebaseFirestore.instance.collection('censored_scenes').count().get();
+      final reportsSnap = await FirebaseFirestore.instance.collection('user_reports').count().get();
+
+      if (mounted) {
+        setState(() {
+          _totalUsersCount = usersSnap.count ?? 0;
+          _totalCensoredDocsCount = censorSnap.count ?? 0;
+          _totalReportsCount = reportsSnap.count ?? 0;
+          _isLoadingStats = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingStats = false);
     }
   }
 
@@ -5108,6 +5226,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       'is_maintenance': _maintenance,
       'censor_enabled': _censorActive,
       'allow_downloads': _allowDownloads,
+      'default_quality': _selectedDefaultQuality,
       'feat_external_player': _featExternal,
       'feat_clips': _featClips,
       'feat_custom_subs': _featCustomSubs,
@@ -5132,6 +5251,69 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم نشر وحفظ كافة التعديلات والمواقع السحابية بنجاح! ✅')),
+      );
+    }
+  }
+
+  void _fetchScenesForCurrentMedia() async {
+    final id = _mediaIdCtrl.text.trim();
+    if (id.isEmpty) return;
+
+    setState(() => _isSearchingScenes = true);
+    try {
+      final doc = await FirebaseFirestore.instance.collection('censored_scenes').doc(id).get();
+      if (doc.exists && doc.data()?['scenes'] != null) {
+        final List raw = doc.data()!['scenes'];
+        setState(() {
+          _loadedScenesForMedia = List<Map<String, dynamic>>.from(raw);
+          _isSearchingScenes = false;
+        });
+      } else {
+        setState(() {
+          _loadedScenesForMedia = [];
+          _isSearchingScenes = false;
+        });
+      }
+    } catch (_) {
+      setState(() => _isSearchingScenes = false);
+    }
+  }
+
+  void _addCustomCensorScene() async {
+    final id = _mediaIdCtrl.text.trim();
+    final start = int.tryParse(_startSecCtrl.text.trim());
+    final end = int.tryParse(_endSecCtrl.text.trim());
+
+    if (id.isEmpty || start == null || end == null) return;
+
+    await FirebaseFirestore.instance.collection('censored_scenes').doc(id).set({
+      'scenes': FieldValue.arrayUnion([{'start': start, 'end': end}])
+    }, SetOptions(merge: true));
+
+    _startSecCtrl.clear();
+    _endSecCtrl.clear();
+    _fetchScenesForCurrentMedia();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تمت إضافة المشهد الحساس للعمل $id وتثبيته في السحابة! 🛡️')),
+      );
+    }
+  }
+
+  void _deleteCensorScene(Map<String, dynamic> scene) async {
+    final id = _mediaIdCtrl.text.trim();
+    if (id.isEmpty) return;
+
+    await FirebaseFirestore.instance.collection('censored_scenes').doc(id).update({
+      'scenes': FieldValue.arrayRemove([scene])
+    });
+
+    _fetchScenesForCurrentMedia();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حذف اللقطة المحددة من قاعدة البيانات! 🗑️')),
       );
     }
   }
@@ -5204,9 +5386,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
             tabs: const [
               Tab(icon: Icon(Icons.settings_suggest_rounded, size: 20), text: 'التحكم العام'),
               Tab(icon: Icon(Icons.share_rounded, size: 20), text: 'حسابات التواصل'),
+              Tab(icon: Icon(Icons.shield_rounded, size: 20), text: 'إدارة الحجب'),
               Tab(icon: Icon(Icons.toggle_on_rounded, size: 20), text: 'مفاتيح الميزات'),
               Tab(icon: Icon(Icons.live_tv_rounded, size: 20), text: 'البث والترجمات'),
-              Tab(icon: Icon(Icons.mark_chat_unread_rounded, size: 20), text: 'طلبات المستخدمين'),
+              Tab(icon: Icon(Icons.mark_chat_unread_rounded, size: 20), text: 'الطلبات والإحصائيات'),
             ],
           ),
         ),
@@ -5256,7 +5439,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                       const SizedBox(height: 10),
                       TextField(controller: _blacklistCtrl, decoration: const InputDecoration(labelText: 'قائمة الأعمال المحظورة (IDs)')),
                       const SizedBox(height: 10),
-                      TextField(controller: _bannedDevicesCtrl, decoration: const InputDecoration(labelText: 'الأجهزة المحظورة (Banned IDs)')),
+                      TextField(controller: _bannedDevicesCtrl, decoration: const InputDecoration(labelText: 'الأجهزة أو الحسابات المحظورة (Banned IDs)')),
                     ],
                   ),
                 ),
@@ -5305,7 +5488,84 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // تبويب 3: مفاتيح الميزات وفحص البينج
+            // تبويب 3: إدارة الحجب والمشاهد الحساسة
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('إضافة أو حذف لقطات عمل معين', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _mediaIdCtrl,
+                              decoration: const InputDecoration(labelText: 'معرف العمل (Media ID)'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          IconButton(
+                            icon: const Icon(Icons.search_rounded, color: AppColors.primary),
+                            onPressed: _fetchScenesForCurrentMedia,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(child: TextField(controller: _startSecCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'البداية (ثوانٍ)'))),
+                          const SizedBox(width: 10),
+                          Expanded(child: TextField(controller: _endSecCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'النهاية (ثوانٍ)'))),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
+                          onPressed: _addCustomCensorScene,
+                          child: const Text('إضافة المشهد لقاعدة البيانات السحابية', style: TextStyle(color: Colors.white)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _isSearchingScenes
+                    ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.primary)))
+                    : (_loadedScenesForMedia.isEmpty
+                        ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('لا توجد لقطات محفوظة لهذا المعرف أو ابحث أولاً', style: TextStyle(color: s.textSecondary, fontSize: 12))))
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('اللقطات الحالية المفهرسة (${_loadedScenesForMedia.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              const SizedBox(height: 8),
+                              ..._loadedScenesForMedia.map<Widget>((sc) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: s.border, width: 0.5)),
+                                  child: ListTile(
+                                    leading: const Icon(Icons.cut_rounded, color: Colors.amber),
+                                    title: Text('من ${sc['start']} ث إلى ${sc['end']} ث (${(sc['end'] - sc['start'])} ثانية)', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.delete_rounded, color: Colors.redAccent),
+                                      onPressed: () => _deleteCensorScene(sc),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                          )),
+              ],
+            ),
+
+            // تبويب 4: مفاتيح الميزات وفحص البينج
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5361,7 +5621,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // تبويب 4: الترجمات وقنوات IPTV
+            // تبويب 5: الترجمات وقنوات IPTV
             ListView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
@@ -5406,492 +5666,269 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
               ],
             ),
 
-            // تبويب 5: طلبات المحتوى
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('content_requests').orderBy('timestamp', descending: true).snapshots(),
-              builder: (ctx, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-                final docs = snap.data!.docs;
-                if (docs.isEmpty) {
-                  return Center(child: Text('لا توجد طلبات محتوى معلقة حالياً', style: TextStyle(color: s.textSecondary)));
-                }
-
-                return ListView.builder(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  itemCount: docs.length,
-                  itemBuilder: (context, i) {
-                    final d = docs[i];
-                    final data = d.data() as Map<String, dynamic>;
-                    final isDone = data['status'] == 'completed';
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: s.border, width: 0.5)),
-                      child: ListTile(
-                        leading: Icon(isDone ? Icons.check_circle_rounded : Icons.pending_actions_rounded, color: isDone ? Colors.greenAccent : Colors.amber),
-                        title: Text(data['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
-                        subtitle: Text('${data['type'] ?? ''} • ${data['note'] ?? ''}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                        trailing: IconButton(
-                          icon: Icon(isDone ? Icons.delete_outline_rounded : Icons.done_all_rounded, color: isDone ? Colors.redAccent : Colors.greenAccent),
-                          onPressed: () {
-                            if (isDone) {
-                              d.reference.delete();
-                            } else {
-                              d.reference.update({'status': 'completed'});
-                            }
-                          },
+            // تبويب 6: الطلبات والإحصائيات
+            ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                _isLoadingStats
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                    : Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.cloud_done_rounded, color: AppColors.primary, size: 40),
+                            const SizedBox(height: 10),
+                            const Text('إحصائيات المنصة السحابية المباشرة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            Divider(color: s.border, height: 30),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text('$_totalUsersCount', style: const TextStyle(color: AppColors.primary, fontSize: 24, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Text('المستخدمين المسجلين', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('$_totalCensoredDocsCount', style: const TextStyle(color: Colors.amber, fontSize: 24, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Text('أعمال مفهرسة للحجب', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('$_totalReportsCount', style: const TextStyle(color: Colors.redAccent, fontSize: 24, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Text('بلاغات المشاكل', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            CupertinoButton(
+                              color: s.surfaceLight,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              onPressed: _loadCloudStats,
+                              child: const Text('تحديث الأرقام الآن', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ==========================================
-// شاشة المكتبة والإعدادات وحسابات التطبيق
-// ==========================================
-class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
-
-  @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
-}
-
-class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabCtrl;
-  List<Map<String, dynamic>> _completed = [];
-  List<Map<String, dynamic>> _watchlist = [];
-  StreamSubscription? _dlSub;
-
-  int _statMinutes = 0;
-  int _statEpisodes = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
-
-    _tabCtrl.addListener(() {
-      if (!_tabCtrl.indexIsChanging) {
-        _loadData();
-      }
-    });
-
-    _loadData();
-
-    _dlSub = BackgroundDownloadService.progressStream.stream.listen((data) async {
-      final String taskId = data[0];
-      final int status = data[1];
-      final int progress = data[2];
-
-      if (mounted) {
-        bool itemFound = false;
-        for (var item in _completed) {
-          if (item['taskId'] == taskId) {
-            item['status'] = status;
-            item['progress'] = progress;
-            if (status == 3) {
-              item['isCompleted'] = true;
-            }
-            itemFound = true;
-            break;
-          }
-        }
-
-        if (!itemFound) {
-          final list = await LocalStorageService.getList('downloaded_works_list');
-          setState(() {
-            _completed = list;
-          });
-        } else {
-          setState(() {});
-        }
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _dlSub?.cancel();
-    _tabCtrl.dispose();
-    super.dispose();
-  }
-
-  void _loadData() async {
-    final downloads = await LocalStorageService.getList('downloaded_works_list');
-    final wl = await LocalStorageService.getList('user_watchlist');
-    final prefs = await SharedPreferences.getInstance();
-    final curP = prefs.getString('current_active_profile') ?? 'default';
-
-    if (mounted) {
-      setState(() {
-        _completed = downloads;
-        _watchlist = wl;
-        _statMinutes = prefs.getInt('stats_minutes_$curP') ?? 0;
-        _statEpisodes = prefs.getInt('stats_episodes_$curP') ?? 0;
-      });
-    }
-  }
-
-  void _showRequestContentDialog(bool isAr) {
-    final titleCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    String type = 'movie';
-
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDState) => CupertinoAlertDialog(
-          title: Text(Tr.text('request_media')),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(Tr.text('request_desc'), style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 16),
+                const Text('طلبات المحتوى الواردة من المستخدمين:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 10),
-                CupertinoTextField(controller: titleCtrl, placeholder: isAr ? 'اسم الفيلم أو المسلسل' : 'Title'),
-                const SizedBox(height: 8),
-                CupertinoTextField(controller: noteCtrl, placeholder: isAr ? 'ملاحظة (سنة الإنتاج أو رابط)' : 'Note'),
-                const SizedBox(height: 8),
-                CupertinoSlidingSegmentedControl<String>(
-                  groupValue: type,
-                  children: {
-                    'movie': Text(Tr.text('movies'), style: const TextStyle(fontSize: 12)),
-                    'series': Text(Tr.text('series'), style: const TextStyle(fontSize: 12)),
-                  },
-                  onValueChanged: (v) {
-                    if (v != null) setDState(() => type = v);
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('content_requests').orderBy('timestamp', descending: true).snapshots(),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+                    final docs = snap.data!.docs;
+                    if (docs.isEmpty) {
+                      return Center(child: Text('لا توجد طلبات معلقة', style: TextStyle(color: s.textSecondary)));
+                    }
+
+                    return Column(
+                      children: docs.map((d) {
+                        final data = d.data() as Map<String, dynamic>;
+                        final isDone = data['status'] == 'completed';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: s.border, width: 0.5)),
+                          child: ListTile(
+                            leading: Icon(isDone ? Icons.check_circle_rounded : Icons.pending_actions_rounded, color: isDone ? Colors.greenAccent : Colors.amber),
+                            title: Text(data['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold)),
+                            subtitle: Text('${data['type'] ?? ''} • ${data['note'] ?? ''}', style: TextStyle(color: s.textSecondary, fontSize: 11)),
+                            trailing: IconButton(
+                              icon: Icon(isDone ? Icons.delete_outline_rounded : Icons.done_all_rounded, color: isDone ? Colors.redAccent : Colors.greenAccent),
+                              onPressed: () {
+                                if (isDone) {
+                                  d.reference.delete();
+                                } else {
+                                  d.reference.update({'status': 'completed'});
+                                }
+                              },
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
                   },
                 ),
               ],
             ),
-          ),
-          actions: [
-            CupertinoDialogAction(child: Text(Tr.text('cancel')), onPressed: () => Navigator.pop(ctx)),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              child: Text(Tr.text('send_request')),
-              onPressed: () async {
-                if (titleCtrl.text.trim().isNotEmpty) {
-                  await CloudSyncService.submitContentRequest(titleCtrl.text.trim(), type, noteCtrl.text.trim());
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('تم إرسال طلبك للإدارة وسيتم توفيره قريباً! 🎬')),
-                  );
-                }
-              },
-            ),
           ],
         ),
       ),
     );
   }
+}
 
+class SubtitleSettingsScreen extends StatefulWidget {
+  const SubtitleSettingsScreen({super.key});
+
+  @override
+  State<SubtitleSettingsScreen> createState() => _SubtitleSettingsScreenState();
+}
+
+class _SubtitleSettingsScreenState extends State<SubtitleSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
-    final r = RemoteAdminConfig.instance;
     final isAr = s.appLanguage == 'ar';
-    final count = MediaQuery.of(context).size.width > 700 ? 5 : 3;
 
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: s.bg,
         appBar: AppBar(
-          title: Text(Tr.text('profile'), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: s.textPrimary)),
-          actions: [
-            if (r.featureUserRequests)
-              IconButton(
-                tooltip: Tr.text('request_media'),
-                icon: const Icon(Icons.add_to_photos_rounded, color: AppColors.primary),
-                onPressed: () => _showRequestContentDialog(isAr),
-              ),
-          ],
-          bottom: TabBar(
-            controller: _tabCtrl,
-            indicatorColor: AppColors.primary,
-            labelColor: AppColors.primary,
-            unselectedLabelColor: s.textSecondary,
-            tabs: [
-              Tab(text: Tr.text('downloads')),
-              Tab(text: Tr.text('watchlist')),
-              Tab(text: Tr.text('stats')),
-              Tab(text: Tr.text('settings')),
-            ],
+          title: Text(Tr.text('settings'), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: s.textPrimary)),
+          leading: IconButton(
+            icon: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 28, color: s.textPrimary),
+            onPressed: () => Navigator.pop(context),
           ),
         ),
-        body: TabBarView(
-          controller: _tabCtrl,
+        body: ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(16),
           children: [
-            // تبويب التنزيلات
-            _completed.isEmpty
-                ? Center(child: Text(Tr.text('no_downloads'), style: TextStyle(color: s.textSecondary)))
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _completed.length,
-                    itemBuilder: (ctx, i) {
-                      final it = _completed[i];
-                      final filePath = it['path'] ?? '';
-                      final file = File(filePath);
-                      final bool fileExists = file.existsSync() && file.lengthSync() > 1024 * 1024;
-                      final int progress = (it['progress'] is num) ? (it['progress'] as num).toInt() : 0;
-                      final int status = (it['status'] is num) ? (it['status'] as num).toInt() : 0;
-
-                      final bool isCompleted = fileExists && (it['isCompleted'] == true || status == 3 || progress >= 100);
-                      final bool isFailed = (status == 4 || status == 5) || (status == 3 && !fileExists);
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
+            Container(
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                color: Colors.black,
+                border: Border.all(color: s.border, width: 0.5),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: (s.subBottomPadding / 90) * 60 + 10,
+                    left: 20, right: 20,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: s.surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: s.border, width: 0.5),
+                          color: s.subtitleBackgroundColor,
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: it['poster'].toString().isNotEmpty
-                                    ? CachedNetworkImage(imageUrl: it['poster'], width: 50, height: 70, fit: BoxFit.cover)
-                                    : Container(width: 50, height: 70, color: s.surfaceLight),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(it['title'] ?? '', style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      isCompleted
-                                          ? Tr.text('ready_offline')
-                                          : (isFailed
-                                              ? Tr.text('download_failed')
-                                              : '${Tr.text('downloading')} ($progress%)'),
-                                      style: TextStyle(
-                                        color: isCompleted
-                                            ? Colors.greenAccent
-                                            : (isFailed ? Colors.redAccent : s.textSecondary),
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (isCompleted)
-                                IconButton(
-                                  icon: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 30),
-                                  onPressed: () {
-                                    final subPath = it['subPath']?.toString() ?? '';
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => PlayerScreen(
-                                          mediaId: (it['nb'] ?? it['id'] ?? '').toString(),
-                                          title: it['title'] ?? '',
-                                          videoUrl: filePath,
-                                          subtitleUrl: subPath,
-                                          qualities: const [],
-                                          isLocalFile: true,
-                                          poster: it['poster'] ?? '',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                            ],
+                        child: Text(
+                          isAr ? 'معاينة موقع ولون وخلفية الترجمة\nLive Subtitle Preview' : 'Live Subtitle Preview\nمعاينة الترجمة الحية',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: s.subColor,
+                            fontSize: s.subFontSize,
+                            fontWeight: FontWeight.bold,
+                            shadows: s.subHasShadow ? [const Shadow(blurRadius: 10, color: Colors.black)] : null,
                           ),
                         ),
-                      );
-                    },
-                  ),
-
-            // تبويب المفضلة
-            _watchlist.isEmpty
-                ? Center(child: Text(isAr ? 'لم تقم بحفظ أي عمل بعد' : 'Watchlist is empty', style: TextStyle(color: s.textSecondary)))
-                : GridView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: count, childAspectRatio: 0.58, crossAxisSpacing: 10, mainAxisSpacing: 12),
-                    itemCount: _watchlist.length,
-                    itemBuilder: (ctx, i) {
-                      final item = _watchlist[i];
-                      final poster = StreamService.extractPoster(item);
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.card),
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailScreen(media: item))).then((_) => _loadData()),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.card),
-                          child: poster.isNotEmpty
-                              ? CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover)
-                              : Container(color: s.surface),
-                        ),
-                      );
-                    },
-                  ),
-
-            // تبويب الإحصائيات
-            ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(AppRadius.card), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 40),
-                      const SizedBox(height: 10),
-                      Text('إحصائيات المشاهدة: ${s.activeProfile}', style: TextStyle(color: s.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                      Divider(color: s.border, height: 26),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              Text('$_statMinutes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 2),
-                              Text('دقيقة مشاهدة', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text('$_statEpisodes', style: TextStyle(color: s.textPrimary, fontSize: 22, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 2),
-                              Text('حلقة مكتملة', style: TextStyle(color: s.textSecondary, fontSize: 11)),
-                            ],
-                          ),
-                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-
-            // تبويب الإعدادات ومواقع التواصل
-            ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              children: [
-                // بطاقة حسابات ومجتمع التطبيق الرسمي
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.public_rounded, color: AppColors.primary, size: 20),
-                          const SizedBox(width: 8),
-                          Text(Tr.text('social_accounts'), style: TextStyle(color: s.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.send_rounded, color: Colors.blue, size: 16),
-                            label: const Text('Telegram'),
-                            backgroundColor: s.surfaceLight,
-                            onPressed: () => launchUrl(Uri.parse(r.telegramUrl), mode: LaunchMode.externalApplication),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.chat_bubble_rounded, color: Colors.green, size: 16),
-                            label: const Text('WhatsApp'),
-                            backgroundColor: s.surfaceLight,
-                            onPressed: () => launchUrl(Uri.parse(r.whatsappUrl), mode: LaunchMode.externalApplication),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.camera_alt_rounded, color: Colors.pink, size: 16),
-                            label: const Text('Instagram'),
-                            backgroundColor: s.surfaceLight,
-                            onPressed: () => launchUrl(Uri.parse(r.instagramUrl), mode: LaunchMode.externalApplication),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.language_rounded, color: Colors.teal, size: 16),
-                            label: const Text('الموقع الرسمي'),
-                            backgroundColor: s.surfaceLight,
-                            onPressed: () => launchUrl(Uri.parse(r.websiteUrl), mode: LaunchMode.externalApplication),
-                          ),
-                        ],
-                      ),
-                    ],
+            const SizedBox(height: 24),
+            Container(
+              decoration: BoxDecoration(
+                color: s.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: s.border, width: 0.5),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: Text(isAr ? 'خلفية الترجمة' : 'Subtitle Background', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: CupertinoSlidingSegmentedControl<String>(
+                      groupValue: s.subBackgroundMode,
+                      children: {
+                        'transparent': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'شفاف' : 'Clear', style: TextStyle(color: s.textPrimary, fontSize: 11))),
+                        'semi': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'شبه شفاف' : 'Semi', style: TextStyle(color: s.textPrimary, fontSize: 11))),
+                        'dark': Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(isAr ? 'غامق' : 'Dark', style: TextStyle(color: s.textPrimary, fontSize: 11))),
+                      },
+                      onValueChanged: (val) {
+                        if (val != null) setState(() => s.updateSubStyle(bgMode: val));
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                Container(
-                  decoration: BoxDecoration(color: s.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: s.border, width: 0.5)),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.dark_mode_rounded, color: AppColors.primary),
-                        title: Text(Tr.text('dark_mode'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: CupertinoSwitch(
-                          value: s.isDarkMode,
-                          activeColor: AppColors.primary,
-                          onChanged: (_) => s.toggleTheme(),
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-                        title: Text(Tr.text('app_language'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: DropdownButton<String>(
-                          dropdownColor: s.surface,
-                          value: s.appLanguage,
-                          underline: const SizedBox(),
-                          items: const [
-                            DropdownMenuItem(value: 'ar', child: Text('العربية')),
-                            DropdownMenuItem(value: 'en', child: Text('English')),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) s.updateLanguage(v);
-                          },
-                        ),
-                      ),
-                      Divider(color: s.border, height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.text_fields_rounded, color: AppColors.primary),
-                        title: Text(Tr.text('app_font'), style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: DropdownButton<String>(
-                          dropdownColor: s.surface,
-                          value: s.selectedFont,
-                          underline: const SizedBox(),
-                          items: const [
-                            DropdownMenuItem(value: 'iPhone', child: Text('iPhone San Francisco')),
-                            DropdownMenuItem(value: 'Cairo', child: Text('Cairo')),
-                            DropdownMenuItem(value: 'Tajawal', child: Text('Tajawal')),
-                            DropdownMenuItem(value: 'Almarai', child: Text('Almarai')),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) s.updateFont(v);
-                          },
-                        ),
-                      ),
-                    ],
+                  Divider(color: s.border, height: 1),
+                  ListTile(
+                    title: Text(isAr ? 'موقع الترجمة من أسفل الفيديو' : 'Bottom Offset', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    subtitle: Slider(
+                      value: s.subBottomPadding,
+                      min: 10.0,
+                      max: 90.0,
+                      activeColor: AppColors.primary,
+                      inactiveColor: s.border,
+                      onChanged: (v) => setState(() => s.updateSubStyle(bottomPadding: v)),
+                    ),
+                    trailing: Text('${s.subBottomPadding.toInt()} dp', style: TextStyle(color: s.textSecondary, fontSize: 11)),
                   ),
-                ),
-              ],
+                  Divider(color: s.border, height: 1),
+                  ListTile(
+                    title: Text(isAr ? 'حجم خط الترجمة' : 'Font Size', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: DropdownButton<double>(
+                      dropdownColor: s.surface,
+                      value: s.subFontSize,
+                      underline: const SizedBox(),
+                      items: [
+                        DropdownMenuItem(value: 14.0, child: Text(isAr ? 'صغير' : 'Small', style: TextStyle(color: s.textPrimary))),
+                        DropdownMenuItem(value: 18.0, child: Text(isAr ? 'متوسط' : 'Medium', style: TextStyle(color: s.textPrimary))),
+                        DropdownMenuItem(value: 22.0, child: Text(isAr ? 'كبير' : 'Large', style: TextStyle(color: s.textPrimary))),
+                      ],
+                      onChanged: (v) => setState(() => s.updateSubStyle(size: v)),
+                    ),
+                  ),
+                  Divider(color: s.border, height: 1),
+                  ListTile(
+                    title: Text(isAr ? 'لون الخط' : 'Text Color', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _colorBubble(Colors.white, s.subColor == Colors.white, () => setState(() => s.updateSubStyle(color: Colors.white))),
+                        _colorBubble(Colors.yellow, s.subColor == Colors.yellow, () => setState(() => s.updateSubStyle(color: Colors.yellow))),
+                        _colorBubble(const Color(0xFF00F0FF), s.subColor == const Color(0xFF00F0FF), () => setState(() => s.updateSubStyle(color: const Color(0xFF00F0FF)))),
+                      ],
+                    ),
+                  ),
+                  Divider(color: s.border, height: 1),
+                  ListTile(
+                    title: Text(isAr ? 'ظل حواف الخط' : 'Text Shadow', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    trailing: CupertinoSwitch(
+                      value: s.subHasShadow,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => s.updateSubStyle(shadow: v)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            CupertinoButton(
+              color: s.surface,
+              borderRadius: BorderRadius.circular(14),
+              onPressed: () => setState(() => s.resetSubtitles()),
+              child: Text(isAr ? 'إعادة ضبط الترجمة الافتراضية' : 'Reset to Default', style: TextStyle(color: s.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorBubble(Color c, bool isSelected, VoidCallback tap) {
+    return GestureDetector(
+      onTap: tap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          border: isSelected ? Border.all(color: AppColors.primary, width: 2.5) : null,
         ),
       ),
     );
