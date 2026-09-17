@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
