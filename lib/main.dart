@@ -1649,8 +1649,10 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint("Firebase error: $e");
+    debugPrint('Firebase initialized successfully.');
+  } catch (e, st) {
+    debugPrint('Firebase initialization error: $e');
+    debugPrintStack(stackTrace: st);
   }
 
   try {
@@ -1659,8 +1661,12 @@ void main() async {
           ? AndroidProvider.debug
           : AndroidProvider.playIntegrity,
     );
-  } catch (e) {
-    debugPrint("App Check error: $e");
+    debugPrint(
+      'Firebase App Check activated: ${kDebugMode ? 'debug' : 'playIntegrity'}',
+    );
+  } catch (e, st) {
+    debugPrint('Firebase App Check activation error: $e');
+    debugPrintStack(stackTrace: st);
   }
 
   try {
@@ -7742,12 +7748,22 @@ Rules:
 
       final response = await _model.generateContent([Content.text(prompt)]);
       final raw = response.text?.trim();
-      if (raw == null || raw.isEmpty) return null;
+
+      if (raw == null || raw.isEmpty) {
+        debugPrint('ONEBR AI planner: Gemini returned an empty response.');
+        return null;
+      }
 
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
+      if (decoded is! Map) {
+        debugPrint('ONEBR AI planner: Gemini returned non-object JSON: $raw');
+        return null;
+      }
+
       return OnebrAiPlan.fromJson(Map<String, dynamic>.from(decoded));
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('ONEBR AI planner ERROR: $e');
+      debugPrintStack(stackTrace: st);
       return null;
     }
   }
@@ -7805,8 +7821,16 @@ Important:
 
       final response = await _model.generateContent([Content.text(prompt)]);
       final result = response.text?.trim();
-      return result == null || result.isEmpty ? null : result;
-    } catch (_) {
+
+      if (result == null || result.isEmpty) {
+        debugPrint('ONEBR AI final reply: Gemini returned an empty response.');
+        return null;
+      }
+
+      return result;
+    } catch (e, st) {
+      debugPrint('ONEBR AI final reply ERROR: $e');
+      debugPrintStack(stackTrace: st);
       return null;
     }
   }
